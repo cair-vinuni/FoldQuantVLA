@@ -33,6 +33,7 @@ import numpy as np
 import torch
 import tyro
 
+from foldquant.drift import worst_channel
 from foldquant.provenance import public_path
 
 from . import calibration
@@ -104,12 +105,15 @@ def _load_manifest(engine_dir: Path) -> dict[str, Any]:
 
 def run_pass(deployed, observations: list[dict[str, Any]], seed: int) -> dict[str, list[torch.Tensor]]:
     acts: list[torch.Tensor] = []
+    width = 0
     with ContextCapture(deployed) as capture:
         for i, request in enumerate(observations):
-            acts.append(torch.as_tensor(calibration.infer(deployed, request, seed=seed + i)).float().flatten())
+            chunk = torch.as_tensor(calibration.infer(deployed, request, seed=seed + i)).float()
+            width = int(chunk.shape[-1])
+            acts.append(chunk.flatten())
     if len(capture.hidden) != len(observations):
         raise RuntimeError(f"captured {len(capture.hidden)} tower passes for {len(observations)} observations")
-    return {"fused_tokens": [h.float().cpu() for h in capture.hidden], "actions": acts}
+    return {"fused_tokens": [h.float().cpu() for h in capture.hidden], "actions": acts, "action_width": width}
 
 
 def main(args: VerifyConfig) -> dict[str, Any]:
@@ -155,6 +159,10 @@ def main(args: VerifyConfig) -> dict[str, Any]:
     tok_min = [_token_cos_min(a, b) for a, b in zip(got["fused_tokens"], ref["fused_tokens"], strict=True)]
     act_cos = [_cos(a, b) for a, b in zip(got["actions"], ref["actions"], strict=True)]
     act_abs = [float((a - b).abs().max()) for a, b in zip(got["actions"], ref["actions"], strict=True)]
+    act_worst = [
+        worst_channel(a - b, order="step_major", width=got["action_width"])
+        for a, b in zip(got["actions"], ref["actions"], strict=True)
+    ]
     report = {
         "engine_dir": public_path(str(engine_dir)),
         "schemes": manifest["schemes"],
@@ -172,8 +180,9 @@ def main(args: VerifyConfig) -> dict[str, Any]:
                 "fused_tokens_position_cos_min": tm,
                 "action_cos": ac,
                 "action_max_abs": aa,
+                "action_worst": aw,
             }
-            for s, tc, tm, ac, aa in zip(samples, tok_cos, tok_min, act_cos, act_abs, strict=True)
+            for s, tc, tm, ac, aa, aw in zip(samples, tok_cos, tok_min, act_cos, act_abs, act_worst, strict=True)
         ],
         "pytorch_repeat_action_cos_min": repeat,
         "fused_tokens": {

@@ -33,6 +33,7 @@ from typing import Any
 import numpy as np
 import torch
 import tyro
+from foldquant.drift import worst_channel
 from foldquant.provenance import public_path
 
 from . import calibration
@@ -108,14 +109,19 @@ def _load_manifest(engine_dir: Path) -> dict[str, Any]:
 
 def run_pass(deployed, observations: list[dict[str, Any]], seed: int) -> dict[str, list[torch.Tensor]]:
     acts: list[torch.Tensor] = []
+    width = 0
     with PrefixCapture(deployed) as capture:
         for i, obs in enumerate(observations):
-            acts.append(calibration.infer(deployed, obs, seed=seed + i).flatten())
+            chunk = calibration.infer(deployed, obs, seed=seed + i)
+            # The postprocessor slices the chunk to the checkpoint's real action
+            # dimension, so read the width off the tensor rather than the config.
+            width = int(chunk.shape[-1])
+            acts.append(chunk.flatten())
     if len(capture.stacks) != len(observations):
         raise RuntimeError(
             f"captured {len(capture.stacks)} prefix passes for {len(observations)} observations"
         )
-    return {"kv_stack": [s.cpu() for s in capture.stacks], "actions": acts}
+    return {"kv_stack": [s.cpu() for s in capture.stacks], "actions": acts, "action_width": width}
 
 
 def main(args: VerifyConfig) -> dict[str, Any]:
@@ -159,6 +165,10 @@ def main(args: VerifyConfig) -> dict[str, Any]:
     kv_pos = [_position_cos_min(a, b) for a, b in zip(got["kv_stack"], ref["kv_stack"], strict=True)]
     act_cos = [_cos(a, b) for a, b in zip(got["actions"], ref["actions"], strict=True)]
     act_abs = [float((a - b).abs().max()) for a, b in zip(got["actions"], ref["actions"], strict=True)]
+    act_worst = [
+        worst_channel(a - b, order="step_major", width=got["action_width"])
+        for a, b in zip(got["actions"], ref["actions"], strict=True)
+    ]
     report = {
         "engine_dir": public_path(str(engine_dir)),
         "schemes": manifest["schemes"],
@@ -176,8 +186,11 @@ def main(args: VerifyConfig) -> dict[str, Any]:
                 "kv_stack_position_cos_min": kp,
                 "action_cos": ac,
                 "action_max_abs": aa,
+                "action_worst": aw,
             }
-            for s, kc, kp, ac, aa in zip(samples, kv_cos, kv_pos, act_cos, act_abs, strict=True)
+            for s, kc, kp, ac, aa, aw in zip(
+                samples, kv_cos, kv_pos, act_cos, act_abs, act_worst, strict=True
+            )
         ],
         "pytorch_repeat_action_cos_min": repeat,
         "kv_stack": {

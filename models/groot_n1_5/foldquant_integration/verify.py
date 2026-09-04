@@ -35,6 +35,7 @@ from typing import Any
 import numpy as np
 import torch
 import tyro
+from foldquant.drift import worst_channel
 from foldquant.provenance import public_path
 
 from . import calibration
@@ -105,17 +106,32 @@ def _load_manifest(engine_dir: Path) -> dict[str, Any]:
 
 
 def _action_vector(action: dict[str, Any]) -> torch.Tensor:
+    return _action_vector_with_layout(action)[0]
+
+
+def _action_vector_with_layout(action: dict[str, Any]) -> tuple[torch.Tensor, list, int]:
+    """The flat action, plus the channel names and the steps per channel.
+
+    The policy answers with a dict of named channels, each a whole chunk, so
+    the flat vector is channel-major and element ``i`` belongs to channel
+    ``i // steps``. Returning the names with it is what lets a drift figure say
+    which channel moved instead of only how far.
+    """
+    labels = sorted(action.keys())
     parts = []
-    for k in sorted(action.keys()):
+    for k in labels:
         v = action[k]
         t = v if isinstance(v, torch.Tensor) else torch.as_tensor(np.asarray(v))
         parts.append(t.float().flatten().cpu())
-    return torch.cat(parts)
+    per = int(parts[0].numel()) if parts else 0
+    return torch.cat(parts), labels, per
 
 
 def run_pass(policy, observations: list[dict[str, Any]], seed: int) -> dict[str, list[torch.Tensor]]:
     feats: list[torch.Tensor] = []
     acts: list[torch.Tensor] = []
+    labels: list = []
+    per = 0
 
     def _hook(_m, _args, output):
         feats.append(output["backbone_features"].detach().float().cpu().clone())
@@ -125,12 +141,13 @@ def run_pass(policy, observations: list[dict[str, Any]], seed: int) -> dict[str,
         with torch.inference_mode():
             for i, obs in enumerate(observations):
                 torch.manual_seed(seed + i)
-                acts.append(_action_vector(policy.get_action(obs)))
+                vector, labels, per = _action_vector_with_layout(policy.get_action(obs))
+                acts.append(vector)
     finally:
         handle.remove()
     if len(feats) != len(observations):
         raise RuntimeError(f"captured {len(feats)} backbone outputs for {len(observations)} observations")
-    return {"backbone_features": feats, "actions": acts}
+    return {"backbone_features": feats, "actions": acts, "action_labels": labels, "action_steps": per}
 
 
 def main(args: VerifyConfig) -> dict[str, Any]:
@@ -183,6 +200,10 @@ def main(args: VerifyConfig) -> dict[str, Any]:
     feat_tok = [_token_cos_min(a, b) for a, b in zip(got["backbone_features"], ref["backbone_features"])]
     act_cos = [_cos(a, b) for a, b in zip(got["actions"], ref["actions"])]
     act_abs = [float((a - b).abs().max()) for a, b in zip(got["actions"], ref["actions"])]
+    act_worst = [
+        worst_channel(a - b, order="channel_major", width=got["action_steps"], labels=got["action_labels"])
+        for a, b in zip(got["actions"], ref["actions"])
+    ]
     report = {
         "engine_dir": public_path(str(engine_dir)),
         "schemes": manifest["schemes"],
@@ -201,8 +222,9 @@ def main(args: VerifyConfig) -> dict[str, Any]:
                 "backbone_token_cos_min": ft,
                 "action_cos": ac,
                 "action_max_abs": aa,
+                "action_worst": aw,
             }
-            for s, fc, ft, ac, aa in zip(samples, feat_cos, feat_tok, act_cos, act_abs)
+            for s, fc, ft, ac, aa, aw in zip(samples, feat_cos, feat_tok, act_cos, act_abs, act_worst)
         ],
         "pytorch_repeat_action_cos_min": repeat,
         "backbone_features": {
