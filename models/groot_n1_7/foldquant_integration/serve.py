@@ -12,7 +12,7 @@ bf16 policy::
 
     # terminal 1 — the arm under test
     python -m foldquant_integration.serve --model-path <ckpt> \\
-        --engine-dir exports/w4a4/engines
+        --embodiment-tag libero_panda --engine-dir exports/w4a4/engines
 
     # terminal 2 — upstream's own client, unchanged
     from gr00t.policy.server_client import PolicyClient

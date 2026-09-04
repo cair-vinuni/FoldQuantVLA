@@ -167,7 +167,7 @@ a different port.
 ```bash
 # terminal 1 — the arm under test
 python -m foldquant_integration.serve --model-path <ckpt> \
-    --engine-dir exports/w4a4/engines
+    --embodiment-tag libero_panda --engine-dir exports/w4a4/engines
 
 # terminal 2 — upstream's own client, unchanged
 python -c "
@@ -176,6 +176,11 @@ client = PolicyClient(host='127.0.0.1', port=5555)
 print(client.get_action(observation))
 "
 ```
+
+The released LIBERO checkpoint carries nine embodiments in its
+`processor_config.json`, so `--embodiment-tag` is required for it; the tag
+`libero_panda` resolves to the checkpoint's `libero_sim` entry. A
+single-embodiment checkpoint needs no tag.
 
 Omit `--engine-dir` to serve the bf16 PyTorch policy — the reference arm, same
 process and same protocol, which is what makes the two comparable on hardware.
