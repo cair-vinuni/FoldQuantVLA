@@ -54,13 +54,28 @@ W8A8. Cascade recalibrates the expert; it cannot repair an arm whose median
 observation has already flipped a channel. The honest reporting is the W4A4
 row as measured, with this cell absent and explained.
 
-Which of the two graphs carries that failure is a separate measurement and is
-not settled by the figures above: the W4A4 arm quantizes the LLM and the
-expert together, so its verify.json cannot attribute the flip to either.
-`--components llm` and `--components expert` on the same engines answer it,
-and the per-seam files are reported beside the arm where they exist. Evidence
-from other families and other configurations bears on the mechanism but not on
-this arm.
+Which of the two graphs carries that failure is a separate measurement, and it
+has been made: `--components llm` and `--components expert` on the same
+engines and the same 32 observations, beside the arm as `verify_llm_only.json`
+and `verify_expert_only.json`.
+
+| SmolVLA W4A4, engines installed | mean | median | min | median worst-\|Δ\| | >1.5 |
+|---|---|---|---|---|---|
+| `--components llm` (expert float) | 0.8757 | 0.9264 | 0.4342 | 1.985 | 22/32 |
+| `--components expert` (LLM float) | 0.9812 | 0.9993 | 0.8973 | 0.082 | 11/32 |
+| both — the arm | 0.8621 | 0.9297 | 0.3034 | 1.987 | 22/32 |
+
+The LLM alone reproduces the arm, to the third digit and to the same 22
+observations (the arm and the LLM-only pass disagree on one observation each
+way, 21 of 22 shared). The expert alone is a tail rather than a collapse, and
+its eleven flipping observations are a strict subset of the LLM's twenty-two —
+so the two do not add: on an observation both damage, the channel has already
+saturated. Every flip in all three configurations is the same channel, index
+6, the gripper.
+
+That makes the reading for this family unambiguous: **the W4A4 LLM carries the
+collapse**, and the expert contributes a tail on observations the LLM has
+already broken.
 
 ## Calibration
 
@@ -90,6 +105,13 @@ calibration-adjacent near-initial states, and the same engine scores materially
 higher there. Where a number from another harness appears beside one of these,
 its sampling protocol is stated with it; a column that mixes the two compares
 observation sets, not arms.
+
+A count of "flips" is only readable against the family's action scale, and the
+scales differ: a saturated channel is |Δ| ≈ 2 where actions run [-1, 1], and
+the same absolute error means something else where they do not. So the columns
+that travel between families are the **median worst-|Δ|** and the worst
+channel — both recorded per observation as `action_worst` — rather than a
+count above a fixed threshold.
 
 For the same reason the tables report the **median** action cosine beside the
 mean and the min. These distributions have tails — a handful of observations
