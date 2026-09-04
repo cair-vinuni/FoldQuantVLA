@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any
 
 import torch
 from foldquant.runtime.engine import TensorRTEngine
@@ -43,7 +44,7 @@ DIT_INPUTS = {"sa_embs", "vl_embs", "timestep", "image_mask", "backbone_attentio
 DIT_OUTPUT = "output"
 
 
-def plugin_libs_of(engine_dir: Path) -> List[str]:
+def plugin_libs_of(engine_dir: Path) -> list[str]:
     """Plugin libraries an engine directory needs, from its build record or export manifest."""
     for name in (ENGINES_RECORD_NAME, MANIFEST_NAME):
         path = engine_dir / name
@@ -71,9 +72,9 @@ def _llm_forward(engine: TensorRTEngine, select_layer: int) -> Callable[..., Any
     from transformers.modeling_outputs import CausalLMOutputWithPast
 
     def forward(
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         **_unused: Any,
     ) -> Any:
         if inputs_embeds is None:
@@ -98,8 +99,8 @@ def _dit_forward(engine: TensorRTEngine) -> Callable[..., Any]:
     def forward(
         hidden_states: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
-        timestep: Optional[torch.Tensor] = None,
-        encoder_attention_mask: Optional[torch.Tensor] = None,
+        timestep: torch.Tensor | None = None,
+        encoder_attention_mask: torch.Tensor | None = None,
         return_all_hidden_states: bool = False,
     ) -> torch.Tensor:
         if return_all_hidden_states:
@@ -128,8 +129,8 @@ class InstalledEngines:
     """Handle over the engines installed by :func:`install_engines`; ``remove()`` restores PyTorch."""
 
     def __init__(self) -> None:
-        self.engines: Dict[str, TensorRTEngine] = {}
-        self._restore: List[Callable[[], None]] = []
+        self.engines: dict[str, TensorRTEngine] = {}
+        self._restore: list[Callable[[], None]] = []
 
     def _rebind(self, module: torch.nn.Module, forward: Callable[..., Any]) -> None:
         # An instance attribute shadows the class method for nn.Module.__call__;
@@ -147,7 +148,7 @@ class InstalledEngines:
 
 
 def install_engines(
-    policy, engine_dir: str | Path, *, components: Optional[Iterable[str]] = None
+    policy, engine_dir: str | Path, *, components: Iterable[str] | None = None
 ) -> InstalledEngines:
     """Load the plugins an engine directory needs and swap its engines into *policy*.
 

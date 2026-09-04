@@ -35,7 +35,7 @@ import logging
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import torch
 import tyro
@@ -62,13 +62,13 @@ class ExportConfig:
     output_dir: str
     """Destination; the graphs land in ``<output_dir>/onnx``."""
 
-    embodiment_tag: Optional[str] = None
+    embodiment_tag: str | None = None
     """Embodiment tag; read off experiment_cfg/metadata.json when it lists exactly one."""
 
     data_config: str = LIBERO_DATA_CONFIG
     """``module:Class`` data config (modality config + transforms), as upstream's inference service."""
 
-    denoising_steps: Optional[int] = None
+    denoising_steps: int | None = None
     """Flow-matching steps; the checkpoint's own value when omitted."""
 
     llm_scheme: str = schemes.W8A8_SR
@@ -98,16 +98,16 @@ class ExportConfig:
     device: str = "cuda"
 
 
-def _scheme_or_none(value: str) -> Optional[str]:
+def _scheme_or_none(value: str) -> str | None:
     return None if value.strip().lower() in _NONE else value.strip()
 
 
-def _module_paths(policy) -> Dict[str, torch.nn.Module]:
+def _module_paths(policy) -> dict[str, torch.nn.Module]:
     """The two quantizable modules, at their upstream attribute paths."""
     return {"llm": llm_module(policy), "dit": dit_module(policy)}
 
 
-def capture_shape_metadata(policy, observation: Dict[str, Any]) -> Dict[str, Any]:
+def capture_shape_metadata(policy, observation: dict[str, Any]) -> dict[str, Any]:
     """One forward with hooks: the tensor shapes the engine builder profiles, and where the backbone reads.
 
     ``final_norm`` records whether ``hidden_states[select_layer]`` of the Qwen3
@@ -117,7 +117,7 @@ def capture_shape_metadata(policy, observation: Dict[str, Any]) -> Dict[str, Any
     """
     modules = _module_paths(policy)
     select_layer = select_layer_of(policy)
-    seen: Dict[str, Any] = {}
+    seen: dict[str, Any] = {}
 
     def _llm_hook(_m, args, kwargs):
         embeds = args[0] if args else kwargs.get("inputs_embeds")

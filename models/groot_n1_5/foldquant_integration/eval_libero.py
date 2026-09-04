@@ -40,7 +40,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import tyro
@@ -71,15 +71,15 @@ class EvalConfig:
     output: str
     """Directory for ``summary.json`` and the per-task log."""
 
-    engine_dir: Optional[str] = None
+    engine_dir: str | None = None
     """FoldQuant engine directory. Omit for the bf16 PyTorch arm."""
 
-    embodiment_tag: Optional[str] = None
+    embodiment_tag: str | None = None
     data_config: str = LIBERO_DATA_CONFIG
-    denoising_steps: Optional[int] = None
+    denoising_steps: int | None = None
     """Flow-matching steps (upstream serves the LIBERO checkpoints with 8)."""
 
-    suites: List[str] = field(default_factory=lambda: list(SUITES))
+    suites: list[str] = field(default_factory=lambda: list(SUITES))
     n_episodes: int = 20
     """Episodes per task (upstream's client defaults to 5); 10 tasks per suite."""
 
@@ -87,18 +87,18 @@ class EvalConfig:
     """No-op steps after reset while dropped objects settle, as upstream."""
 
     resolution: int = 256
-    tasks: Optional[List[str]] = None
+    tasks: list[str] | None = None
     """Restrict to these task names."""
 
 
-def _load_summary(path: Path) -> Dict[str, Any]:
+def _load_summary(path: Path) -> dict[str, Any]:
     if path.is_file():
         return json.loads(path.read_text())
     return {"tasks": {}}
 
 
-def _write_summary(path: Path, summary: Dict[str, Any]) -> None:
-    per_suite: Dict[str, Dict[str, int]] = {}
+def _write_summary(path: Path, summary: dict[str, Any]) -> None:
+    per_suite: dict[str, dict[str, int]] = {}
     for entry in summary["tasks"].values():
         if entry.get("status") != "ok":
             continue
@@ -135,7 +135,7 @@ def _make_wrapper(policy):
     return InProcessGR00TPolicy(policy)
 
 
-def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> Dict[str, Any]:
+def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, Any]:
     from libero.libero import benchmark
 
     from examples.Libero.eval.utils import get_libero_dummy_action, get_libero_env
@@ -146,7 +146,7 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> Dict[str, A
     env, task_description = get_libero_env(task, resolution=args.resolution)
     max_steps = MAX_STEPS[suite]
     successes = 0
-    steps: List[int] = []
+    steps: list[int] = []
     errors = 0
     try:
         for episode_idx in range(args.n_episodes):
@@ -187,7 +187,7 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> Dict[str, A
     }
 
 
-def main(args: EvalConfig) -> Dict[str, Any]:
+def main(args: EvalConfig) -> dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     os.environ.setdefault("MUJOCO_GL", "egl")
     ensure_upstream_on_path()
@@ -242,7 +242,7 @@ def main(args: EvalConfig) -> Dict[str, Any]:
             try:
                 entry = run_task(wrapper, suite, task_id, args)
                 entry["status"] = "ok"
-            except Exception as exc:  # noqa: BLE001 — one task must not end the sweep
+            except Exception as exc:
                 logger.exception("%s failed", key)
                 entry = {"suite": suite, "task_id": task_id, "status": "error", "error": repr(exc)}
             entry["seconds"] = round(time.time() - t0, 1)

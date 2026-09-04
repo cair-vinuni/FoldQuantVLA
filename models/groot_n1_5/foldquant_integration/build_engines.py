@@ -33,7 +33,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import tyro
 from foldquant.runtime.builder import build_engine, profiles_from_onnx
@@ -55,10 +55,10 @@ class BuildConfig:
     engine_dir: str
     """Destination engine directory."""
 
-    llm_max_seq_len: Optional[int] = None
+    llm_max_seq_len: int | None = None
     """Upper bound of the LLM sequence profile (default: ``max(2 * captured, captured + 64)``, capped at 4096)."""
 
-    vl_max_seq_len: Optional[int] = None
+    vl_max_seq_len: int | None = None
     """Upper bound of the DiT's vision-language sequence profile (same default rule)."""
 
     workspace_mb: int = 8192
@@ -68,11 +68,11 @@ def _default_max(opt: int) -> int:
     return max(2 * opt, opt + 64)
 
 
-def load_manifest(onnx_dir: Path) -> Dict[str, Any]:
+def load_manifest(onnx_dir: Path) -> dict[str, Any]:
     return json.loads((onnx_dir / MANIFEST_NAME).read_text())
 
 
-def dim_ranges(metadata: Dict[str, Any], args: BuildConfig) -> Dict[str, Any]:
+def dim_ranges(metadata: dict[str, Any], args: BuildConfig) -> dict[str, Any]:
     """``{dim_name: int | (min, opt, max)}`` for every symbolic dimension the two graphs carry."""
     llm_opt = int(metadata["llm_seq_len"])
     vl_opt = int(metadata["vl_seq_len"])
@@ -107,11 +107,11 @@ def build(args: BuildConfig) -> Path:
     logger.info("dimension ranges: %s", ranges)
 
     manifest = load_manifest(onnx_dir)
-    plugin_libs: List[str] = list(manifest["plugin_libs"])
+    plugin_libs: list[str] = list(manifest["plugin_libs"])
     if plugin_libs:
         prepare_plugins(plugin_libs)
 
-    record: Dict[str, Any] = {
+    record: dict[str, Any] = {
         "onnx_dir": str(onnx_dir),
         "metadata": metadata,
         "dim_ranges": {k: v for k, v in ranges.items()},

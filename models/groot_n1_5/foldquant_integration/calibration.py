@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 import torch
@@ -43,7 +44,7 @@ class SampleId:
     step: int
 
 
-def resolve_embodiment(model_path: str, embodiment_tag: Optional[str]):
+def resolve_embodiment(model_path: str, embodiment_tag: str | None):
     """``EmbodimentTag`` for the run — explicit, or the single one the checkpoint's metadata names.
 
     A tag is accepted by value (``new_embodiment``) or by member name
@@ -80,11 +81,11 @@ def resolve_embodiment(model_path: str, embodiment_tag: Optional[str]):
 
 def load_policy(
     model_path: str,
-    embodiment_tag: Optional[str],
+    embodiment_tag: str | None,
     device: Any = "cuda",
     *,
     data_config: str = LIBERO_DATA_CONFIG,
-    denoising_steps: Optional[int] = None,
+    denoising_steps: int | None = None,
 ):
     """The upstream ``Gr00tPolicy``, assembled as ``scripts/inference_service.py`` assembles it."""
     ensure_upstream_on_path()
@@ -128,7 +129,7 @@ def plan_samples(
     seed: int,
     exclude_episodes: Sequence[int] = (),
     heldout: bool = False,
-) -> List[SampleId]:
+) -> list[SampleId]:
     """Choose ``(episode, step)`` pairs spread across episodes.
 
     Episodes are visited round-robin in a seeded shuffled order so the sample
@@ -143,12 +144,12 @@ def plan_samples(
     if len(episode_ids) != len(episode_lengths):
         raise ValueError("episode_ids and episode_lengths differ in length")
     rng = np.random.default_rng(seed + (1_000_003 if heldout else 0))
-    excluded = set(int(e) for e in exclude_episodes)
+    excluded = {int(e) for e in exclude_episodes}
     candidates = [i for i in range(len(episode_ids)) if int(episode_ids[i]) not in excluded]
     if not candidates:
         raise ValueError("no episodes left to sample from after exclusions")
     rng.shuffle(candidates)
-    samples: List[SampleId] = []
+    samples: list[SampleId] = []
     while len(samples) < num_samples:
         for i in candidates:
             if len(samples) >= num_samples:
@@ -158,7 +159,7 @@ def plan_samples(
     return samples
 
 
-def build_observations(policy, dataset, samples: Sequence[SampleId]) -> List[Dict[str, Any]]:
+def build_observations(policy, dataset, samples: Sequence[SampleId]) -> list[dict[str, Any]]:
     """The raw dataset step per sample — what upstream's offline evaluation hands ``get_action``.
 
     ``get_step_data`` decodes the frames of the requested step only, so
@@ -166,7 +167,7 @@ def build_observations(policy, dataset, samples: Sequence[SampleId]) -> List[Dic
     The step carries the action chunk as well as the observation; the policy
     normalises and ignores it, exactly as in ``gr00t.utils.eval``.
     """
-    observations: Dict[SampleId, Dict[str, Any]] = {}
+    observations: dict[SampleId, dict[str, Any]] = {}
     for s in sorted(set(samples), key=lambda s: (s.episode, s.step)):
         observations[s] = dataset.get_step_data(s.episode, s.step)
     logger.info("built %d observations from %d episodes", len(samples), len({s.episode for s in samples}))
@@ -181,7 +182,7 @@ def sample_observations(
     seed: int,
     exclude_episodes: Sequence[int] = (),
     heldout: bool = False,
-) -> Tuple[List[SampleId], List[Dict[str, Any]]]:
+) -> tuple[list[SampleId], list[dict[str, Any]]]:
     """:func:`plan_samples` + :func:`build_observations`."""
     samples = plan_samples(
         dataset.trajectory_ids,
@@ -194,7 +195,7 @@ def sample_observations(
     return samples, build_observations(policy, dataset, samples)
 
 
-def make_forward_loop(policy, observations: Sequence[Dict[str, Any]], *, seed: int) -> Callable[[Any], None]:
+def make_forward_loop(policy, observations: Sequence[dict[str, Any]], *, seed: int) -> Callable[[Any], None]:
     """The ``forward_loop(module)`` every FoldQuant export takes.
 
     It replays the full policy — the module argument is ignored on purpose:

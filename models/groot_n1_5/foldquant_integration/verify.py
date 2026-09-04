@@ -30,7 +30,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -50,14 +50,14 @@ class VerifyConfig:
     engine_dir: str
     """Engine directory produced by :mod:`.build_engines`."""
 
-    output: Optional[str] = None
+    output: str | None = None
     """Write the report here as JSON (default: ``<engine_dir>/verify.json``)."""
 
-    embodiment_tag: Optional[str] = None
+    embodiment_tag: str | None = None
     data_config: str = LIBERO_DATA_CONFIG
     """``module:Class`` data config, as given to the export."""
 
-    denoising_steps: Optional[int] = None
+    denoising_steps: int | None = None
     """Flow-matching steps for both passes; the checkpoint's own value when omitted."""
 
     num_samples: int = 16
@@ -70,7 +70,7 @@ class VerifyConfig:
     """Sample from every episode, calibration ones included — for datasets too small to hold any out.
     The report then measures fit, not generalisation, and says so."""
 
-    split_from: Optional[str] = None
+    split_from: str | None = None
     """Engine directory whose FoldQuant manifest defines the calibration split (default: ``engine_dir``).
     Point every arm of a comparison at the same directory and they all score the same held-out
     observations."""
@@ -91,14 +91,14 @@ def _token_cos_min(a: torch.Tensor, b: torch.Tensor) -> float:
     return float(torch.nn.functional.cosine_similarity(a2, b2, dim=1).min())
 
 
-def _load_manifest(engine_dir: Path) -> Dict[str, Any]:
+def _load_manifest(engine_dir: Path) -> dict[str, Any]:
     path = engine_dir / MANIFEST_NAME
     if not path.is_file():
         raise FileNotFoundError(f"{path} not found: not a FoldQuant engine directory")
     return json.loads(path.read_text())
 
 
-def _action_vector(action: Dict[str, Any]) -> torch.Tensor:
+def _action_vector(action: dict[str, Any]) -> torch.Tensor:
     parts = []
     for k in sorted(action.keys()):
         v = action[k]
@@ -107,9 +107,9 @@ def _action_vector(action: Dict[str, Any]) -> torch.Tensor:
     return torch.cat(parts)
 
 
-def run_pass(policy, observations: List[Dict[str, Any]], seed: int) -> Dict[str, List[torch.Tensor]]:
-    feats: List[torch.Tensor] = []
-    acts: List[torch.Tensor] = []
+def run_pass(policy, observations: list[dict[str, Any]], seed: int) -> dict[str, list[torch.Tensor]]:
+    feats: list[torch.Tensor] = []
+    acts: list[torch.Tensor] = []
 
     def _hook(_m, _args, output):
         feats.append(output["backbone_features"].detach().float().cpu().clone())
@@ -127,7 +127,7 @@ def run_pass(policy, observations: List[Dict[str, Any]], seed: int) -> Dict[str,
     return {"backbone_features": feats, "actions": acts}
 
 
-def main(args: VerifyConfig) -> Dict[str, Any]:
+def main(args: VerifyConfig) -> dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     engine_dir = Path(args.engine_dir)
     manifest = _load_manifest(engine_dir)

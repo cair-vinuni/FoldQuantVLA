@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 import tyro
 
@@ -39,20 +38,20 @@ class ServeConfig:
     model_path: str
     """Checkpoint directory or Hugging Face id."""
 
-    embodiment_tag: Optional[str] = None
+    embodiment_tag: str | None = None
     """Embodiment tag (the released LIBERO checkpoints use ``new_embodiment``)."""
 
-    engine_dir: Optional[str] = None
+    engine_dir: str | None = None
     """FoldQuant engine directory; omit to serve the bf16 PyTorch policy."""
 
     data_config: str = LIBERO_DATA_CONFIG
     """``module:Class`` data config, as upstream's inference service takes it."""
 
-    denoising_steps: Optional[int] = None
+    denoising_steps: int | None = None
     """Flow-matching steps (upstream serves the LIBERO checkpoints with 8)."""
 
     port: int = 5555
-    api_token: Optional[str] = None
+    api_token: str | None = None
 
 
 def main(args: ServeConfig) -> None:

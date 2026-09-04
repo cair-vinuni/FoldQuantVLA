@@ -30,9 +30,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -53,12 +54,12 @@ class BenchmarkConfig:
     dataset_path: str
     """Dataset the benchmark observation is read from (first episode, step 0)."""
 
-    arms: List[str] = field(default_factory=list)
+    arms: list[str] = field(default_factory=list)
     """Engine directories to time, as ``LABEL=DIR`` (or a bare ``DIR``, labelled by its parent's name)."""
 
-    embodiment_tag: Optional[str] = None
+    embodiment_tag: str | None = None
     data_config: str = LIBERO_DATA_CONFIG
-    denoising_steps: Optional[int] = None
+    denoising_steps: int | None = None
     """Flow-matching steps (upstream serves the LIBERO checkpoints with 8)."""
 
     num_iterations: int = 20
@@ -67,13 +68,13 @@ class BenchmarkConfig:
     skip_eager: bool = False
     """Skip the PyTorch Eager arm (the speedup table then has no baseline)."""
 
-    output: Optional[str] = None
+    output: str | None = None
     """Write per-arm medians and the raw per-iteration timings here as JSON."""
 
     video_backend: str = "torchcodec"
 
 
-def _parse_arms(specs: List[str]) -> List[tuple]:
+def _parse_arms(specs: list[str]) -> list[tuple]:
     arms = []
     for spec in specs:
         label, sep, path = spec.partition("=")
@@ -91,7 +92,7 @@ def _timed(fn: Callable[[], Any]) -> float:
     return (time.perf_counter() - t0) * 1000.0
 
 
-def _prepared(policy, observation: Dict[str, Any]) -> Dict[str, Any]:
+def _prepared(policy, observation: dict[str, Any]) -> dict[str, Any]:
     """The observation as ``Gr00tPolicy.get_action`` hands it to ``apply_transforms``."""
     from gr00t.model.policy import unsqueeze_dict_values
 
@@ -101,13 +102,13 @@ def _prepared(policy, observation: Dict[str, Any]) -> Dict[str, Any]:
     return {k: (v if isinstance(v, np.ndarray) else np.array(v)) for k, v in obs.items()}
 
 
-def time_components(policy, observation: Dict[str, Any], args: BenchmarkConfig) -> Dict[str, List[float]]:
+def time_components(policy, observation: dict[str, Any], args: BenchmarkConfig) -> dict[str, list[float]]:
     from gr00t.model.policy import COMPUTE_DTYPE
 
     model = policy.model
     obs = _prepared(policy, observation)
-    timings: Dict[str, List[float]] = {k: [] for k in COMPONENT_ORDER}
-    state: Dict[str, Any] = {}
+    timings: dict[str, list[float]] = {k: [] for k in COMPONENT_ORDER}
+    state: dict[str, Any] = {}
 
     def _data_processing():
         # The transform chain consumes the dict it is given; get_action hands it a copy.
@@ -148,7 +149,7 @@ def time_components(policy, observation: Dict[str, Any], args: BenchmarkConfig) 
     return timings
 
 
-def markdown_table(results: Dict[str, Dict[str, List[float]]], device: str, denoising_steps: int) -> str:
+def markdown_table(results: dict[str, dict[str, list[float]]], device: str, denoising_steps: int) -> str:
     lines = [
         f"Device: {device} | {denoising_steps} denoising steps | median ms",
         "",
@@ -167,7 +168,7 @@ def markdown_table(results: Dict[str, Dict[str, List[float]]], device: str, deno
     return "\n".join(lines)
 
 
-def main(args: BenchmarkConfig) -> Dict[str, Any]:
+def main(args: BenchmarkConfig) -> dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if not torch.cuda.is_available():
         raise SystemExit("benchmarking needs a CUDA device")
@@ -191,12 +192,12 @@ def main(args: BenchmarkConfig) -> Dict[str, Any]:
         denoising_steps,
     )
 
-    results: Dict[str, Dict[str, List[float]]] = {}
+    results: dict[str, dict[str, list[float]]] = {}
     if not args.skip_eager:
         logger.info("arm: PyTorch Eager")
         results["PyTorch Eager"] = time_components(policy, observation, args)
 
-    components: Dict[str, List[str]] = {}
+    components: dict[str, list[str]] = {}
     for label, engine_dir in _parse_arms(args.arms):
         logger.info("arm: %s (%s)", label, engine_dir)
         installed = install_engines(policy, engine_dir)
