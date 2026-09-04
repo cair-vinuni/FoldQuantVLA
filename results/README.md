@@ -47,12 +47,20 @@ unvalidated emulation would still produce a number, and that number would look
 like a cascade measurement without being one.
 
 The arm would also have nothing to answer. On this family W4A4 does not
-survive the LLM at all: over the same 32 held-out observations the W4A4 arm
-reads 0.862 mean / 0.930 median action cosine with a **median** max-abs of
-1.99 — saturation in the typical observation, not in a tail — against 0.991 /
-0.99987 / 0.033 for W8A8. Cascade recalibrates the expert; it cannot repair an
-arm whose median observation has already flipped a channel. The honest
-reporting is the W4A4 row as measured, with this cell absent and explained.
+survive: over the same 32 held-out observations the W4A4 arm reads 0.862 mean
+/ 0.930 median action cosine with a **median** max-abs of 1.99 — saturation in
+the typical observation, not in a tail — against 0.991 / 0.99987 / 0.033 for
+W8A8. Cascade recalibrates the expert; it cannot repair an arm whose median
+observation has already flipped a channel. The honest reporting is the W4A4
+row as measured, with this cell absent and explained.
+
+Which of the two graphs carries that failure is a separate measurement and is
+not settled by the figures above: the W4A4 arm quantizes the LLM and the
+expert together, so its verify.json cannot attribute the flip to either.
+`--components llm` and `--components expert` on the same engines answer it,
+and the per-seam files are reported beside the arm where they exist. Evidence
+from other families and other configurations bears on the mechanism but not on
+this arm.
 
 ## Calibration
 
