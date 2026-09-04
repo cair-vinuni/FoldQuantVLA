@@ -200,11 +200,13 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         "pytorch_repeat_action_cos_min": repeat,
         "backbone_features": {
             "cos_mean": float(np.mean(feat_cos)),
+            "cos_median": float(np.median(feat_cos)),
             "cos_min": float(np.min(feat_cos)),
             "token_cos_min": float(np.min(feat_tok)),
         },
         "actions": {
             "cos_mean": float(np.mean(act_cos)),
+            "cos_median": float(np.median(act_cos)),
             "cos_min": float(np.min(act_cos)),
             "max_abs": float(np.max(act_abs)),
             "max_abs_mean": float(np.mean(act_abs)),

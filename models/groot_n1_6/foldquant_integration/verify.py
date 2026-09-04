@@ -67,6 +67,11 @@ class VerifyConfig:
     compared with, and both score the same held-out observations — the float engines are the
     floor of the drift metric, not zero."""
 
+    components: str = ""
+    """Restrict the swap to these engines (``llm``, ``dit``), comma separated; empty installs every
+    engine the directory holds. Scoring one seam at a time is how a drift figure is attributed to the
+    LLM or to the DiT rather than to their sum."""
+
     video_backend: str = "torchcodec"
 
 
@@ -163,7 +168,8 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     repeat = min(_cos(a, b) for a, b in zip(ref["actions"], again["actions"]))
     logger.info("PyTorch repeatability (seeded): action cosine min %.6f", repeat)
 
-    installed = install_engines(policy, engine_dir)
+    wanted = [c.strip() for c in args.components.split(",") if c.strip()] or None
+    installed = install_engines(policy, engine_dir, components=wanted)
     components = sorted(installed.engines)
     logger.info("engines installed: %s", ", ".join(components))
     got = run_pass(policy, observations, args.seed)
@@ -180,6 +186,7 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         "schemes": manifest["schemes"] if manifest is not None else {},
         "cascade": manifest.get("cascade", False) if manifest is not None else False,
         "components": components,
+        "components_requested": wanted,
         "split_from": public_path(args.split_from),
         "num_samples": len(samples),
         "held_out": bool(excluded),
@@ -197,11 +204,13 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         "pytorch_repeat_action_cos_min": repeat,
         "backbone_features": {
             "cos_mean": float(np.mean(feat_cos)),
+            "cos_median": float(np.median(feat_cos)),
             "cos_min": float(np.min(feat_cos)),
             "token_cos_min": float(np.min(feat_tok)),
         },
         "actions": {
             "cos_mean": float(np.mean(act_cos)),
+            "cos_median": float(np.median(act_cos)),
             "cos_min": float(np.min(act_cos)),
             "max_abs": float(np.max(act_abs)),
             "max_abs_mean": float(np.mean(act_abs)),

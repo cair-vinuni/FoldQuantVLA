@@ -46,6 +46,30 @@ and of the decoded action chunk, plus action max-abs error. The PyTorch
 repeatability under the same seeds is reported alongside so the drift is read
 against the sampler's own floor.
 
+**This is the harder of the two protocols in circulation, and the two are not
+interchangeable.** A drift figure depends as much on which observations it is
+measured over as on the arm under test. Held-out episodes at mid-trajectory
+steps — what `verify` samples — put the policy in states the calibration never
+saw, partway through a motion, where the scene has moved and the action is
+least constrained. A validation suite that instead draws its frames from the
+*build* dataset, round-robin over episodes and early in each, is measuring
+calibration-adjacent near-initial states, and the same engine scores materially
+higher there. Where a number from another harness appears beside one of these,
+its sampling protocol is stated with it; a column that mixes the two compares
+observation sets, not arms.
+
+For the same reason the tables report the **median** action cosine beside the
+mean and the min. These distributions have tails — a handful of observations
+carry nearly all of the mean's deficit, while the median sits with the bulk —
+so a mean alone reads as a uniform degradation, which is not what the arm does.
+Per-observation drift is in each arm's `verify.json`, so a tail can be examined
+rather than inferred.
+
+`--components` (`llm`, and the family's action module) installs one engine and
+leaves the other in PyTorch, which is how a drift figure is attributed to a
+seam rather than to the sum of both. GR00T N1.7 does the same through
+upstream's own `--mode` (`vit_llm_only`, `dit_only`).
+
 ## Success rate (`eval_libero`)
 
 LIBERO `spatial`, `object`, `goal`, `10` — 10 tasks each, `n` episodes per

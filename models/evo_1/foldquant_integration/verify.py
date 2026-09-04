@@ -178,11 +178,13 @@ def main(args: VerifyConfig) -> dict[str, Any]:
         "pytorch_repeat_action_cos_min": repeat,
         "fused_tokens": {
             "cos_mean": float(np.mean(tok_cos)),
+            "cos_median": float(np.median(tok_cos)),
             "cos_min": float(np.min(tok_cos)),
             "position_cos_min": float(np.min(tok_min)),
         },
         "actions": {
             "cos_mean": float(np.mean(act_cos)),
+            "cos_median": float(np.median(act_cos)),
             "cos_min": float(np.min(act_cos)),
             "max_abs": float(np.max(act_abs)),
             "max_abs_mean": float(np.mean(act_abs)),

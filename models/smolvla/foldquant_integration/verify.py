@@ -182,11 +182,13 @@ def main(args: VerifyConfig) -> dict[str, Any]:
         "pytorch_repeat_action_cos_min": repeat,
         "kv_stack": {
             "cos_mean": float(np.mean(kv_cos)),
+            "cos_median": float(np.median(kv_cos)),
             "cos_min": float(np.min(kv_cos)),
             "position_cos_min": float(np.min(kv_pos)),
         },
         "actions": {
             "cos_mean": float(np.mean(act_cos)),
+            "cos_median": float(np.median(act_cos)),
             "cos_min": float(np.min(act_cos)),
             "max_abs": float(np.max(act_abs)),
             "max_abs_mean": float(np.mean(act_abs)),
