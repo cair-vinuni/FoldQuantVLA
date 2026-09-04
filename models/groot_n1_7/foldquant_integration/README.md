@@ -127,6 +127,35 @@ without it, by upstream's loader as much as by these tools.
 Plugin graphs are emitted at the batch the calibration captured (1), so
 TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 
+## Smoke check
+
+The chain above, run end to end on the LIBERO 4-suite fine-tune
+(`--embodiment-tag libero_sim`, RTX 4070 Ti SUPER / sm89, TensorRT 10.15):
+LLM `w8a8_sr`, `--cascade`, 128 calibration observations, scored by
+`verify` on 32 held-out observations from episodes the calibration never
+saw. The float engines are scored on the same observations
+(`--split-from`) — they are the floor of the drift metric, not zero:
+
+| engines | backbone cos mean / min | actions cos mean / min | actions max abs |
+|---|---|---|---|
+| float (upstream bf16) | 0.99997 / 0.99991 | 0.99977 / 0.99415 | 0.436 |
+| LLM `w8a8_sr` + DiT `w4a4_sh` | 0.99996 / 0.99990 | 0.99950 / 0.99653 | 0.330 |
+| LLM `w8a8_sr` + DiT `w4a4_shg` | 0.99996 / 0.99990 | 0.99951 / 0.99184 | 0.504 |
+
+Two readings. Quantization costs 0.00026 of mean action cosine over the
+float engines; four Euler steps in bf16 already move single actions by 0.4
+in the float engines themselves, so `max_abs` on a handful of observations
+does not separate the arms. And on this DiT the GPTQ pass (`_shg`) does not
+improve on round-to-nearest (`_sh`) at 128 observations — the means tie and
+its worst observation is worse. Success rate under the upstream LIBERO
+harness (`eval_libero`) is what decides between them.
+
+Cost on that GPU: kernels build 30 s; upstream float export + engines
+3.5 min; `export_foldquant` LLM `w8a8_sr` 17 s, DiT `w4a4_sh` 20 s, DiT
+`w4a4_shg` 20 min (the 129 Hessians are accumulated on the host in float64 —
+they do not fit next to the model on 16 GB); `build_engines` 47 s; `verify`
+40 s for 32 observations.
+
 ## Files
 
 | file | role |
