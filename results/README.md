@@ -78,7 +78,7 @@ seams need the eager model, so the compiled arm is timed end to end only).
 
 ## Results
 
-Measured outputs are committed under `results/<family>/<arm>/`:
+Measured outputs are committed beside this file as `<family>/<arm>/`:
 `verify.json`, `libero/summary.json`, `benchmark.log`, and the arm's
 `foldquant_export.json`. Tables in this file are regenerated from those files.
 

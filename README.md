@@ -57,7 +57,7 @@ models/groot_n1_5/    upstream GR00T N1.5 + foldquant_integration/
 models/pi05/          upstream openpi (π₀ / π₀.₅ PyTorch path) + foldquant_integration/
 third_party/          CUTLASS (submodule), vendored TensorRT public headers
 tests/                unit tests for the algorithm, emitters, kernel locator / build
-paper/                evaluation protocol and measured results
+results/              evaluation protocol and measured results
 ```
 
 ## Install
@@ -96,7 +96,7 @@ export/engines with the upstream pipeline → `export_foldquant` → `build_engi
 
 ## Results
 
-[`paper/README.md`](paper/README.md) describes the protocol (upstream
+[`results/README.md`](results/README.md) describes the protocol (upstream
 harnesses, held-out drift, LIBERO success rate, latency on RTX 4070 Ti SUPER
 and Jetson AGX Orin) and holds the measured numbers per family and arm.
 
