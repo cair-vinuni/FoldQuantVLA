@@ -38,6 +38,22 @@ The second quantized module is the family's action generator, whatever its
 shape: a DiT for GR00T, a Gemma-300M expert for pi, SmolVLA's dual-stream
 expert, Evo-1's cross-attention flow-matching head.
 
+**SmolVLA has no W4A4-cascade cell**, and the reason is worth stating rather
+than leaving a blank. Cascade calibrates the action module on the activations
+an already-quantized LLM produces, which needs a PyTorch fake-quant of that
+LLM; the one here is validated for Qwen2/Qwen3/Qwen3-VL and Gemma, and refuses
+SmolLM2 rather than emulating a convention it has not been checked against. An
+unvalidated emulation would still produce a number, and that number would look
+like a cascade measurement without being one.
+
+The arm would also have nothing to answer. On this family W4A4 does not
+survive the LLM at all: over the same 32 held-out observations the W4A4 arm
+reads 0.862 mean / 0.930 median action cosine with a **median** max-abs of
+1.99 — saturation in the typical observation, not in a tail — against 0.991 /
+0.99987 / 0.033 for W8A8. Cascade recalibrates the expert; it cannot repair an
+arm whose median observation has already flipped a channel. The honest
+reporting is the W4A4 row as measured, with this cell absent and explained.
+
 ## Calibration
 
 128 observations, seeded (`--seed 0`), episode-balanced (round-robin over a
