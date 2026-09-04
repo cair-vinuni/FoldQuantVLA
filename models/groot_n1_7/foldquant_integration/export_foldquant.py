@@ -77,7 +77,7 @@ class ExportConfig:
     """Calibration observations (episode, step) pairs spread over the dataset."""
 
     seed: int = 0
-    """Seed of the calibration sample."""
+    """Seed of the calibration sample and of the denoising noise replayed during calibration."""
 
     cascade: bool = False
     """Calibrate the DiT on the activations of the *quantized* LLM (fake-quant emulation)."""
@@ -170,7 +170,7 @@ def main(args: ExportConfig) -> Path:
     samples, observations = calibration.sample_observations(
         policy, dataset, args.num_calib, seed=args.seed
     )
-    loop = calibration.make_forward_loop(policy, observations)
+    loop = calibration.make_forward_loop(policy, observations, seed=args.seed)
     modules = _module_paths(policy)
 
     shapes = capture_shape_metadata(policy, observations[0])

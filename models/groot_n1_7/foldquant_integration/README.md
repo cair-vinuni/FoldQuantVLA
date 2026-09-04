@@ -38,6 +38,11 @@ ABI-mismatched library.
 
 ## Workflow
 
+Every step takes `--embodiment-tag`. It may be omitted only when the
+checkpoint's `processor_config.json` names a single embodiment; a fine-tune
+that names several (the LIBERO 4-suite checkpoint lists nine) is refused
+without it, by upstream's loader as much as by these tools.
+
 1. **Float export and engines (upstream).** Everything FoldQuant does not
    replace — ViT, VL self-attention, state/action encoders, action decoder —
    comes from the upstream pipeline:
@@ -68,6 +73,20 @@ ABI-mismatched library.
    GPTQ Hessians see the activations it will receive at deployment. Pass
    `--llm-scheme none` (or `--dit-scheme none`) to leave a module at the
    float export.
+
+   The export is reproducible: the sample plan and the flow-matching noise
+   `get_action` starts from are both driven by `--seed`, so the same
+   checkpoint, dataset and arguments emit byte-identical plugin graphs (two
+   `w4a4_shg` exports compared attribute by attribute). Seeding also keeps
+   the GPTQ pass on the very activations the SmoothQuant pass fitted.
+
+   Keep `--num-calib` at 128 or more for a GPTQ arm. The DiT's widest site
+   (FFN `proj2`, K = 6144) sees 41 action-stream tokens × 4 denoising steps
+   per observation, so 32 observations give a 5248-row Hessian — rank
+   deficient at every block — and the fold then tracks whichever noise it
+   happened to see: two unseeded 32-observation `w4a4_shg` exports differed
+   in 17–37 % of their INT4 weight bytes and by 0.003 in mean action cosine
+   on the same held-out set. 128 observations give 21k rows.
 
 3. **Build the engine directory.**
 

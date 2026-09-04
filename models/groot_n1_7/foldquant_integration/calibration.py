@@ -168,17 +168,27 @@ def sample_observations(
     return samples, build_observations(policy, dataset, samples)
 
 
-def make_forward_loop(policy, observations: Sequence[Dict[str, Any]]) -> Callable[[Any], None]:
+def make_forward_loop(
+    policy, observations: Sequence[Dict[str, Any]], *, seed: int
+) -> Callable[[Any], None]:
     """The ``forward_loop(module)`` every FoldQuant export takes.
 
     It replays the full policy — the module argument is ignored on purpose:
     the LLM and DiT hooks fire wherever they sit in the graph, and the DiT is
     reached only through the whole denoising loop.
+
+    ``torch.manual_seed(seed + i)`` precedes observation ``i`` every time the
+    loop runs. The DiT's action tokens start from ``torch.randn`` noise inside
+    ``get_action``, so without it each export — and each calibration pass
+    within one export — fits on a different activation set: the Hessians of
+    the GPTQ pass would be taken on inputs the SmoothQuant scales never saw,
+    and two exports of the same arm would round the DiT differently.
     """
 
     def _loop(_module: Any) -> None:
         with torch.inference_mode():
-            for obs in observations:
+            for i, obs in enumerate(observations):
+                torch.manual_seed(seed + i)
                 policy.get_action(obs)
 
     return _loop
