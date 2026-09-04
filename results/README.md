@@ -1,10 +1,19 @@
 # Evaluation protocol and results
 
-Every number reported for FoldQuant is produced by the tools under
+Every number committed here is produced by the tools under
 `models/<family>/foldquant_integration/`, which drive the **upstream**
 evaluation harness of that family — the same rollout loop, wrappers,
 episode caps and success definition the model's authors used to report
 their own numbers. Nothing in this repository re-implements an evaluator.
+
+That fidelity has a consequence worth stating before any table is read: each
+family is reproduced under *its own* loop, and those loops differ (see the
+settle-step note under Success rate). These are therefore **per-family
+reproductions** — each answering "what does this arm do to this policy, run
+the way its authors run it". A cross-family success-rate comparison is a
+different measurement and needs one harness applied uniformly to all six,
+which these drivers deliberately are not. Where a paper table compares
+families in one column, it comes from such a uniform harness and says so.
 
 ## Arms
 
@@ -123,7 +132,8 @@ eager model, so the compiled arm is timed end to end only).
 
 Measured outputs are committed beside this file as `<family>/<arm>/`:
 `verify.json`, `libero/summary.json`, `benchmark.log`, and the arm's
-`foldquant_export.json`. Tables in this file are regenerated from those files.
+`foldquant_export.json`. Tables in this file are regenerated from those files,
+so every cell traces to a committed artifact rather than to a transcript.
 
 Each integration README carries a **smoke check** — a 16-observation
 calibration, 8 held-out observations, one RTX 4070 Ti SUPER — that exercises
