@@ -190,3 +190,28 @@ def test_the_hessian_is_taken_in_the_frame_the_kernel_sees(fold_order: str) -> N
     assert not torch.allclose(hess["s"], raw, rtol=1e-3), "Hessian was taken on the raw activation"
     assert hess["s"].shape == (k, k)
     assert torch.allclose(hess["s"], hess["s"].T, atol=1e-6), "Hessian must stay symmetric"
+
+
+@pytest.mark.parametrize("device", ["cpu"] + (["cuda"] if torch.cuda.is_available() else []))
+def test_the_hessian_accumulates_the_exact_fp32_per_call_sum(device: str) -> None:
+    """The accumulator is float64 on the host, fed by fp32 per-call Gram matrices.
+
+    Staging the fp32 matrix (pinned when the activation is on a GPU) and adding
+    in place is the fast path; the value it must equal is the plain sum of the
+    per-call fp32 ``x_r^T x_r`` widened to float64 — no extra rounding, and the
+    same result whether the calls came from the CPU or a device.
+    """
+    torch.manual_seed(0)
+    k, bs = 128, 64
+    w = torch.randn(64, k)
+    perm, rmat = foldq.site_rotation(w, bs, True)
+    s = torch.rand(k) + 0.5
+    hess, accum = foldq.hessian_accumulator({"s": (perm, rmat)}, {"s": s}, "before")
+    expected = torch.zeros(k, k, dtype=torch.float64)
+    for _ in range(3):
+        x = torch.randn(64, k, device=device)
+        accum("s", x)
+        xr = omega.apply_rotation(x.float() / s.to(device), perm, rmat, bs)
+        expected += (xr.T @ xr).double().cpu()
+    assert hess["s"].dtype == torch.float64 and hess["s"].device.type == "cpu"
+    assert torch.equal(hess["s"], expected)
