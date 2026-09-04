@@ -45,6 +45,7 @@ import onnx.helper as oh
 from . import foldq
 from . import omega_rotation as omega
 from .dit_common import (
+    ATTEND_ALL_MASK,
     DIT_INPUT_NAMES,
     DIT_OUTPUT_NAME,
     DIT_SA_SEQ_DIM,
@@ -55,6 +56,7 @@ from .dit_common import (
     PLUGIN_VERSION,
     DiTWeights,
     bias_f32,
+    emit_attend_all_mask,
     emit_mask_routing,
     emit_output_head,
     emit_timestep_encoding,
@@ -189,15 +191,18 @@ def _build_w4a4_graph(
 
     emit_timestep_encoding(w, nodes, inits)
     emit_mask_routing(nodes, inits)
+    # A plain DiT routes neither half; it needs the attend-everything mask instead.
+    if attend_n is None:
+        emit_attend_all_mask(nodes, inits)
 
     # Shared encoder rotation from the stacked cross-attn KV weights, emitted once.
     # EncoderPreQuantInt4 outputs the INT4-rotated encoder shared by all cross
     # blocks. Under SmoothQuant the shared per-channel encoder scale is folded into
     # the encoder rotation (rotation_enc is FP32 — the encoder kernel reads FP32).
     kv_stacked = _cross_kv_weights(w)
-    assert (
-        kv_stacked.shape[1] % block_size == 0
-    ), f"kv_dim {kv_stacked.shape[1]} not divisible by block_size {block_size}"
+    assert kv_stacked.shape[1] % block_size == 0, (
+        f"kv_dim {kv_stacked.shape[1]} not divisible by block_size {block_size}"
+    )
     enc_perm, enc_R = foldq.site_rotation(kv_stacked, block_size, fwht)
     # The encoder rotation is the one bake site NOT produced by fold_macro_site
     # (EncoderPreQuantInt4 shares it across all cross blocks), so it must fold
@@ -255,9 +260,15 @@ def _build_w4a4_graph(
         # instead of a baked matrix; the scale rides on the raw channel.
         bf_o = _pre_vec("act_scale_pre_o", s_o)
 
-        attn_mask_name = (
-            ("non_img_mask_add" if (idx % (2 * attend_n) == 0) else "img_mask_add") if attn_kind == "cross" else None
-        )
+        # Cross-attention mask. An alternating DiT switches text/image on its own
+        # schedule; a plain DiT has no split, so every cross block attends the whole
+        # encoder sequence (ATTEND_ALL_MASK) exactly as its unmasked forward does.
+        if attn_kind != "cross":
+            attn_mask_name = None
+        elif attend_n is None:
+            attn_mask_name = ATTEND_ALL_MASK
+        else:
+            attn_mask_name = "non_img_mask_add" if (idx % (2 * attend_n) == 0) else "img_mask_add"
 
         if attn_kind == "self":
             wQKV = torch.cat([wQ, wK, wV], dim=0)  # (3*inner, dim), input = x

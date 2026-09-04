@@ -39,6 +39,11 @@ import onnx.helper as oh
 
 from . import foldq
 from .dit_common import (
+    ATTEND_ALL_MASK,
+    emit_attend_all_mask,
+    resolve_attend_n,
+)
+from .dit_common import (
     DIT_INPUT_NAMES as _DIT_INPUT_NAMES,
 )
 from .dit_common import (
@@ -79,9 +84,6 @@ from .dit_common import (
 )
 from .dit_common import (
     emit_timestep_encoding as _emit_timestep_encoding,
-)
-from .dit_common import (
-    resolve_attend_n,
 )
 from .dit_common import (
     to_bytes_f32 as _to_bytes_f32,
@@ -187,6 +189,9 @@ def _build_v2_dynamic_graph(
 
     _emit_timestep_encoding(w, nodes, inits)
     _emit_mask_routing(nodes, inits)
+    # A plain DiT routes neither half; it needs the attend-everything mask instead.
+    if attend_n is None:
+        emit_attend_all_mask(nodes, inits)
 
     # EncoderPreQuant once -> (encoder_i8 INT32-packed, encoder_scale FP32);
     # all cross-attn blocks share one INT8 quant of the encoder. Dynamic mode =>
@@ -225,10 +230,15 @@ def _build_v2_dynamic_graph(
         s_in = _scale(f"{b}_qkv") if attn_kind == "self" else _scale(f"{b}_q")
         s_o = _scale(f"{b}_o")
 
-        # Image/text alternation: idx % (2 * attend_n) == 0 -> text mask, else image.
-        attn_mask_name = (
-            ("non_img_mask_add" if (idx % (2 * attend_n) == 0) else "img_mask_add") if attn_kind == "cross" else None
-        )
+        # Cross-attention mask. An alternating DiT switches text/image on its own
+        # schedule; a plain DiT has no split, so every cross block attends the whole
+        # encoder sequence (ATTEND_ALL_MASK) exactly as its unmasked forward does.
+        if attn_kind != "cross":
+            attn_mask_name = None
+        elif attend_n is None:
+            attn_mask_name = ATTEND_ALL_MASK
+        else:
+            attn_mask_name = "non_img_mask_add" if (idx % (2 * attend_n) == 0) else "img_mask_add"
 
         if attn_kind == "self":
             qkv_i8, sQKV_b, _, _ = _macro(torch.cat([wQ, wK, wV], dim=0), s_in)

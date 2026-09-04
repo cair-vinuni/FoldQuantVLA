@@ -15,7 +15,7 @@ Constructs ONNX only: no ``tensorrt`` import, no ``.so`` load, no
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import onnx
@@ -94,26 +94,46 @@ def bf16_initializer(name: str, t: Any) -> onnx.TensorProto:
     return proto
 
 
-def resolve_attend_n(dit_module: Any) -> int:
-    """The DiT's ``attend_text_every_n_blocks``, or a clear failure.
+def resolve_attend_n(dit_module: Any) -> Optional[int]:
+    """The DiT's ``attend_text_every_n_blocks``, or ``None`` for a plain DiT.
 
-    The plugin graph bakes cross-attention mask routing from this value
-    (``idx % (2 * attend_n) == 0`` selects the text-only vs image mask), so
-    guessing it produces a graph that builds and runs at full speed while
-    attending to the wrong tokens. Only ``AlternateVLDiT`` defines it - a
-    plain non-alternating ``DiT`` has no such schedule and must not be
-    exported as though it did.
+    ``AlternateVLDiT`` alternates its cross-attention between the text-only and
+    the image tokens on a schedule this value sets, and the plugin graph bakes
+    that routing in (``idx % (2 * attend_n) == 0`` picks the text mask). Reading
+    the schedule off the module is the only safe source: a wrong value produces a
+    graph that builds and runs at full speed while attending to the wrong tokens.
+
+    A plain non-alternating ``DiT`` (GR00T N1.5) has no schedule because it has
+    no split — every cross block attends the whole encoder sequence, and its
+    forward is called with no mask at all. ``None`` says exactly that, and the
+    emitters give those blocks :func:`emit_attend_all_mask`'s all-zero additive
+    mask rather than either half of a split that does not exist.
     """
     cfg = getattr(dit_module, "config", None)
     if cfg is not None and hasattr(cfg, "attend_text_every_n_blocks"):
         return int(cfg.attend_text_every_n_blocks)
     if hasattr(dit_module, "attend_text_every_n_blocks"):
         return int(dit_module.attend_text_every_n_blocks)
-    raise ValueError(
-        f"{type(dit_module).__name__} declares no attend_text_every_n_blocks. The plugin DiT "
-        "graph bakes cross-attn mask routing from it and cannot guess a schedule; this "
-        "exporter supports the alternating VL DiT (AlternateVLDiT)."
-    )
+    return None
+
+
+#: Name of the additive cross-attention mask a non-alternating DiT uses: zeros
+#: everywhere, i.e. attend every encoder position. Matches the PyTorch reference,
+#: which calls a plain ``DiT`` with ``mask=None``.
+ATTEND_ALL_MASK = "all_mask_add"
+
+
+def emit_attend_all_mask(nodes: list, inits: list) -> None:
+    """Emit :data:`ATTEND_ALL_MASK` — a broadcastable all-zero additive mask.
+
+    Shaped ``(1, 1, 1, 1)`` so it broadcasts over any (B, H, S_q, S_kv) score
+    block. Zeros, not ``backbone_attention_mask``: the plain-DiT reference
+    attends padded encoder positions too, and masking them here would make the
+    engine disagree with the model it is exported from.
+    """
+    import torch
+
+    inits.append(bf16_initializer(ATTEND_ALL_MASK, torch.zeros(1, 1, 1, 1, dtype=torch.bfloat16)))
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +145,7 @@ class DiTWeights:
     """Thin view over the live GR00T DiT module exposing the tensors the plugin
     graph bakes, plus the shape/head metadata it needs."""
 
-    def __init__(self, dit_module: Any, attend_text_every_n_blocks: int) -> None:
+    def __init__(self, dit_module: Any, attend_text_every_n_blocks: Optional[int]) -> None:
         self.dit = dit_module
         blocks = dit_module.transformer_blocks
         self.blocks = blocks
@@ -138,7 +158,10 @@ class DiTWeights:
         self.ff_inner = int(blocks[0].ff.net[0].proj.weight.shape[0])
         self.kv_dim = int(blocks[0].attn1.to_k.weight.shape[1])
         self.output_dim = int(dit_module.proj_out_2.out_features)
-        self.attend_text_every_n_blocks = int(attend_text_every_n_blocks)
+        #: ``None`` on a plain DiT: no text/image alternation to schedule.
+        self.attend_text_every_n_blocks = (
+            None if attend_text_every_n_blocks is None else int(attend_text_every_n_blocks)
+        )
 
         # Output head + timestep encoder (BF16, reused verbatim).
         self.timestep_encoder = dit_module.timestep_encoder
