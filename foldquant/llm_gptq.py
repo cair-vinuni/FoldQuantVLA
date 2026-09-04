@@ -376,7 +376,9 @@ def gptq_prepare(hessian: Any, *, percdamp: float = PERCDAMP, actorder: bool = A
     """
     import torch
 
-    hc = hessian.detach().to("cpu", torch.float64)
+    # ``.to()`` returns the caller's tensor when it is already host float64 (the
+    # action-module accumulators are); the diagonal writes below must not alias it.
+    hc = hessian.detach().to("cpu", torch.float64).clone()
     k = hc.shape[0]
 
     # A channel that calibration never activated has a zero diagonal and would make
