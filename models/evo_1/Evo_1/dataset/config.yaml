@@ -1,0 +1,71 @@
+# do not change max_action_dim, max_state_dim, max_views
+max_action_dim: 24
+max_state_dim: 24
+max_views: 3
+normalization_type: bounds # options: bounds, normal, bounds_q99
+datasets_manifest: libero_4_standard_lerobot.pkl # Example: dataset_manifest_eef_libero_10_lerobot21.pkl
+
+decoder_cache_size: 16             # video decoder cache size
+cache_shard_size_bytes: 268435456  # shard size for caching decoded videos, default 256MB
+
+data_groups:
+  franka_ee_pose_delta:
+    libero_10_no_noops_lerobot:
+      path: /the/path/to/your/libero_10_dataset # example: /your/workspace/Evo1_training_dataset/libero_seg_clean/10
+      view_map:
+        image_1: observation.images.image
+        image_2: observation.images.wrist_image
+      use_delta_action: False
+      process_suite: franka_ee_pose # must set
+      suite_config:                 # optional, below is an example of suite_config
+        state_key: observation.state
+        action_key: action
+        gripper_indices: [6]
+        ee_pose_dims: [0, 6]
+
+    libero_goal_no_noops_lerobot:
+      path: /the/path/to/your/libero_goal_dataset
+      view_map:
+        image_1: observation.images.image
+        image_2: observation.images.wrist_image
+      use_delta_action: False
+      process_suite: franka_ee_pose
+
+    libero_object_no_noops_lerobot:
+      path: /the/path/to/your/libero_object_dataset
+      view_map:
+        image_1: observation.images.image
+        image_2: observation.images.wrist_image
+      use_delta_action: False
+      process_suite: franka_ee_pose
+
+    libero_spatial_no_noops_lerobot:
+      path: /the/path/to/your/libero_spatial_lerobot
+      view_map:
+        image_1: observation.images.image
+        image_2: observation.images.wrist_image
+      use_delta_action: False
+      process_suite: franka_ee_pose
+
+  # franka_ee_abs_pose:
+  #   calvin_abc_d_lerobotv21:
+  #     path: /the/path/to/your/calvin_abc_d_lerobot_dataset
+  #     view_map:
+  #       image_1: observation.images.rgb_static
+  #       image_2: observation.images.rgb_gripper
+  #     use_delta_action: True
+  #     process_suite: franka_ee_pose
+
+  #   droid_101_eef_lerobotv21:
+  #     path: /the/path/to/your/droid_1.0.1_dataset
+  #     view_map:
+  #       image_1: observation.images.exterior_1_left
+  #       image_2: observation.images.wrist_left
+  #       image_3: observation.images.exterior_2_left
+  #     use_delta_action: True
+  #     process_suite: droid_eef
+  #     suite_config:
+  #       state_key: observation.state.cartesian_position
+  #       action_key: action.cartesian_position
+  #       action_gripper_key: action.gripper_position
+  #       state_gripper_key: observation.state.gripper_position

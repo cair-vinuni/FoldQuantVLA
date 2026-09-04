@@ -60,7 +60,7 @@ from .dit_common import (
     bias_f32,
     to_bytes_f32,
 )
-from .evo1_head_int8 import _gelu_erf, _i64_init, _layernorm, _linear, _stacked_kv_weights
+from .evo1_head_int8 import _gelu_erf, _i64_init, _layernorm, _linear, _stacked_kv_weights, resolve_head_dims
 
 logger = logging.getLogger(__name__)
 
@@ -270,12 +270,10 @@ def build_evo1_head_plugin_onnx_int4(
     sd = {k: v.detach() for k, v in action_expert.state_dict().items()}
     cfg = action_expert.config
     dim = int(cfg.embed_dim)
-    horizon = int(cfg.horizon)
+    horizon, per_action, total_action = resolve_head_dims(cfg)
     num_heads = int(cfg.num_heads)
     head_dim = dim // num_heads
     ff_inner = dim * 4
-    per_action = int(cfg.per_action_dim)
-    total_action = int(cfg.total_action_dim)
     num_blocks = len(action_expert.transformer_blocks)
     ctx_len = 1025  # 1024 prompt tokens + 1 state token; fully static graph.
     is_sq = sq_scales is not None

@@ -1,0 +1,15 @@
+Dockerfile
+swanlog/
+__pycache__/
+.DS_Store
+wandb/
+**/.ipynb_checkpoints/
+pretraining_data_cache/
+logs/
+checkpoints/
+Evo1_training_dataset/
+LIBERO/
+*.egg-info/
+build/
+dist/
+*.pyc

@@ -113,6 +113,39 @@ def _gelu_erf(nodes: list, inits: list, name: str, x: str, out: str) -> None:
     nodes.append(oh.make_node("Mul", [f"{name}_xe", f"{name}_half"], [out]))
 
 
+def resolve_head_dims(cfg: Any) -> tuple:
+    """``(horizon, per_action_dim, total_action_dim)`` for an Evo-1 head config.
+
+    The released Evo-1 config spells the chunk width ``action_dim`` (a property
+    over ``action_horizon or horizon`` times ``per_action_dim``); the ported
+    config this emitter was first written against spells it
+    ``total_action_dim``. Both are the same number, so read whichever is there
+    and cross-check it against the factors rather than trusting one name.
+
+    ``action_horizon`` overrides ``horizon`` where it is set, exactly as
+    upstream's ``EVO1.__init__`` resolves it — a checkpoint that sets it would
+    otherwise emit a graph of the wrong chunk length with no error anywhere.
+    """
+    horizon = getattr(cfg, "action_horizon", None) or int(cfg.horizon)
+    horizon = int(horizon)
+    per_action = int(cfg.per_action_dim)
+    total = getattr(cfg, "total_action_dim", None)
+    if total is None:
+        total = getattr(cfg, "action_dim", None)
+    if total is None:
+        raise AttributeError(
+            "the action-head config has neither 'total_action_dim' nor 'action_dim'; "
+            "the emitter cannot size the velocity output"
+        )
+    total = int(total)
+    if total != horizon * per_action:
+        raise ValueError(
+            f"action head config disagrees with itself: total {total} != horizon {horizon} x "
+            f"per_action_dim {per_action}"
+        )
+    return horizon, per_action, total
+
+
 def _stacked_kv_weights(action_expert: Any) -> Any:
     """Stack every block's ``[K; V]`` in_proj rows -> the shared encoder rotation source.
 
@@ -160,12 +193,10 @@ def build_evo1_head_plugin_onnx(
     sd = {k: v.detach() for k, v in action_expert.state_dict().items()}
     cfg = action_expert.config
     dim = int(cfg.embed_dim)
-    horizon = int(cfg.horizon)
+    horizon, per_action, total_action = resolve_head_dims(cfg)
     num_heads = int(cfg.num_heads)
     head_dim = dim // num_heads
     ff_inner = dim * 4
-    per_action = int(cfg.per_action_dim)
-    total_action = int(cfg.total_action_dim)
     num_blocks = len(action_expert.transformer_blocks)
     # The exported graph is fully static (B=1, ctx length baked): read the
     # context length off the positional table the checkpoint pinned... the ctx

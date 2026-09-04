@@ -1,0 +1,50 @@
+{"task_index": 0, "task": "Pick up a nut and place it onto a peg"}
+{"task_index": 1, "task": "Dunk the basketball into the basket"}
+{"task_index": 2, "task": "Grasp the puck from one bin and place it into another bin"}
+{"task_index": 3, "task": "Grasp the cover and close the box with it"}
+{"task_index": 4, "task": "Press a button from the top"}
+{"task_index": 5, "task": "Bypass a wall and press a button from the top"}
+{"task_index": 6, "task": "Press a button"}
+{"task_index": 7, "task": "Bypass a wall and press a button"}
+{"task_index": 8, "task": "Push a button on the coffee machine"}
+{"task_index": 9, "task": "Pull a mug from a coffee machine"}
+{"task_index": 10, "task": "Push a mug under a coffee machine"}
+{"task_index": 11, "task": "Rotate a dial 180 degrees"}
+{"task_index": 12, "task": "Pick a nut out of a peg"}
+{"task_index": 13, "task": "Close a door with a revolving joint"}
+{"task_index": 14, "task": "Lock the door by rotating the lock clockwise"}
+{"task_index": 15, "task": "Open a door with a revolving joint"}
+{"task_index": 16, "task": "Unlock the door by rotating the lock counter-clockwise"}
+{"task_index": 17, "task": "Insert the gripper into a hole"}
+{"task_index": 18, "task": "Push and close a drawer"}
+{"task_index": 19, "task": "Open a drawer"}
+{"task_index": 20, "task": "Rotate the faucet counter-clockwise"}
+{"task_index": 21, "task": "Rotate the faucet clockwise"}
+{"task_index": 22, "task": "Hammer a screw on the wall"}
+{"task_index": 23, "task": "Press a handle down sideways"}
+{"task_index": 24, "task": "Press a handle down"}
+{"task_index": 25, "task": "Pull a handle up sideways"}
+{"task_index": 26, "task": "Pull a handle up"}
+{"task_index": 27, "task": "Pull a lever down 90 degrees"}
+{"task_index": 28, "task": "Pick a puck, bypass a wall and place the puck"}
+{"task_index": 29, "task": "Pick up a puck from a hole"}
+{"task_index": 30, "task": "Pick and place a puck to a goal"}
+{"task_index": 31, "task": "Slide a plate into a cabinet"}
+{"task_index": 32, "task": "Slide a plate into a cabinet sideways"}
+{"task_index": 33, "task": "Get a plate from the cabinet"}
+{"task_index": 34, "task": "Get a plate from the cabinet sideways"}
+{"task_index": 35, "task": "Insert a peg sideways"}
+{"task_index": 36, "task": "Unplug a peg sideways"}
+{"task_index": 37, "task": "Kick a soccer into the goal"}
+{"task_index": 38, "task": "Grasp a stick and push a box using the stick"}
+{"task_index": 39, "task": "Grasp a stick and pull a box with the stick"}
+{"task_index": 40, "task": "Push the puck to a goal"}
+{"task_index": 41, "task": "Bypass a wall and push a puck to a goal"}
+{"task_index": 42, "task": "Push the puck back to a goal"}
+{"task_index": 43, "task": "Reach a goal position"}
+{"task_index": 44, "task": "Bypass a wall and reach a goal"}
+{"task_index": 45, "task": "Pick and place a puck onto a shelf"}
+{"task_index": 46, "task": "Sweep a puck into a hole"}
+{"task_index": 47, "task": "Sweep a puck off the table"}
+{"task_index": 48, "task": "Push and open a window"}
+{"task_index": 49, "task": "Push and close a window"}
