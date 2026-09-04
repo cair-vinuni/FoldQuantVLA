@@ -128,6 +128,33 @@ upstream's loader as much as by these tools.
 Plugin graphs are emitted at the batch the calibration captured (1), so
 TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 
+## Serving
+
+For a real robot the arm under test is a server: upstream's `PolicyServer`
+answers over ZMQ, and [`serve.py`](serve.py) is that server with the FoldQuant
+engines installed into the policy first. Nothing on the wire changes, so a
+robot loop moves between the bf16 reference and a quantized arm by pointing at
+a different port.
+
+```bash
+# terminal 1 — the arm under test
+python -m foldquant_integration.serve --model-path <ckpt> --embodiment-tag libero_panda \
+    --engine-dir exports/w4a4/engines
+
+# terminal 2 — upstream's own client, unchanged
+python -c "
+from gr00t.policy.server_client import PolicyClient
+client = PolicyClient(host='127.0.0.1', port=5555)
+print(client.get_action(observation))
+"
+```
+
+Omit `--engine-dir` to serve the bf16 PyTorch policy — the reference arm, same
+process and same protocol, which is what makes the two comparable on hardware.
+The release ships no standalone client script; `PolicyClient` is the class its
+real-robot evaluators construct (`gr00t/eval/real_robot/SO100`).
+
+
 ## Files
 
 | file | role |
@@ -137,6 +164,7 @@ TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 | `build_engines.py` | plugin load + `foldquant.runtime.builder.build_engine` per component; float DiT from upstream's export |
 | `runtime.py` | engine installer (`install_engines`), the two forward rebinds |
 | `verify.py` | held-out PyTorch-vs-engine drift report |
+| `serve.py` | upstream's ZMQ `PolicyServer` with the engines installed |
 | `eval_libero.py` | LIBERO sweep over suites × tasks, per-task `summary.json` |
 | `benchmark.py` | upstream timing loop over the PyTorch arm and engine directories |
 | `_upstream.py` | paths, component table |

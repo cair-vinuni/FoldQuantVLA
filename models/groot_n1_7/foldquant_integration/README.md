@@ -156,6 +156,38 @@ Cost on that GPU: kernels build 30 s; upstream float export + engines
 they do not fit next to the model on 16 GB); `build_engines` 47 s; `verify`
 40 s for 32 observations.
 
+## Serving
+
+For a real robot the arm under test is a server: upstream's `PolicyServer`
+answers over ZMQ, and [`serve.py`](serve.py) is that server with the FoldQuant
+engines installed into the policy first. Nothing on the wire changes, so a
+robot loop moves between the bf16 reference and a quantized arm by pointing at
+a different port.
+
+```bash
+# terminal 1 — the arm under test
+python -m foldquant_integration.serve --model-path <ckpt> \
+    --engine-dir exports/w4a4/engines
+
+# terminal 2 — upstream's own client, unchanged
+python -c "
+from gr00t.policy.server_client import PolicyClient
+client = PolicyClient(host='127.0.0.1', port=5555)
+print(client.get_action(observation))
+"
+```
+
+Omit `--engine-dir` to serve the bf16 PyTorch policy — the reference arm, same
+process and same protocol, which is what makes the two comparable on hardware.
+The release ships no standalone client script; `PolicyClient` is the class its
+real-robot evaluators construct (`gr00t/eval/real_robot/SO100`).
+
+Engines are installed by upstream's own `trt_model_forward.setup_tensorrt_engines`,
+the same call `verify` and `benchmark` use — this family has no `runtime.py`,
+because the release ships the whole pipeline swap itself and a second install
+path could drift from it silently.
+
+
 ## Files
 
 | file | role |
@@ -164,6 +196,7 @@ they do not fit next to the model on 16 GB); `build_engines` 47 s; `verify`
 | `export_foldquant.py` | scheme validation, shape-metadata capture, `export_llm` / `export_dit`, manifests |
 | `build_engines.py` | plugin load + upstream `build_engine` per component; float completion |
 | `verify.py` | held-out PyTorch-vs-engine drift report |
+| `serve.py` | upstream's ZMQ `PolicyServer` with the engines installed |
 | `eval_libero.py` | LIBERO sweep over suites × tasks, per-task `summary.json` |
 | `rollout.py`, `benchmark.py` | upstream tools with plugins preloaded |
 | `_upstream.py`, `_runpy.py` | paths, component table, `runpy` hand-off |
