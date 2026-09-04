@@ -11,11 +11,12 @@ __pycache__/
 # device-specific plugin binaries are built into the user cache, never committed
 foldquant/kernels/prebuilt/*.so
 
-# model checkpoints, datasets, exports, engines, eval outputs (repository root only)
+# model checkpoints, datasets, eval outputs (repository root only)
 /checkpoints/
 /weights/
 /data/
-/exports/
+# export / engine directories, at the root or under a models/<family>/ tree
+exports/
 *.onnx
 *.engine
 *.safetensors

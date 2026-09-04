@@ -16,13 +16,13 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Mapping, Optional, Sequence, Tuple, Union
 
 from .plugins import prepare_plugins
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ShapeProfile", "build_engine", "static_profile"]
+__all__ = ["ShapeProfile", "build_engine", "profiles_from_onnx", "static_profile"]
 
 #: Opt-in escape hatch for host-memory-constrained builds (TensorRT's default
 #: level-3 optimizer can be OOM-killed inside a small cgroup while the policy
@@ -47,6 +47,48 @@ class ShapeProfile:
 def static_profile(shapes: Mapping[str, Sequence[int]]) -> Dict[str, ShapeProfile]:
     """A fully static optimization profile from ``{input_name: shape}``."""
     return {name: ShapeProfile.static(shape) for name, shape in shapes.items()}
+
+
+def profiles_from_onnx(
+    onnx_path: Path,
+    dims: Mapping[str, Union[int, Tuple[int, int, int]]],
+) -> Dict[str, ShapeProfile]:
+    """Derive one :class:`ShapeProfile` per graph input from the ONNX value infos.
+
+    Static dimensions are copied. A symbolic dimension is looked up by name in
+    *dims*: an ``int`` pins it, a ``(min, opt, max)`` triple gives it a range.
+    An unnamed dynamic dimension or a symbolic name absent from *dims* raises —
+    the caller decides every range, nothing is guessed from the graph.
+    """
+    import onnx
+
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    profiles: Dict[str, ShapeProfile] = {}
+    for inp in model.graph.input:
+        lo: list = []
+        op: list = []
+        hi: list = []
+        for i, d in enumerate(inp.type.tensor_type.shape.dim):
+            if d.dim_value > 0:
+                lo.append(d.dim_value)
+                op.append(d.dim_value)
+                hi.append(d.dim_value)
+                continue
+            if not d.dim_param:
+                raise ValueError(f"input {inp.name!r}: dimension {i} is dynamic but unnamed")
+            if d.dim_param not in dims:
+                raise ValueError(f"input {inp.name!r}: no range given for symbolic dimension {d.dim_param!r}")
+            spec = dims[d.dim_param]
+            if isinstance(spec, int):
+                spec = (spec, spec, spec)
+            mn, o, mx = (int(v) for v in spec)
+            if not 1 <= mn <= o <= mx:
+                raise ValueError(f"dimension {d.dim_param!r}: need 1 <= min <= opt <= max, got {spec}")
+            lo.append(mn)
+            op.append(o)
+            hi.append(mx)
+        profiles[inp.name] = ShapeProfile(tuple(lo), tuple(op), tuple(hi))
+    return profiles
 
 
 def build_engine(

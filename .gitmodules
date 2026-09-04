@@ -4,3 +4,6 @@
 [submodule "models/groot_n1_7/external_dependencies/LIBERO"]
 	path = models/groot_n1_7/external_dependencies/LIBERO
 	url = https://github.com/Lifelong-Robot-Learning/LIBERO.git
+[submodule "models/groot_n1_6/external_dependencies/LIBERO"]
+	path = models/groot_n1_6/external_dependencies/LIBERO
+	url = https://github.com/Lifelong-Robot-Learning/LIBERO.git
