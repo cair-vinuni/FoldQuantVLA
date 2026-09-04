@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 
+from .dit_common import resolve_attend_n
+
 #: The DiT inputs :func:`foldquant.dit_int4.compute_dit_sq_scales` unpacks, in its unpack order.
 DIT_SQ_INPUT_NAMES: Tuple[str, ...] = (
     "hidden_states",
@@ -31,6 +33,8 @@ DIT_SQ_INPUT_NAMES: Tuple[str, ...] = (
     "image_mask",
     "backbone_attention_mask",
 )
+#: The two of them a plain DiT's forward may not declare.
+DIT_MASK_INPUT_NAMES: Tuple[str, ...] = ("image_mask", "backbone_attention_mask")
 
 
 def capture_dit_inputs(
@@ -44,11 +48,22 @@ def capture_dit_inputs(
     """
     captured: list = []
     signature = inspect.signature(module.forward)
+    attend_all = resolve_attend_n(module) is None
 
     def _hook(_m: nn.Module, args: tuple, kwargs: dict) -> None:
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
-        captured.append(tuple(bound.arguments[name] for name in input_names))
+        values = {name: bound.arguments.get(name) for name in input_names}
+        if attend_all:
+            # A plain DiT attends the whole encoder sequence and its forward
+            # carries no masks (or ignores them). The graph contract still
+            # names both, so record what "no mask" means: attend everything.
+            vl = values["encoder_hidden_states"]
+            ones = torch.ones(vl.shape[:2], dtype=torch.bool, device=vl.device)
+            for name in DIT_MASK_INPUT_NAMES:
+                if values.get(name) is None:
+                    values[name] = ones
+        captured.append(tuple(values[name] for name in input_names))
 
     handle = module.register_forward_pre_hook(_hook, with_kwargs=True)
     try:
@@ -68,6 +83,33 @@ def capture_dit_inputs(
             "must be present in the replayed call."
         )
     return captured
+
+
+def dit_inputs_for(module: nn.Module, sample: Tuple[Any, ...]) -> Tuple[Any, ...]:
+    """Move one captured DiT call onto *module*'s device, floating inputs in *module*'s dtype.
+
+    The host may run its action head under ``torch.autocast`` (N1.5 does), so a
+    captured ``encoder_hidden_states`` can be fp32 straight out of a LayerNorm while
+    the DiT's weights are bf16 — autocast reconciled the two at every matmul and a
+    bare replay cannot. The deployed graph's inputs are declared in the module's
+    dtype, so the replay feeds exactly what the engine will see. Integer and bool
+    inputs (timestep, masks) only change device.
+    """
+    param = next(module.parameters())
+    return tuple(
+        t.to(param.device, param.dtype) if torch.is_floating_point(t) else t.to(param.device) for t in sample
+    )
+
+
+def dit_accepts_masks(module: nn.Module) -> bool:
+    """Whether the DiT's forward takes ``image_mask`` / ``backbone_attention_mask``.
+
+    ``AlternateVLDiT`` does; a plain ``DiT`` may (and ignore them) or may not
+    declare them at all. A replay of captured inputs passes the masks only when
+    the signature has somewhere to put them.
+    """
+    params = inspect.signature(module.forward).parameters
+    return all(name in params for name in DIT_MASK_INPUT_NAMES)
 
 
 def capture_llm_snapshots(decoder: nn.Module, forward_loop: Any) -> list:
@@ -199,6 +241,7 @@ def load_learned_calib(path: Optional[str], *, num_layers: int, device: Any) -> 
 __all__: List[str] = [
     "DIT_SQ_INPUT_NAMES",
     "capture_dit_inputs",
+    "dit_inputs_for",
     "capture_llm_snapshots",
     "captured_prefix_len",
     "is_gemma",

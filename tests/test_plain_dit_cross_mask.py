@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import inspect
 
+import torch
+
 from foldquant.dit_common import (
     ATTEND_ALL_MASK,
     emit_attend_all_mask,
@@ -82,6 +84,96 @@ def test_both_emitters_route_a_plain_dit_to_the_attend_all_mask() -> None:
         src = inspect.getsource(module)
         assert "elif attend_n is None:" in src, f"{module.__name__} does not handle a scheduleless DiT"
         assert f"attn_mask_name = {ATTEND_ALL_MASK}" in src or "attn_mask_name = ATTEND_ALL_MASK" in src
-        assert "if attend_n is None:\n        emit_attend_all_mask(nodes, inits)" in src, (
-            f"{module.__name__} selects the mask but never emits it"
+        assert (
+            "if attend_n is None:\n        emit_attend_all_mask(nodes, inits)" in src
+        ), f"{module.__name__} selects the mask but never emits it"
+
+
+class _MasklessDiT(torch.nn.Module):
+    """Upstream N1.5's ``DiT``: called with no masks, and its forward declares none."""
+
+    class config:  # noqa: D106 - stand-in
+        hidden_size = 8
+
+    def forward(self, hidden_states, encoder_hidden_states, timestep, encoder_attention_mask=None):
+        return hidden_states
+
+
+class _MaskedPlainDiT(_MasklessDiT):
+    """A plain DiT that declares the masks and ignores them."""
+
+    def forward(  # type: ignore[override]
+        self, hidden_states, encoder_hidden_states, timestep, image_mask=None, backbone_attention_mask=None
+    ):
+        return hidden_states
+
+
+def _loop_without_masks(module):
+    module(
+        hidden_states=torch.zeros(1, 3, 8),
+        encoder_hidden_states=torch.zeros(1, 5, 8),
+        timestep=torch.zeros(1, dtype=torch.long),
+    )
+
+
+def test_capture_synthesises_attend_all_masks_for_a_maskless_plain_dit() -> None:
+    """The 5-tuple contract holds even when the forward has no mask parameters.
+
+    The masks it records are all-True: that is what "called with no mask" means
+    for a DiT that attends the whole encoder sequence.
+    """
+    from foldquant.calibrate import capture_dit_inputs
+
+    (sample,) = capture_dit_inputs(_MasklessDiT(), _loop_without_masks)
+    sa, vl, ts, image_mask, backbone_mask = sample
+    assert vl.shape == (1, 5, 8)
+    for mask in (image_mask, backbone_mask):
+        assert mask.dtype == torch.bool and tuple(mask.shape) == (1, 5)
+        assert bool(mask.all()), "attend everything, as the unmasked forward does"
+
+
+def test_capture_keeps_masks_a_plain_dit_was_actually_given() -> None:
+    from foldquant.calibrate import capture_dit_inputs
+
+    given = torch.tensor([[True, False, True, True, False]])
+
+    def loop(module):
+        module(
+            hidden_states=torch.zeros(1, 3, 8),
+            encoder_hidden_states=torch.zeros(1, 5, 8),
+            timestep=torch.zeros(1, dtype=torch.long),
+            image_mask=given,
+            backbone_attention_mask=given,
         )
+
+    (sample,) = capture_dit_inputs(_MaskedPlainDiT(), loop)
+    assert torch.equal(sample[3], given) and torch.equal(sample[4], given)
+
+
+def test_mask_acceptance_is_read_off_the_forward_signature() -> None:
+    from foldquant.calibrate import dit_accepts_masks
+
+    assert not dit_accepts_masks(_MasklessDiT())
+    assert dit_accepts_masks(_MaskedPlainDiT())
+
+
+def test_replay_inputs_take_the_module_dtype_where_autocast_used_to() -> None:
+    """N1.5 runs its action head under bf16 autocast, so the captured encoder states
+    arrive fp32 out of the ``vlln`` LayerNorm while the DiT holds bf16 weights. The
+    replay has no autocast; it hands the module inputs in the module's own dtype —
+    the engine's declared input dtype — and leaves timestep/masks integral."""
+    from foldquant.calibrate import dit_inputs_for
+
+    module = _MasklessDiT().to(torch.bfloat16)
+    module.weight = torch.nn.Parameter(torch.zeros(8, dtype=torch.bfloat16))
+    sample = (
+        torch.zeros(1, 3, 8),
+        torch.zeros(1, 5, 8),
+        torch.zeros(1, dtype=torch.long),
+        torch.ones(1, 5, dtype=torch.bool),
+        torch.ones(1, 5, dtype=torch.bool),
+    )
+    sa, vl, ts, image_mask, backbone_mask = dit_inputs_for(module, sample)
+    assert sa.dtype == vl.dtype == torch.bfloat16
+    assert ts.dtype == torch.long
+    assert image_mask.dtype == backbone_mask.dtype == torch.bool

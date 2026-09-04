@@ -44,6 +44,7 @@ import onnx.helper as oh
 
 from . import foldq
 from . import omega_rotation as omega
+from .calibrate import dit_accepts_masks, dit_inputs_for
 from .dit_common import (
     ATTEND_ALL_MASK,
     DIT_INPUT_NAMES,
@@ -200,9 +201,9 @@ def _build_w4a4_graph(
     # blocks. Under SmoothQuant the shared per-channel encoder scale is folded into
     # the encoder rotation (rotation_enc is FP32 — the encoder kernel reads FP32).
     kv_stacked = _cross_kv_weights(w)
-    assert kv_stacked.shape[1] % block_size == 0, (
-        f"kv_dim {kv_stacked.shape[1]} not divisible by block_size {block_size}"
-    )
+    assert (
+        kv_stacked.shape[1] % block_size == 0
+    ), f"kv_dim {kv_stacked.shape[1]} not divisible by block_size {block_size}"
     enc_perm, enc_R = foldq.site_rotation(kv_stacked, block_size, fwht)
     # The encoder rotation is the one bake site NOT produced by fold_macro_site
     # (EncoderPreQuantInt4 shares it across all cross blocks), so it must fold
@@ -482,6 +483,8 @@ def compute_dit_sq_scales(
 
     dit = dit_module.eval()
     w = DiTWeights(dit, resolve_attend_n(dit_module))
+    # A plain DiT's forward may declare no mask parameters at all (N1.5).
+    pass_masks = dit_accepts_masks(dit)
 
     # Rotations identical to the builder's — same constructor, same fwht flag. A
     # capture that builds a dense rotation while the builder bakes a butterfly
@@ -530,19 +533,11 @@ def compute_dit_sq_scales(
             for i, sample in enumerate(calib_inputs):
                 if max_samples is not None and i >= max_samples:
                     break
-                sa_embs, vl_embs, timestep, image_mask, bam = sample
-                dev = next(dit.parameters()).device
-                sa_embs, vl_embs = sa_embs.to(dev), vl_embs.to(dev)
-                timestep, image_mask, bam = timestep.to(dev), image_mask.to(dev), bam.to(dev)
+                sa_embs, vl_embs, timestep, image_mask, bam = dit_inputs_for(dit, sample)
                 # Shared encoder site: vl_embs is the EncoderPreQuantInt4 input.
                 accum("encoder", vl_embs)
-                dit(
-                    hidden_states=sa_embs,
-                    encoder_hidden_states=vl_embs,
-                    timestep=timestep,
-                    image_mask=image_mask,
-                    backbone_attention_mask=bam,
-                )
+                masks = {"image_mask": image_mask, "backbone_attention_mask": bam} if pass_masks else {}
+                dit(hidden_states=sa_embs, encoder_hidden_states=vl_embs, timestep=timestep, **masks)
     finally:
         for h in handles:
             h.remove()
