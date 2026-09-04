@@ -111,11 +111,27 @@ upstream's loader as much as by these tools.
    DiT left float can be built from upstream's export instead:
 
    ```bash
+   GR00T_ONNX_EXPORTER_MODE=legacy \
    python scripts/deployment/export_onnx_n1d6.py --model_path ... --dataset_path ... \
        --embodiment_tag libero_panda --output_dir exports/n16_float/onnx
    python -m foldquant_integration.build_engines --onnx-dir exports/n16_w8a8_none/onnx \
        --float-onnx-dir exports/n16_float/onnx --engine-dir exports/n16_w8a8_none/engines
    ```
+
+   `GR00T_ONNX_EXPORTER_MODE=legacy` is upstream's own knob and is set on
+   purpose. This release passes `dynamo=use_dynamo_exporter` to the DiT export
+   and that defaults to true off Spark, while the N1.7 release hard-codes
+   `dynamo=False` for its DiT with the reason in the source: *"DiT specializes
+   vl_seq_len under dynamo; legacy exporter needed"*. N1.6's DiT is the same
+   module family, so the float arm — which is the reference every drift number
+   here is measured against — is exported the way N1.7 exports its DiT rather
+   than the way this script defaults.
+
+   The dynamo path also wants `onnxscript`, which neither release declares and
+   no environment here installs; that absence is what surfaces the difference,
+   but it is not the reason for the choice. Installing it would make the export
+   run and could hand back a sequence-length-specialised reference, which is a
+   worse failure than a missing package because it succeeds.
 
    `--float-onnx-dir` alone (with `--metadata` pointing at any export's
    `export_metadata.json` for the shapes) gives the float-DiT-engine arm, the
