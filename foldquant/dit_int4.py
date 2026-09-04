@@ -565,7 +565,7 @@ def compute_dit_sq_scales(
         logger.info("    Computed W4A4 SmoothRot (fold-before, alpha=%.2f) scales for %d groups.", alpha, len(scales))
         return scales
 
-    logger.info("    Computed W4A4 SmoothQuant scales for %d rotation groups.", len(amax))
+    logger.info("    Computed SmoothQuant scales for %d rotation groups.", len(amax))
     # Relative floor, not absolute. The fold divides R by s_ch, so a channel that
     # happened to be near-zero over the calibration set would be amplified without
     # bound; at inference the activation quantizer picks a per-token amax over all

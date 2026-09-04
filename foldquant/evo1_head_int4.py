@@ -239,7 +239,7 @@ def compute_evo1_head_sq_scales(
         for h in handles:
             h.remove()
     logger.info(
-        "    Computed Evo-1 head W4A4 SmoothQuant scales for %d rotation groups (alpha=%.2f).", len(amax), alpha
+        "    Computed Evo-1 head SmoothQuant scales for %d rotation groups (alpha=%.2f).", len(amax), alpha
     )
     return foldq.finalize_scales(amax, weights=group_w, alpha=alpha)
 

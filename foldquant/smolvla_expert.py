@@ -700,7 +700,7 @@ def compute_smolvla_expert_sq_scales(
     finally:
         for h in handles:
             h.remove()
-    logger.info("    Computed SmolVLA expert W4A4 SmoothQuant scales for %d sites.", len(amax))
+    logger.info("    Computed SmolVLA expert SmoothQuant scales for %d sites.", len(amax))
     if gptq_scales is not None:
         return dict(amax)  # Hessians, not scales
     return foldq.finalize_scales(amax, weights=group_w, alpha=alpha)

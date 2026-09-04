@@ -611,7 +611,7 @@ def compute_gemma_expert_sq_scales(
     finally:
         for h in handles:
             h.remove()
-    logger.info("    Computed Gemma expert W4A4 SmoothQuant scales for %d sites.", len(amax))
+    logger.info("    Computed Gemma expert SmoothQuant scales for %d sites.", len(amax))
     if gptq_scales is not None:
         return dict(amax)  # Hessians, not scales
     return foldq.finalize_scales(amax, weights=group_w, alpha=alpha)
