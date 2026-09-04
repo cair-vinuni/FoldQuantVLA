@@ -68,6 +68,11 @@ class VerifyConfig:
     floor of the drift metric, not zero."""
 
     video_backend: str = "torchcodec"
+    dump_positions: Optional[str] = None
+    """Write per-token cosine and reference-token norm for the worst positions of every sample
+    here as JSON. Answers whether a low ``backbone_token_cos_min`` is a badly quantized position
+    or a numerically empty one, which the min alone cannot say."""
+
     mode: str = "n17_full_pipeline"
     """``trt_model_forward.setup_tensorrt_engines`` mode."""
 
@@ -85,6 +90,35 @@ def _token_cos_min(a: torch.Tensor, b: torch.Tensor) -> float:
     a2 = a.double().reshape(-1, a.shape[-1])
     b2 = b.double().reshape(-1, b.shape[-1])
     return float(torch.nn.functional.cosine_similarity(a2, b2, dim=1).min())
+
+
+def _position_report(engine: torch.Tensor, reference: torch.Tensor) -> Dict[str, Any]:
+    """Per-token cosine beside the reference token's own norm.
+
+    A cosine on a near-zero vector is ill-conditioned: a tiny absolute
+    perturbation swings it, while the token contributes almost nothing
+    downstream. Reporting the norm next to the cosine is what separates "this
+    position is badly quantized" from "this position is numerically empty and
+    the metric is noise", which a min alone cannot distinguish.
+    """
+    a = engine.double().reshape(-1, engine.shape[-1])
+    b = reference.double().reshape(-1, reference.shape[-1])
+    cos = torch.nn.functional.cosine_similarity(a, b, dim=1)
+    ref_norm = b.norm(dim=1)
+    order = torch.argsort(cos)
+    return {
+        "num_positions": int(cos.numel()),
+        "reference_norm_median": float(ref_norm.median()),
+        "worst": [
+            {
+                "position": int(i),
+                "cos": float(cos[i]),
+                "reference_norm": float(ref_norm[i]),
+                "norm_rank_pct": float((ref_norm < ref_norm[i]).double().mean() * 100.0),
+            }
+            for i in order[:16].tolist()
+        ],
+    }
 
 
 def _load_manifest(engine_dir: Path) -> Optional[Dict[str, Any]]:
@@ -221,6 +255,17 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         report["actions"]["cos_min"],
         report["actions"]["max_abs"],
     )
+    if args.dump_positions:
+        dump = {
+            "engine_dir": public_path(str(engine_dir)),
+            "samples": [
+                {"episode": s.episode, "step": s.step, **_position_report(g, r)}
+                for s, g, r in zip(samples, got["backbone_features"], ref["backbone_features"])
+            ],
+        }
+        Path(args.dump_positions).write_text(json.dumps(dump, indent=2))
+        logger.info("wrote per-position report %s", args.dump_positions)
+
     out = Path(args.output) if args.output else engine_dir / "verify.json"
     out.write_text(json.dumps(report, indent=2))
     logger.info("wrote %s", out)
