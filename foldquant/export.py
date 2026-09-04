@@ -179,6 +179,9 @@ def export_llm(
     if prefix_graph:
         # The prefix replay drives the layer submodules directly, so the per-site
         # leaf hooks fire under it; there is no decoder-level snapshot to replay.
+        # One snapshot therefore stands for the WHOLE forward loop — every
+        # calibration observation runs inside it, which is what the "over 1
+        # replay snapshot(s)" log lines below count.
         replay_snaps: list = [None]
 
         def replay(_snap: Any) -> None:

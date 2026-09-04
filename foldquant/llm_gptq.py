@@ -65,6 +65,29 @@ class MissingHessianError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
+def _exact_gram(xx: Any) -> Any:
+    """``xxᵀ·xx`` with fp32 matmul precision pinned to ``highest`` for this one GEMM.
+
+    The second moment must not inherit the host model's matmul precision: openpi's
+    ``PI0Pytorch.__init__`` sets ``torch.set_float32_matmul_precision("high")``, which
+    would run this Gram in TF32 and hand the factorization a matrix whose PSD margin
+    is below the 1% damping on Gemma's 16384-wide down site (measured: Cholesky
+    failure at minor 6451 with the seed-0 draw). Scoped to the GEMM only — the
+    model's own forward keeps whatever precision deployment runs with, so the
+    captured activations are exactly the served ones.
+    """
+    import torch
+
+    prev = torch.get_float32_matmul_precision()
+    if prev == "highest":
+        return xx.t() @ xx
+    torch.set_float32_matmul_precision("highest")
+    try:
+        return xx.t() @ xx
+    finally:
+        torch.set_float32_matmul_precision(prev)
+
+
 def compute_gptq_hessians_llm(
     hook_module: Any,
     calib_snapshots: list,
@@ -151,10 +174,8 @@ def compute_gptq_hessians_llm(
                 acc[key] = torch.zeros(
                     xx.shape[1], xx.shape[1], device="cpu" if on_host else device, dtype=torch.float32
                 )
-            if acc[key].device.type == "cpu":
-                acc[key] += (xx.t() @ xx).cpu()
-            else:
-                acc[key] += xx.t() @ xx
+            gram = _exact_gram(xx)
+            acc[key] += gram.cpu() if acc[key].device.type == "cpu" else gram
 
         return h
 
@@ -167,7 +188,7 @@ def compute_gptq_hessians_llm(
             handles.append(mod.register_forward_pre_hook(_make_hook(f"L{i}_{site}", site), with_kwargs=True))
     try:
         logger.info(
-            "  LLM GPTQ: transformed-input Hessian over %d calibration samples (sq=%s, rot_bs=%d)",
+            "  LLM GPTQ: transformed-input Hessian over %d replay snapshot(s) (sq=%s, rot_bs=%d)",
             len(calib_snapshots),
             "on" if sq_scales else "off",
             rot_bs,
@@ -369,33 +390,58 @@ def gptq_prepare(hessian: Any, *, percdamp: float = PERCDAMP, actorder: bool = A
         hc = hc[perm][:, perm]
         invperm = torch.argsort(perm)
 
-    hc[range(k), range(k)] += percdamp * torch.mean(torch.diag(hc))
+    damp_unit = torch.mean(torch.diag(hc))
+    hc[range(k), range(k)] += percdamp * damp_unit
 
     def _factor(mat: Any) -> Any:
         lower = torch.linalg.cholesky(mat)
         inv = torch.cholesky_inverse(lower)
         return torch.linalg.cholesky(inv, upper=True)
 
-    hinv = None
-    if torch.cuda.is_available() and not _CUDA_LINALG_BROKEN["flag"]:
+    def _factor_any_device(mat: Any) -> Any:
+        if torch.cuda.is_available() and not _CUDA_LINALG_BROKEN["flag"]:
+            try:
+                return _factor(mat.cuda()).cpu()
+            except torch.linalg.LinAlgError:
+                raise
+            except RuntimeError as exc:
+                # RuntimeError covers both CUDA OOM and the Jetson torch builds
+                # whose CUDA linalg is broken (libtorch_cuda_linalg undefined
+                # symbol). Fall back LOUDLY — the CPU path costs minutes per wide
+                # site (measured: hours per Pi build) and a silent switch would
+                # read as a hang — and remember the failure so the remaining
+                # sites of this build don't re-attempt CUDA one by one.
+                logger.warning(
+                    "CUDA fp64 Cholesky failed (%s); falling back to CPU for this and all "
+                    "remaining GPTQ sites — expect minutes per wide site.",
+                    exc,
+                )
+                _CUDA_LINALG_BROKEN["flag"] = True
+        return _factor(mat)
+
+    # A Hessian accumulated in fp32 over ~10^5 tokens carries rounding of order
+    # eps*||H||, which on a site dominated by a few massive-activation channels
+    # can exceed the 1% damping and leave the matrix indefinite. Escalate the
+    # damping (x10 per attempt, standard GPTQ practice) rather than fail the
+    # build; every retry is logged with the damping it used.
+    damp_now = percdamp
+    while True:
         try:
-            hinv = _factor(hc.cuda()).cpu()
-        except RuntimeError as exc:
-            # RuntimeError covers both CUDA OOM and the Jetson torch builds
-            # whose CUDA linalg is broken (libtorch_cuda_linalg undefined
-            # symbol). Fall back LOUDLY — the CPU path costs minutes per wide
-            # site (measured: hours per Pi build) and a silent switch would
-            # read as a hang — and remember the failure so the remaining
-            # sites of this build don't re-attempt CUDA one by one.
+            hinv = _factor_any_device(hc)
+            break
+        except torch.linalg.LinAlgError as exc:
+            if damp_now >= percdamp * 100:
+                raise
+            damp_next = damp_now * 10
             logger.warning(
-                "CUDA fp64 Cholesky failed (%s); falling back to CPU for this and all "
-                "remaining GPTQ sites — expect minutes per wide site.",
-                exc,
+                "GPTQ Hessian (K=%d) not positive-definite at percdamp=%.3g (%s); retrying with percdamp=%.3g.",
+                k,
+                damp_now,
+                str(exc).splitlines()[0],
+                damp_next,
             )
-            _CUDA_LINALG_BROKEN["flag"] = True
-            hinv = None
-    if hinv is None:
-        hinv = _factor(hc)
+            hc[range(k), range(k)] += (damp_next - damp_now) * damp_unit
+            damp_now = damp_next
 
     return {
         "Hinv": hinv.to(torch.float32),
