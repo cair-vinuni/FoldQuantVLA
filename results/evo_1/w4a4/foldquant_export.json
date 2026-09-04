@@ -1,0 +1,541 @@
+{
+  "checkpoint_dir": "Evo1_LIBERO",
+  "dataset_path": "HuggingFaceVLA/libero",
+  "episodes": "0-1634",
+  "arm_key": "",
+  "dataset_key": "",
+  "schemes": {
+    "llm": "w4a4_srg",
+    "action_head": "w4a4_shg"
+  },
+  "params": {
+    "llm": {},
+    "action_head": {}
+  },
+  "cascade": false,
+  "plugin_libs": [
+    "foldquant_int4_per_row"
+  ],
+  "files": {
+    "llm": "llm_bf16.onnx",
+    "action_head": "action_head_bf16.onnx"
+  },
+  "calibration": {
+    "seed": 0,
+    "num_samples": 128,
+    "samples": [
+      {
+        "episode": 154,
+        "step": 226
+      },
+      {
+        "episode": 90,
+        "step": 160
+      },
+      {
+        "episode": 64,
+        "step": 58
+      },
+      {
+        "episode": 88,
+        "step": 4
+      },
+      {
+        "episode": 111,
+        "step": 18
+      },
+      {
+        "episode": 122,
+        "step": 209
+      },
+      {
+        "episode": 159,
+        "step": 24
+      },
+      {
+        "episode": 68,
+        "step": 148
+      },
+      {
+        "episode": 5,
+        "step": 215
+      },
+      {
+        "episode": 160,
+        "step": 239
+      },
+      {
+        "episode": 152,
+        "step": 60
+      },
+      {
+        "episode": 100,
+        "step": 25
+      },
+      {
+        "episode": 41,
+        "step": 116
+      },
+      {
+        "episode": 126,
+        "step": 246
+      },
+      {
+        "episode": 54,
+        "step": 250
+      },
+      {
+        "episode": 75,
+        "step": 16
+      },
+      {
+        "episode": 10,
+        "step": 249
+      },
+      {
+        "episode": 149,
+        "step": 128
+      },
+      {
+        "episode": 36,
+        "step": 54
+      },
+      {
+        "episode": 156,
+        "step": 109
+      },
+      {
+        "episode": 94,
+        "step": 224
+      },
+      {
+        "episode": 168,
+        "step": 196
+      },
+      {
+        "episode": 97,
+        "step": 35
+      },
+      {
+        "episode": 143,
+        "step": 235
+      },
+      {
+        "episode": 80,
+        "step": 181
+      },
+      {
+        "episode": 71,
+        "step": 80
+      },
+      {
+        "episode": 84,
+        "step": 67
+      },
+      {
+        "episode": 145,
+        "step": 61
+      },
+      {
+        "episode": 116,
+        "step": 54
+      },
+      {
+        "episode": 141,
+        "step": 153
+      },
+      {
+        "episode": 142,
+        "step": 65
+      },
+      {
+        "episode": 132,
+        "step": 70
+      },
+      {
+        "episode": 93,
+        "step": 29
+      },
+      {
+        "episode": 42,
+        "step": 30
+      },
+      {
+        "episode": 87,
+        "step": 204
+      },
+      {
+        "episode": 140,
+        "step": 89
+      },
+      {
+        "episode": 138,
+        "step": 176
+      },
+      {
+        "episode": 16,
+        "step": 145
+      },
+      {
+        "episode": 123,
+        "step": 272
+      },
+      {
+        "episode": 130,
+        "step": 126
+      },
+      {
+        "episode": 0,
+        "step": 163
+      },
+      {
+        "episode": 13,
+        "step": 230
+      },
+      {
+        "episode": 92,
+        "step": 17
+      },
+      {
+        "episode": 108,
+        "step": 135
+      },
+      {
+        "episode": 91,
+        "step": 117
+      },
+      {
+        "episode": 129,
+        "step": 72
+      },
+      {
+        "episode": 70,
+        "step": 188
+      },
+      {
+        "episode": 167,
+        "step": 102
+      },
+      {
+        "episode": 44,
+        "step": 131
+      },
+      {
+        "episode": 53,
+        "step": 197
+      },
+      {
+        "episode": 1,
+        "step": 234
+      },
+      {
+        "episode": 103,
+        "step": 115
+      },
+      {
+        "episode": 2,
+        "step": 245
+      },
+      {
+        "episode": 165,
+        "step": 245
+      },
+      {
+        "episode": 144,
+        "step": 180
+      },
+      {
+        "episode": 139,
+        "step": 105
+      },
+      {
+        "episode": 164,
+        "step": 25
+      },
+      {
+        "episode": 11,
+        "step": 120
+      },
+      {
+        "episode": 134,
+        "step": 60
+      },
+      {
+        "episode": 39,
+        "step": 171
+      },
+      {
+        "episode": 48,
+        "step": 7
+      },
+      {
+        "episode": 37,
+        "step": 208
+      },
+      {
+        "episode": 52,
+        "step": 223
+      },
+      {
+        "episode": 137,
+        "step": 46
+      },
+      {
+        "episode": 106,
+        "step": 357
+      },
+      {
+        "episode": 151,
+        "step": 88
+      },
+      {
+        "episode": 23,
+        "step": 18
+      },
+      {
+        "episode": 133,
+        "step": 164
+      },
+      {
+        "episode": 72,
+        "step": 254
+      },
+      {
+        "episode": 38,
+        "step": 11
+      },
+      {
+        "episode": 50,
+        "step": 172
+      },
+      {
+        "episode": 98,
+        "step": 234
+      },
+      {
+        "episode": 20,
+        "step": 283
+      },
+      {
+        "episode": 9,
+        "step": 125
+      },
+      {
+        "episode": 34,
+        "step": 386
+      },
+      {
+        "episode": 74,
+        "step": 219
+      },
+      {
+        "episode": 27,
+        "step": 26
+      },
+      {
+        "episode": 162,
+        "step": 2
+      },
+      {
+        "episode": 99,
+        "step": 29
+      },
+      {
+        "episode": 25,
+        "step": 93
+      },
+      {
+        "episode": 43,
+        "step": 29
+      },
+      {
+        "episode": 105,
+        "step": 18
+      },
+      {
+        "episode": 8,
+        "step": 67
+      },
+      {
+        "episode": 40,
+        "step": 148
+      },
+      {
+        "episode": 150,
+        "step": 156
+      },
+      {
+        "episode": 47,
+        "step": 49
+      },
+      {
+        "episode": 83,
+        "step": 277
+      },
+      {
+        "episode": 22,
+        "step": 184
+      },
+      {
+        "episode": 19,
+        "step": 157
+      },
+      {
+        "episode": 146,
+        "step": 262
+      },
+      {
+        "episode": 119,
+        "step": 194
+      },
+      {
+        "episode": 147,
+        "step": 25
+      },
+      {
+        "episode": 118,
+        "step": 9
+      },
+      {
+        "episode": 112,
+        "step": 227
+      },
+      {
+        "episode": 4,
+        "step": 113
+      },
+      {
+        "episode": 89,
+        "step": 13
+      },
+      {
+        "episode": 114,
+        "step": 126
+      },
+      {
+        "episode": 79,
+        "step": 104
+      },
+      {
+        "episode": 55,
+        "step": 76
+      },
+      {
+        "episode": 102,
+        "step": 136
+      },
+      {
+        "episode": 17,
+        "step": 78
+      },
+      {
+        "episode": 85,
+        "step": 142
+      },
+      {
+        "episode": 135,
+        "step": 122
+      },
+      {
+        "episode": 3,
+        "step": 278
+      },
+      {
+        "episode": 110,
+        "step": 170
+      },
+      {
+        "episode": 136,
+        "step": 133
+      },
+      {
+        "episode": 15,
+        "step": 1
+      },
+      {
+        "episode": 60,
+        "step": 77
+      },
+      {
+        "episode": 30,
+        "step": 279
+      },
+      {
+        "episode": 66,
+        "step": 66
+      },
+      {
+        "episode": 35,
+        "step": 180
+      },
+      {
+        "episode": 153,
+        "step": 220
+      },
+      {
+        "episode": 109,
+        "step": 106
+      },
+      {
+        "episode": 107,
+        "step": 208
+      },
+      {
+        "episode": 81,
+        "step": 28
+      },
+      {
+        "episode": 157,
+        "step": 114
+      },
+      {
+        "episode": 28,
+        "step": 123
+      },
+      {
+        "episode": 82,
+        "step": 99
+      },
+      {
+        "episode": 18,
+        "step": 158
+      },
+      {
+        "episode": 6,
+        "step": 277
+      },
+      {
+        "episode": 67,
+        "step": 285
+      },
+      {
+        "episode": 65,
+        "step": 80
+      },
+      {
+        "episode": 124,
+        "step": 14
+      },
+      {
+        "episode": 117,
+        "step": 47
+      },
+      {
+        "episode": 24,
+        "step": 65
+      },
+      {
+        "episode": 161,
+        "step": 284
+      },
+      {
+        "episode": 166,
+        "step": 86
+      },
+      {
+        "episode": 57,
+        "step": 298
+      }
+    ]
+  }
+}
