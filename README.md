@@ -29,7 +29,7 @@ This repository is the paper's artifact. It has two parts:
 | GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | complete |
 | GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | complete |
 | π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | complete |
-| SmolVLA | LeRobot | — | planned |
+| SmolVLA | LeRobot, `v0.6.1` (`7e241bd6`) | [`models/smolvla`](models/smolvla/foldquant_integration/README.md) | complete |
 | Evo-1 | Evo-1 | — | planned |
 
 ## Schemes
@@ -60,6 +60,7 @@ models/groot_n1_7/    upstream GR00T N1.7 + foldquant_integration/
 models/groot_n1_6/    upstream GR00T N1.6.1 + foldquant_integration/
 models/groot_n1_5/    upstream GR00T N1.5 + foldquant_integration/
 models/pi05/          upstream openpi (π₀ / π₀.₅ PyTorch path) + foldquant_integration/
+models/smolvla/       upstream LeRobot (SmolVLA + its LIBERO evaluator) + foldquant_integration/
 third_party/          CUTLASS (submodule), vendored TensorRT public headers
 tests/                unit tests for the algorithm, emitters, kernel locator / build
 results/              evaluation protocol and measured results

@@ -20,10 +20,14 @@ For GR00T N1.7 / N1.6 the untouched modules of every TensorRT arm (vision
 tower, VL self-attention, state / action encoders, action decoder) are the
 upstream float engines, and the float TRT arm is the upstream pipeline with
 nothing quantized. GR00T N1.5's upstream engines use a different DiT contract
-(fp16, `sa_embs`/`vl_embs` inputs) and openpi ships no TensorRT path at all,
-so for those two families only the two FoldQuant engines run under TensorRT,
-the rest of the policy stays in PyTorch, there is no float TRT arm, and drift
-is read against the bf16 PyTorch policy alone.
+(fp16, `sa_embs`/`vl_embs` inputs), and openpi, LeRobot and Evo-1 ship no
+TensorRT path at all, so for those four families only the two FoldQuant
+engines run under TensorRT, the rest of the policy stays in PyTorch, there is
+no float TRT arm, and drift is read against the bf16 PyTorch policy alone.
+
+The second quantized module is the family's action generator, whatever its
+shape: a DiT for GR00T, a Gemma-300M expert for pi, SmolVLA's dual-stream
+expert, Evo-1's cross-attention flow-matching head.
 
 ## Calibration
 
@@ -59,22 +63,30 @@ pooled:
   `foldquant_integration.serve` (the upstream websocket server over the
   engines): `replan_steps 5`, per-suite step budgets (220 / 280 / 300 / 520),
   50 trials per task, `seed 7`.
+- **SmolVLA** — upstream's own evaluator (`lerobot_eval.eval_policy_all`)
+  over upstream's `LiberoEnv`, one environment per task, `start_seed 7`, run
+  suite by suite from the integration's driver.
+- **Evo-1** — upstream's `LIBERO_evaluation/libero_client_4tasks.py`
+  unchanged, against the integration's copy of upstream's websocket server
+  with the engines installed: upstream's per-suite step budgets, its action
+  horizon and its `SEED`.
 
 ## Latency (`benchmark`)
 
 Upstream `benchmark_inference.py` for GR00T N1.7 / N1.6, and the
 integration's own component timer where the release ships none (N1.5,
-π₀.₅) — 5 warm-up, 20 timed chunks by default, end-to-end from observation to
-action chunk, on
+π₀.₅, SmolVLA, Evo-1) — 5 warm-up, 20 timed chunks by default, end-to-end
+from observation to action chunk, on
 
 - an RTX 4070 Ti SUPER (sm89, 16 GB, TensorRT 10.15), and
 - a Jetson AGX Orin 64 GB (sm87, JetPack TensorRT 10.3),
 
 float TRT and FoldQuant arms with identical pipelines apart from the two
 quantized engines. Where there is no float TRT arm the reference is the
-upstream PyTorch serving configuration: bf16 eager for N1.5, and for π₀.₅ both
-eager and upstream's `torch.compile(max-autotune)` default (the FoldQuant
-seams need the eager model, so the compiled arm is timed end to end only).
+upstream PyTorch serving configuration: bf16 eager for N1.5, SmolVLA and
+Evo-1 — all three serve eagerly upstream — and for π₀.₅ both eager and
+upstream's `torch.compile(max-autotune)` default (the FoldQuant seams need the
+eager model, so the compiled arm is timed end to end only).
 
 ## Results
 
@@ -101,5 +113,13 @@ _Pending: re-measured with the upstream harness (see the integration README)._
 _Pending: re-measured with the upstream harness (see the integration README)._
 
 ### π₀.₅ — LIBERO
+
+_Pending: re-measured with the upstream harness (see the integration README)._
+
+### SmolVLA — LIBERO
+
+_Pending: re-measured with the upstream harness (see the integration README)._
+
+### Evo-1 — LIBERO
 
 _Pending: re-measured with the upstream harness (see the integration README)._
