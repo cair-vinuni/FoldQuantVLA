@@ -41,6 +41,7 @@ from typing import Any
 import tyro
 from foldquant import schemes
 from foldquant.export import export_expert, export_llm, install_llm_emulation
+from foldquant.provenance import public_path
 
 from . import calibration
 from ._upstream import EXPORT_METADATA_NAME, LIBERO_CHECKPOINT, MANIFEST_NAME
@@ -223,7 +224,7 @@ def main(args: ExportConfig) -> Path:
 
     metadata = {
         "model": "smolvla",
-        "checkpoint": args.checkpoint,
+        "checkpoint": public_path(args.checkpoint),
         "prefix_len": shapes["prefix_len"],
         "prefix_len_min": shapes["prefix_len_min"],
         "prefix_len_max": shapes["prefix_len_max"],
@@ -244,8 +245,8 @@ def main(args: ExportConfig) -> Path:
     }
     (out / EXPORT_METADATA_NAME).write_text(json.dumps(metadata, indent=2))
     manifest = {
-        "checkpoint": args.checkpoint,
-        "dataset_path": args.dataset_path,
+        "checkpoint": public_path(args.checkpoint),
+        "dataset_path": public_path(args.dataset_path),
         "episodes": args.episodes,
         "schemes": {r.module: r.scheme for r in results},
         "params": {"llm": llm_params, "expert": expert_params},

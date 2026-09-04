@@ -31,6 +31,7 @@ import shutil
 import time
 from typing import Any
 
+from foldquant.provenance import public_path
 from foldquant.runtime.builder import build_engine
 from foldquant.runtime.builder import profiles_from_onnx
 from foldquant.runtime.plugins import prepare_plugins
@@ -90,7 +91,7 @@ def build(args: BuildConfig) -> Path:
         prepare_plugins(plugin_libs)
 
     record: dict[str, Any] = {
-        "onnx_dir": str(onnx_dir),
+        "onnx_dir": public_path(str(onnx_dir)),
         "metadata": metadata,
         "dim_ranges": dict(ranges),
         "plugin_libs": plugin_libs,

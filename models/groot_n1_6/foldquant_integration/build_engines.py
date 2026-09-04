@@ -32,6 +32,7 @@ import shutil
 import time
 from typing import Any, Dict, List, Optional
 
+from foldquant.provenance import public_path
 from foldquant.runtime.builder import build_engine, profiles_from_onnx
 from foldquant.runtime.plugins import prepare_plugins
 import tyro
@@ -135,8 +136,8 @@ def build(args: BuildConfig) -> Path:
         prepare_plugins(plugin_libs)
 
     record: Dict[str, Any] = {
-        "onnx_dir": str(onnx_dir) if onnx_dir else None,
-        "float_onnx_dir": str(float_dir) if float_dir else None,
+        "onnx_dir": public_path(str(onnx_dir) if onnx_dir else None),
+        "float_onnx_dir": public_path(str(float_dir) if float_dir else None),
         "metadata": metadata,
         "dim_ranges": {k: v for k, v in ranges.items()},
         "plugin_libs": plugin_libs,

@@ -41,6 +41,7 @@ import torch
 import tyro
 from foldquant import schemes
 from foldquant.export import export_dit, export_llm, install_llm_emulation
+from foldquant.provenance import public_path
 
 from . import calibration
 from ._upstream import EXPORT_METADATA_NAME, LIBERO_DATA_CONFIG, MANIFEST_NAME
@@ -259,10 +260,10 @@ def main(args: ExportConfig) -> Path:
     (out / EXPORT_METADATA_NAME).write_text(json.dumps(metadata, indent=2))
 
     manifest = {
-        "model_path": args.model_path,
+        "model_path": public_path(args.model_path),
         "embodiment_tag": policy.embodiment_tag.value,
         "data_config": args.data_config,
-        "dataset_path": args.dataset_path,
+        "dataset_path": public_path(args.dataset_path),
         "schemes": {r.module: r.scheme for r in results},
         "params": {"llm": llm_params, "dit": dit_params},
         "cascade": bool(args.cascade),

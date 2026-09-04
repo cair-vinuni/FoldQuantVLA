@@ -30,6 +30,7 @@ from pathlib import Path
 import time
 from typing import Any
 
+from foldquant.provenance import public_path
 import numpy as np
 import torch
 import tyro
@@ -145,11 +146,11 @@ def main(args: VerifyConfig) -> dict[str, Any]:
     act_cos = [_cos(a, b) for a, b in zip(got["actions"], ref["actions"], strict=True)]
     act_abs = [float((a - b).abs().max()) for a, b in zip(got["actions"], ref["actions"], strict=True)]
     report = {
-        "engine_dir": str(engine_dir),
+        "engine_dir": public_path(str(engine_dir)),
         "schemes": manifest["schemes"],
         "cascade": manifest.get("cascade", False),
         "components": components,
-        "split_from": args.split_from,
+        "split_from": public_path(args.split_from),
         "num_samples": len(samples),
         "held_out": bool(excluded),
         "samples": [

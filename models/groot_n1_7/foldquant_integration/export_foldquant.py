@@ -38,6 +38,7 @@ from typing import Any, Dict, Optional
 
 from foldquant import schemes
 from foldquant.export import export_dit, export_llm, install_llm_emulation
+from foldquant.provenance import public_path
 import torch
 import tyro
 
@@ -237,9 +238,9 @@ def main(args: ExportConfig) -> Path:
     (out / EXPORT_METADATA_NAME).write_text(json.dumps(metadata, indent=2))
 
     manifest = {
-        "model_path": args.model_path,
+        "model_path": public_path(args.model_path),
         "embodiment_tag": str(policy.embodiment_tag),
-        "dataset_path": args.dataset_path,
+        "dataset_path": public_path(args.dataset_path),
         "schemes": {r.module: r.scheme for r in results},
         "params": {"llm": llm_params, "dit": dit_params},
         "cascade": bool(args.cascade),

@@ -27,6 +27,7 @@ from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 
+from foldquant.provenance import public_path
 from foldquant.runtime.plugins import load_plugins
 import numpy as np
 import torch
@@ -179,10 +180,10 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     act_cos = [_cos(a, b) for a, b in zip(got["actions"], ref["actions"])]
     act_abs = [float((a - b).abs().max()) for a, b in zip(got["actions"], ref["actions"])]
     report = {
-        "engine_dir": str(engine_dir),
+        "engine_dir": public_path(str(engine_dir)),
         "schemes": manifest["schemes"] if manifest is not None else {},
         "cascade": manifest.get("cascade", False) if manifest is not None else False,
-        "split_from": args.split_from,
+        "split_from": public_path(args.split_from),
         "num_samples": len(samples),
         "held_out": bool(excluded),
         "samples": [

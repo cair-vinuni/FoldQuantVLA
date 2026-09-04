@@ -35,6 +35,7 @@ from typing import Any
 import numpy as np
 import torch
 import tyro
+from foldquant.provenance import public_path
 
 from . import calibration
 from ._upstream import LIBERO_DATA_CONFIG, MANIFEST_NAME
@@ -177,11 +178,11 @@ def main(args: VerifyConfig) -> dict[str, Any]:
     act_cos = [_cos(a, b) for a, b in zip(got["actions"], ref["actions"])]
     act_abs = [float((a - b).abs().max()) for a, b in zip(got["actions"], ref["actions"])]
     report = {
-        "engine_dir": str(engine_dir),
+        "engine_dir": public_path(str(engine_dir)),
         "schemes": manifest["schemes"],
         "cascade": manifest.get("cascade", False),
         "components": components,
-        "split_from": args.split_from,
+        "split_from": public_path(args.split_from),
         "denoising_steps": int(policy.denoising_steps),
         "num_samples": len(samples),
         "held_out": bool(excluded),

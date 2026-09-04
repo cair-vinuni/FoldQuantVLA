@@ -42,6 +42,7 @@ import tyro
 
 from foldquant import schemes
 from foldquant.export import export_action_head, export_llm, install_llm_emulation
+from foldquant.provenance import public_path
 
 from . import calibration
 from ._upstream import (
@@ -217,7 +218,7 @@ def main(args: ExportConfig) -> Path:
 
     metadata = {
         "model": "evo_1",
-        "checkpoint_dir": args.checkpoint_dir,
+        "checkpoint_dir": public_path(args.checkpoint_dir),
         "seq_len": shapes["seq_len"],
         "context_len": shapes["context_len"],
         "llm_hidden_size": shapes["llm_hidden_size"],
@@ -232,8 +233,8 @@ def main(args: ExportConfig) -> Path:
     }
     (out / EXPORT_METADATA_NAME).write_text(json.dumps(metadata, indent=2))
     manifest = {
-        "checkpoint_dir": args.checkpoint_dir,
-        "dataset_path": args.dataset_path,
+        "checkpoint_dir": public_path(args.checkpoint_dir),
+        "dataset_path": public_path(args.dataset_path),
         "episodes": args.episodes,
         "arm_key": args.arm_key,
         "dataset_key": args.dataset_key,

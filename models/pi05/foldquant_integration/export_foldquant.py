@@ -42,6 +42,7 @@ from foldquant import schemes
 from foldquant.export import export_expert
 from foldquant.export import export_llm
 from foldquant.export import install_llm_emulation
+from foldquant.provenance import public_path
 import tyro
 
 from . import calibration
@@ -226,9 +227,9 @@ def main(args: ExportConfig) -> Path:
     }
     (out / EXPORT_METADATA_NAME).write_text(json.dumps(metadata, indent=2))
     manifest = {
-        "checkpoint_dir": args.checkpoint_dir,
+        "checkpoint_dir": public_path(args.checkpoint_dir),
         "config": args.config,
-        "dataset_path": args.dataset_path,
+        "dataset_path": public_path(args.dataset_path),
         "schemes": {r.module: r.scheme for r in results},
         "params": {"llm": llm_params, "expert": expert_params},
         "cascade": bool(args.cascade),
