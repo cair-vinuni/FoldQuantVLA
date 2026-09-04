@@ -150,7 +150,9 @@ states by hand.
    returns under seeded flow-matching noise on held-out observations from
    episodes the calibration never saw, and records every observation's drift in
    `verify.json`; `--split-from <quantized engine dir>` scores another
-   directory on that arm's held-out set. `eval_libero` installs the engines and
+   directory on that arm's held-out set, and `--components llm` /
+   `--components expert` install one engine and leave the other module in
+   PyTorch, which is how the expert table above was measured. `eval_libero` installs the engines and
    runs upstream's own `eval_policy_all` over each suite in turn, writing a
    resume-safe `summary.json` (omit `--engine-dir` to score the bf16 PyTorch
    policy through the same driver). `benchmark` times the processor pipeline,

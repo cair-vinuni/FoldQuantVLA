@@ -73,6 +73,11 @@ class VerifyConfig:
     Point every arm of a comparison at the same directory and they all score the same held-out
     observations."""
 
+    components: str = ""
+    """Restrict the swap to these engines (``llm``, ``expert``), comma separated; empty installs every
+    engine the directory holds. Scoring one seam at a time is how a drift figure is attributed to the
+    LLM or to the expert rather than to their sum."""
+
     device: str = "cuda"
 
 
@@ -140,7 +145,8 @@ def main(args: VerifyConfig) -> dict[str, Any]:
     repeat = min(_cos(a, b) for a, b in zip(ref["actions"], again["actions"], strict=True))
     logger.info("PyTorch repeatability (seeded): action cosine min %.6f", repeat)
 
-    installed = install_engines(deployed, engine_dir)
+    wanted = [c.strip() for c in args.components.split(",") if c.strip()] or None
+    installed = install_engines(deployed, engine_dir, components=wanted)
     components = sorted(installed.engines)
     logger.info("engines installed: %s", ", ".join(components))
     try:
@@ -157,6 +163,7 @@ def main(args: VerifyConfig) -> dict[str, Any]:
         "schemes": manifest["schemes"],
         "cascade": manifest.get("cascade", False),
         "components": components,
+        "components_requested": wanted,
         "split_from": args.split_from,
         "num_samples": len(samples),
         "held_out": bool(excluded),

@@ -132,7 +132,10 @@ what upstream's server starts with for LIBERO.
    `verify` scores the fused tokens and the denormalised action chunk on
    held-out observations from episodes the calibration never saw, and records
    every observation's drift in `verify.json`; `--split-from <engine dir>`
-   scores another directory on that arm's held-out set. `eval_libero` starts
+   scores another directory on that arm's held-out set, and `--components llm`
+   / `--components action_head` install one engine and leave the other module
+   in PyTorch, which is how a drift figure is attributed to a seam rather than
+   to their sum. `eval_libero` starts
    the served policy and runs upstream's client against it. That client takes
    no arguments — its suite list, episode count, horizon and step budgets are
    class attributes — so it walks all four suites in one process and the
@@ -157,6 +160,21 @@ SUPER (sm89), TensorRT 10.15, flash-attn installed:
 |---|---|---|---|
 | fused tokens (1025 × 896) | 0.99984 | 0.99973 | per-token min 0.996 |
 | action chunk (50 × 24, denormalised) | 0.99877 | 0.99094 | max abs 1.006 |
+
+That action-chunk min is tower-side, and `--components` says so by scoring one
+seam at a time on the same held-out observations:
+
+| engines installed | actions cos mean | cos min | max abs |
+|---|---|---|---|
+| `--components action_head` (tower float) | 0.99998 | 0.99994 | 0.011 |
+| `--components llm` (head float) | 0.99880 | 0.99098 | 1.006 |
+
+So the head graph and the reimplemented Euler loop around it are very nearly
+lossless, and the whole floor is the W8A8 tower on one observation — whose own
+fused-token cosine, 0.99983, is unremarkable. Fifty Euler steps are what turn
+it into a 1.0 action swing: a small context error is re-read by every step, so
+this family amplifies tower drift far more than the ten-step families do. It is
+the loosest figure in this repository and it is not a seam defect.
 
 `benchmark` on the same engines (20 iterations, median):
 
