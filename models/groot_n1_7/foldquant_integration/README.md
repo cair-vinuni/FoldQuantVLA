@@ -36,6 +36,28 @@ is cached per `(SM, arch, TensorRT major.minor)` and looked up exactly, so a
 different GPU or TensorRT build compiles its own copy rather than loading an
 ABI-mismatched library.
 
+### LIBERO, for `eval_libero`
+
+The rollout runs in this same environment (there is no separate client
+process), so the simulator has to live beside the model. `pip install -e` on
+the pinned submodule is **not** enough and misleadingly reports success:
+LIBERO declares `install_requires=[]`, and its `libero/` directory carries no
+`__init__.py`, so nothing becomes importable. The integration puts the
+submodule on `sys.path` itself; what has to be installed is the simulator
+stack, and one version pin matters:
+
+```bash
+git submodule update --init external_dependencies/LIBERO
+uv pip install "robosuite==1.4.0" bddl mujoco easydict hydra-core einops termcolor thop gym
+```
+
+`robosuite==1.4.0` is LIBERO's own pin and is required: 1.5 moved
+`robosuite.environments.manipulation.single_arm_env`, which LIBERO imports.
+Do **not** install LIBERO's `requirements.txt` — it pins `numpy==1.22.4`,
+`transformers==4.21.1` and `robomimic==0.2.0`, which would tear out the stack
+the policy runs on. The list above was resolved against this environment and
+changes nothing else: torch, transformers and numpy are untouched.
+
 ## Workflow
 
 Every step takes `--embodiment-tag`. It may be omitted only when the

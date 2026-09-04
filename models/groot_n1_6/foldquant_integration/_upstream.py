@@ -39,3 +39,26 @@ def ensure_deployment_on_path() -> None:
     d = str(DEPLOYMENT_DIR)
     if d not in sys.path:
         sys.path.insert(0, d)
+
+
+#: The LIBERO checkout the release pins as a submodule. Its ``libero/`` package
+#: has no ``__init__.py``, so an editable install leaves nothing importable and
+#: ``import libero`` fails even after ``pip install -e`` reports success; the
+#: directory has to be on ``sys.path`` instead.
+LIBERO_DIR = UPSTREAM_ROOT / "external_dependencies" / "LIBERO"
+
+
+def ensure_libero_on_path() -> None:
+    """Make the pinned LIBERO checkout importable (idempotent).
+
+    Raises with the submodule command rather than letting the rollout fail on a
+    bare ModuleNotFoundError three frames deep in upstream's env registry.
+    """
+    if not (LIBERO_DIR / "libero").is_dir():
+        raise RuntimeError(
+            f"{LIBERO_DIR} is empty — initialise the pinned LIBERO first:\n"
+            f"    git submodule update --init {LIBERO_DIR.relative_to(UPSTREAM_ROOT.parent.parent)}"
+        )
+    d = str(LIBERO_DIR)
+    if d not in sys.path:
+        sys.path.insert(0, d)

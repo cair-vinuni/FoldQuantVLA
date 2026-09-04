@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 from foldquant.runtime.plugins import load_plugins
 import tyro
 
-from ._upstream import MANIFEST_NAME
+from ._upstream import MANIFEST_NAME, ensure_libero_on_path
 
 
 logger = logging.getLogger("foldquant.groot_n1_7.eval_libero")
@@ -142,6 +142,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         create_gr00t_sim_policy,
         run_rollout_gymnasium_policy,
     )
+
+    ensure_libero_on_path()
     from gr00t.eval.sim.LIBERO.libero_env import register_libero_envs
 
     register_libero_envs()

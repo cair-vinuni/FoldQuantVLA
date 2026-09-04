@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional
 
 import tyro
 
-from ._upstream import MANIFEST_NAME
+from ._upstream import MANIFEST_NAME, ensure_libero_on_path
 from .runtime import install_engines
 
 
@@ -143,6 +143,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         WrapperConfigs,
         run_rollout_gymnasium_policy,
     )
+
+    ensure_libero_on_path()
     from gr00t.eval.sim.LIBERO.libero_env import register_libero_envs
     from gr00t.policy.gr00t_policy import Gr00tPolicy, Gr00tSimPolicyWrapper
 
