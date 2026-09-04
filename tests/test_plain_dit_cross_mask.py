@@ -84,9 +84,9 @@ def test_both_emitters_route_a_plain_dit_to_the_attend_all_mask() -> None:
         src = inspect.getsource(module)
         assert "elif attend_n is None:" in src, f"{module.__name__} does not handle a scheduleless DiT"
         assert f"attn_mask_name = {ATTEND_ALL_MASK}" in src or "attn_mask_name = ATTEND_ALL_MASK" in src
-        assert (
-            "if attend_n is None:\n        emit_attend_all_mask(nodes, inits)" in src
-        ), f"{module.__name__} selects the mask but never emits it"
+        assert "if attend_n is None:\n        emit_attend_all_mask(nodes, inits)" in src, (
+            f"{module.__name__} selects the mask but never emits it"
+        )
 
 
 class _MasklessDiT(torch.nn.Module):

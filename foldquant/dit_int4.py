@@ -201,9 +201,9 @@ def _build_w4a4_graph(
     # blocks. Under SmoothQuant the shared per-channel encoder scale is folded into
     # the encoder rotation (rotation_enc is FP32 — the encoder kernel reads FP32).
     kv_stacked = _cross_kv_weights(w)
-    assert (
-        kv_stacked.shape[1] % block_size == 0
-    ), f"kv_dim {kv_stacked.shape[1]} not divisible by block_size {block_size}"
+    assert kv_stacked.shape[1] % block_size == 0, (
+        f"kv_dim {kv_stacked.shape[1]} not divisible by block_size {block_size}"
+    )
     enc_perm, enc_R = foldq.site_rotation(kv_stacked, block_size, fwht)
     # The encoder rotation is the one bake site NOT produced by fold_macro_site
     # (EncoderPreQuantInt4 shares it across all cross blocks), so it must fold

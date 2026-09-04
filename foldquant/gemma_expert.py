@@ -514,7 +514,8 @@ def build_gemma_expert_plugin_onnx(
     save_plugin_onnx(model, path)
     c = Counter(n.op_type for n in nodes)
     logger.info(
-        "Built Gemma expert INT8 per-row plugin graph (%s): %d layers, %d nodes, ops=%s -> %s",
+        "Built Gemma expert %s per-row plugin graph (%s): %d layers, %d nodes, ops=%s -> %s",
+        "INT4" if int4 else "INT8",
         "pi05/adarms" if use_adarms else "pi0/vanilla",
         num_layers,
         len(nodes),

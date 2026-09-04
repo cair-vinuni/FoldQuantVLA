@@ -96,9 +96,7 @@ def dit_inputs_for(module: nn.Module, sample: Tuple[Any, ...]) -> Tuple[Any, ...
     inputs (timestep, masks) only change device.
     """
     param = next(module.parameters())
-    return tuple(
-        t.to(param.device, param.dtype) if torch.is_floating_point(t) else t.to(param.device) for t in sample
-    )
+    return tuple(t.to(param.device, param.dtype) if torch.is_floating_point(t) else t.to(param.device) for t in sample)
 
 
 def dit_accepts_masks(module: nn.Module) -> bool:

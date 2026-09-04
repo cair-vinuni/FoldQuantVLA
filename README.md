@@ -21,9 +21,10 @@ This repository is the paper's artifact. It has two parts:
 | family | upstream | integration | status |
 |---|---|---|---|
 | GR00T N1.7 | NVIDIA Isaac GR00T, `n1.7-release` (`23ace64f`) | [`models/groot_n1_7`](models/groot_n1_7/foldquant_integration/README.md) | complete |
-| GR00T N1.6 / N1.5 | NVIDIA Isaac GR00T | — | planned |
+| GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | complete |
+| GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | complete |
+| π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | complete |
 | SmolVLA | LeRobot | — | planned |
-| π₀.₅ | openpi | — | planned |
 | Evo-1 | Evo-1 | — | planned |
 
 ## Schemes
@@ -51,6 +52,9 @@ foldquant/            algorithm (foldq.py), calibration, emitters, export API
   kernels/            TensorRT plugin sources (CUDA + CUTLASS), locator, build CLI
   runtime/            plugin loading, engine build helper, engine wrapper
 models/groot_n1_7/    upstream GR00T N1.7 + foldquant_integration/
+models/groot_n1_6/    upstream GR00T N1.6.1 + foldquant_integration/
+models/groot_n1_5/    upstream GR00T N1.5 + foldquant_integration/
+models/pi05/          upstream openpi (π₀ / π₀.₅ PyTorch path) + foldquant_integration/
 third_party/          CUTLASS (submodule), vendored TensorRT public headers
 tests/                unit tests for the algorithm, emitters, kernel locator / build
 paper/                evaluation protocol and measured results
@@ -62,11 +66,19 @@ Each model directory pins its own environment (Python, torch, TensorRT); the
 `foldquant` package installs into it:
 
 ```bash
-git submodule update --init third_party/cutlass models/groot_n1_7/external_dependencies/LIBERO
+git submodule update --init third_party/cutlass
 cd models/groot_n1_7 && uv sync && uv pip install -e ../..
 python -m foldquant.kernels build      # compiles the plugin .so for this GPU / TensorRT
 python -m foldquant.kernels status
 ```
+
+Each integration README lists the family's own environment (GR00T N1.6 / N1.5
+pin older torch and flash-attn wheels; openpi pins Python 3.11 and copies its
+patched `transformers` files over the installed package) and which submodule
+it needs — the LIBERO harness is pinned per family
+(`models/groot_n1_{7,6}/external_dependencies/LIBERO`,
+`models/pi05/third_party/libero`; the N1.5 release pins none, so its README
+points at upstream's install steps).
 
 Kernels build with `nvcc`, the CUTLASS submodule and the vendored TensorRT
 headers; binaries are cached per `(SM, machine, TensorRT major.minor)` under
