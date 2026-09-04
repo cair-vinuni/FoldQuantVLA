@@ -70,6 +70,30 @@ ABI-mismatched library. LIBERO (`libero` + `robosuite==1.4.0`) is only
 needed by `eval_libero` and upstream's client; install it as upstream's
 `examples/Libero/README.md` describes.
 
+### LIBERO, for `eval_libero`
+
+The rollout runs in this same environment, so the simulator has to live beside
+the model. This release ships `examples/Libero` — the client loop — but pins no
+LIBERO benchmark of its own, so the checkout is yours to supply and its
+location is named by an environment variable rather than hard-coded:
+
+```bash
+uv pip install "robosuite==1.4.0" bddl mujoco easydict hydra-core einops termcolor thop gym
+FOLDQUANT_LIBERO_DIR=/path/to/LIBERO python -m foldquant_integration.eval_libero ...
+```
+
+`robosuite==1.4.0` is LIBERO's own pin and is required: 1.5 moved
+`robosuite.environments.manipulation.single_arm_env`, which LIBERO imports. Do
+**not** install LIBERO's `requirements.txt` — it pins `numpy==1.22.4`,
+`transformers==4.21.1` and `robomimic==0.2.0` and would tear out the stack the
+policy runs on. The list above was resolved against this environment and
+changes nothing else.
+
+An already-installed `libero` satisfies this on its own and the variable is
+then unnecessary. Note that `pip install -e` on a LIBERO checkout does not
+count: it reports success while leaving nothing importable, because LIBERO
+declares no dependencies and its `libero/` directory has no `__init__.py`.
+
 ## Workflow
 
 Every step takes `--embodiment-tag` (the LIBERO post-trained checkpoints use

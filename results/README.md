@@ -77,7 +77,14 @@ task, each family under its own upstream rollout loop, reported per suite and
 pooled:
 
 - **GR00T N1.7 / N1.6** — upstream `MultiStepWrapper` (8-step action chunks,
-  504-step cap, terminate on success) and the upstream unseeded `reset()`.
+  504-step cap, terminate on success) and the upstream unseeded `reset()`. This
+  harness takes **no settle steps**: the policy acts on the first frame after
+  the reset. The other four families wait first (N1.5 and π₀.₅ ten steps,
+  SmolVLA and Evo-1 their own counts) issuing LIBERO's own no-op,
+  `[0, 0, 0, 0, 0, 0, -1]`, whose last channel holds the gripper open. That
+  asymmetry is upstream's, not this repository's — each family runs the loop
+  its authors published — but it is a real difference in starting conditions
+  and success rates should not be read across families as if it were absent.
   TensorRT arms run one environment at a time (engines pin batch 1); PyTorch
   arms may batch — the protocol is otherwise identical.
 - **GR00T N1.5** — upstream's `examples/Libero` client loop (`num_steps_wait`

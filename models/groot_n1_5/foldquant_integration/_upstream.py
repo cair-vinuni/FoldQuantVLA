@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -48,3 +49,40 @@ def ensure_upstream_on_path() -> None:
     root = str(UPSTREAM_ROOT)
     if root not in sys.path:
         sys.path.insert(0, root)
+
+
+#: Where a LIBERO checkout may be named, for the families whose release pins
+#: none. The N1.5 release ships ``examples/Libero`` — the client loop — but not
+#: the benchmark itself, so the checkout is the operator's to supply.
+LIBERO_DIR_ENV = "FOLDQUANT_LIBERO_DIR"
+
+
+def ensure_libero_on_path() -> None:
+    """Make a LIBERO checkout importable (idempotent).
+
+    Unlike the N1.6 / N1.7 releases this one pins no LIBERO submodule, so there
+    is nothing in-tree to point at and the location cannot be hard-coded — it
+    differs per machine and naming one would put somebody's filesystem in a
+    public repository. An installed ``libero`` satisfies this outright;
+    otherwise ``FOLDQUANT_LIBERO_DIR`` names a checkout, which is put on
+    ``sys.path`` (LIBERO's ``libero/`` carries no ``__init__.py``, so an
+    editable install of it leaves nothing importable — the directory itself has
+    to be on the path).
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("libero") is not None:
+        return
+    named = os.environ.get(LIBERO_DIR_ENV)
+    if not named:
+        raise RuntimeError(
+            "LIBERO is not importable and this release pins no copy of it. Point "
+            f"{LIBERO_DIR_ENV} at a LIBERO checkout, e.g.\n"
+            f"    {LIBERO_DIR_ENV}=/path/to/LIBERO python -m foldquant_integration.eval_libero ...\n"
+            "and install the simulator stack (see this integration's README)."
+        )
+    root = Path(named).expanduser().resolve()
+    if not (root / "libero").is_dir():
+        raise RuntimeError(f"{LIBERO_DIR_ENV}={root} does not look like a LIBERO checkout (no libero/ inside)")
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))

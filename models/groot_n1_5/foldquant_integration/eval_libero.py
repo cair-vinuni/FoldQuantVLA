@@ -46,7 +46,7 @@ import numpy as np
 import tyro
 
 from . import calibration
-from ._upstream import LIBERO_DATA_CONFIG, ensure_upstream_on_path
+from ._upstream import LIBERO_DATA_CONFIG, ensure_libero_on_path, ensure_upstream_on_path
 from .runtime import install_engines
 
 logger = logging.getLogger("foldquant.groot_n1_5.eval")
@@ -124,6 +124,7 @@ def _write_summary(path: Path, summary: dict[str, Any]) -> None:
 
 def _make_wrapper(policy):
     """Upstream's ``GR00TPolicy`` LIBERO wrapper around an in-process ``Gr00tPolicy``."""
+    ensure_libero_on_path()
     from examples.Libero.eval.run_libero_eval import GR00TPolicy
 
     class InProcessGR00TPolicy(GR00TPolicy):
