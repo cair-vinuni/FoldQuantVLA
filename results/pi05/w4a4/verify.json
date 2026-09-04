@@ -1,0 +1,287 @@
+{
+  "engine_dir": "exports/w4a4/engines",
+  "schemes": {
+    "llm": "w4a4_srg",
+    "expert": "w4a4_shg"
+  },
+  "cascade": false,
+  "components": [
+    "expert",
+    "llm"
+  ],
+  "split_from": null,
+  "num_samples": 32,
+  "held_out": true,
+  "samples": [
+    {
+      "episode": 249,
+      "step": 14,
+      "kv_stack_cos": 0.9705361600512337,
+      "kv_stack_position_cos_min": 0.6805669424413436,
+      "action_cos": 0.998351575159716,
+      "action_max_abs": 0.08438128232955933
+    },
+    {
+      "episode": 317,
+      "step": 25,
+      "kv_stack_cos": 0.9713420832148812,
+      "kv_stack_position_cos_min": 0.7224571746542146,
+      "action_cos": 0.9997127576207105,
+      "action_max_abs": 0.04821108281612396
+    },
+    {
+      "episode": 157,
+      "step": 10,
+      "kv_stack_cos": 0.9579279940713779,
+      "kv_stack_position_cos_min": 0.5584589115696509,
+      "action_cos": 0.9995429265526742,
+      "action_max_abs": 0.06192335486412048
+    },
+    {
+      "episode": 289,
+      "step": 55,
+      "kv_stack_cos": 0.969399492838664,
+      "kv_stack_position_cos_min": 0.6144744274037335,
+      "action_cos": 0.9991781853388629,
+      "action_max_abs": 0.05129137262701988
+    },
+    {
+      "episode": 127,
+      "step": 25,
+      "kv_stack_cos": 0.9645264059357972,
+      "kv_stack_position_cos_min": 0.5992455070749033,
+      "action_cos": 0.9984462049401812,
+      "action_max_abs": 0.08207997679710388
+    },
+    {
+      "episode": 188,
+      "step": 60,
+      "kv_stack_cos": 0.9656940507550549,
+      "kv_stack_position_cos_min": 0.6845836571304479,
+      "action_cos": 0.9997116913515158,
+      "action_max_abs": 0.04189038276672363
+    },
+    {
+      "episode": 149,
+      "step": 7,
+      "kv_stack_cos": 0.9565879010475709,
+      "kv_stack_position_cos_min": 0.73211698028147,
+      "action_cos": 0.999704971369633,
+      "action_max_abs": 0.03293275833129883
+    },
+    {
+      "episode": 252,
+      "step": 128,
+      "kv_stack_cos": 0.971754558454724,
+      "kv_stack_position_cos_min": 0.6144847908274216,
+      "action_cos": 0.9997316772843334,
+      "action_max_abs": 0.034720420837402344
+    },
+    {
+      "episode": 248,
+      "step": 128,
+      "kv_stack_cos": 0.9654827600527691,
+      "kv_stack_position_cos_min": 0.6971736143131453,
+      "action_cos": 0.9995614377320211,
+      "action_max_abs": 0.033526234328746796
+    },
+    {
+      "episode": 316,
+      "step": 13,
+      "kv_stack_cos": 0.96704692420165,
+      "kv_stack_position_cos_min": 0.7039428216545842,
+      "action_cos": 0.9995955931545962,
+      "action_max_abs": 0.07939490675926208
+    },
+    {
+      "episode": 89,
+      "step": 1,
+      "kv_stack_cos": 0.965855217185309,
+      "kv_stack_position_cos_min": 0.6599077912457654,
+      "action_cos": 0.9993091804066654,
+      "action_max_abs": 0.043498650193214417
+    },
+    {
+      "episode": 313,
+      "step": 24,
+      "kv_stack_cos": 0.9663130313419878,
+      "kv_stack_position_cos_min": 0.6802581073916443,
+      "action_cos": 0.9992485889581151,
+      "action_max_abs": 0.06763538718223572
+    },
+    {
+      "episode": 303,
+      "step": 25,
+      "kv_stack_cos": 0.9737458910855912,
+      "kv_stack_position_cos_min": 0.7718315784481937,
+      "action_cos": 0.9997097228174044,
+      "action_max_abs": 0.053709566593170166
+    },
+    {
+      "episode": 195,
+      "step": 108,
+      "kv_stack_cos": 0.9623142622123827,
+      "kv_stack_position_cos_min": 0.6497054753152308,
+      "action_cos": 0.9996779918194016,
+      "action_max_abs": 0.05436389148235321
+    },
+    {
+      "episode": 242,
+      "step": 30,
+      "kv_stack_cos": 0.9715716118569978,
+      "kv_stack_position_cos_min": 0.7820862329811525,
+      "action_cos": 0.9992674030052939,
+      "action_max_abs": 0.07084886729717255
+    },
+    {
+      "episode": 325,
+      "step": 90,
+      "kv_stack_cos": 0.9635398753142702,
+      "kv_stack_position_cos_min": 0.5776507361306077,
+      "action_cos": 0.9989176171470606,
+      "action_max_abs": 0.059999868273735046
+    },
+    {
+      "episode": 150,
+      "step": 30,
+      "kv_stack_cos": 0.969642119388293,
+      "kv_stack_position_cos_min": 0.7222980761784702,
+      "action_cos": 0.9991583399900446,
+      "action_max_abs": 0.04585612565279007
+    },
+    {
+      "episode": 174,
+      "step": 23,
+      "kv_stack_cos": 0.9639337753550521,
+      "kv_stack_position_cos_min": 0.688265145837095,
+      "action_cos": 0.9984724582847762,
+      "action_max_abs": 0.0818549394607544
+    },
+    {
+      "episode": 2,
+      "step": 28,
+      "kv_stack_cos": 0.9685931471184325,
+      "kv_stack_position_cos_min": 0.5513729596267346,
+      "action_cos": 0.847487378110793,
+      "action_max_abs": 1.9980015754699707
+    },
+    {
+      "episode": 103,
+      "step": 60,
+      "kv_stack_cos": 0.9731698409073202,
+      "kv_stack_position_cos_min": 0.6031536245436966,
+      "action_cos": 0.9993535641755986,
+      "action_max_abs": 0.056003738194704056
+    },
+    {
+      "episode": 287,
+      "step": 93,
+      "kv_stack_cos": 0.9693955870690079,
+      "kv_stack_position_cos_min": 0.6534759969342221,
+      "action_cos": 0.9993859743415414,
+      "action_max_abs": 0.06112571060657501
+    },
+    {
+      "episode": 100,
+      "step": 107,
+      "kv_stack_cos": 0.9686775694371443,
+      "kv_stack_position_cos_min": 0.6925007272227667,
+      "action_cos": 0.9989222941878126,
+      "action_max_abs": 0.0758998692035675
+    },
+    {
+      "episode": 13,
+      "step": 15,
+      "kv_stack_cos": 0.957814638540994,
+      "kv_stack_position_cos_min": 0.6207934398731436,
+      "action_cos": 0.9992509920889976,
+      "action_max_abs": 0.05500967800617218
+    },
+    {
+      "episode": 48,
+      "step": 60,
+      "kv_stack_cos": 0.9671650425562454,
+      "kv_stack_position_cos_min": 0.7237412279574599,
+      "action_cos": 0.9997515961751265,
+      "action_max_abs": 0.031076818704605103
+    },
+    {
+      "episode": 137,
+      "step": 1,
+      "kv_stack_cos": 0.958432684945141,
+      "kv_stack_position_cos_min": 0.6313695785591382,
+      "action_cos": 0.9954371098972636,
+      "action_max_abs": 0.17409181594848633
+    },
+    {
+      "episode": 72,
+      "step": 154,
+      "kv_stack_cos": 0.9595882243624712,
+      "kv_stack_position_cos_min": 0.7972295041331161,
+      "action_cos": 0.9996578547646909,
+      "action_max_abs": 0.04276365041732788
+    },
+    {
+      "episode": 217,
+      "step": 143,
+      "kv_stack_cos": 0.9678139169333921,
+      "kv_stack_position_cos_min": 0.6011779608598886,
+      "action_cos": 0.9996358649620709,
+      "action_max_abs": 0.041991204023361206
+    },
+    {
+      "episode": 230,
+      "step": 119,
+      "kv_stack_cos": 0.9665683305848053,
+      "kv_stack_position_cos_min": 0.769984822998855,
+      "action_cos": 0.999666455528941,
+      "action_max_abs": 0.03316839039325714
+    },
+    {
+      "episode": 1,
+      "step": 244,
+      "kv_stack_cos": 0.9730433001486416,
+      "kv_stack_position_cos_min": 0.7923429590520459,
+      "action_cos": 0.999765165139193,
+      "action_max_abs": 0.029157280921936035
+    },
+    {
+      "episode": 20,
+      "step": 28,
+      "kv_stack_cos": 0.9637103552526491,
+      "kv_stack_position_cos_min": 0.5481526851004463,
+      "action_cos": 0.9994554451556197,
+      "action_max_abs": 0.051746658980846405
+    },
+    {
+      "episode": 255,
+      "step": 77,
+      "kv_stack_cos": 0.9700059736834595,
+      "kv_stack_position_cos_min": 0.7291139980847864,
+      "action_cos": 0.9996029008289267,
+      "action_max_abs": 0.05044245719909668
+    },
+    {
+      "episode": 280,
+      "step": 21,
+      "kv_stack_cos": 0.9708406515056505,
+      "kv_stack_position_cos_min": 0.600199268609379,
+      "action_cos": 0.9993458985195045,
+      "action_max_abs": 0.06303124129772186
+    }
+  ],
+  "pytorch_repeat_action_cos_min": 0.9999999999999998,
+  "kv_stack": {
+    "cos_mean": 0.9666260430440301,
+    "cos_median": 0.9671059833789477,
+    "cos_min": 0.9565879010475709,
+    "position_cos_min": 0.5481526851004463
+  },
+  "actions": {
+    "cos_mean": 0.9945005255252839,
+    "cos_median": 0.9994207097485805,
+    "cos_min": 0.847487378110793,
+    "max_abs": 1.9980015754699707,
+    "max_abs_mean": 0.11848841118626297
+  }
+}
