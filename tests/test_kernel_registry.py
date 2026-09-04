@@ -49,9 +49,9 @@ class TestDeclarationsMatchSources:
         """CMake and the Python registry must not drift apart."""
         spec = kernel_spec(lib)
         cmake = (spec.source_dir / "kernel.cmake").read_text()
-        assert (
-            "NEEDS_CUTLASS" in cmake
-        ) == spec.needs_cutlass, f"{lib}: kernel.cmake and registry.py disagree about CUTLASS"
+        assert ("NEEDS_CUTLASS" in cmake) == spec.needs_cutlass, (
+            f"{lib}: kernel.cmake and registry.py disagree about CUTLASS"
+        )
 
     def test_declared_init_symbols_exist_in_the_plugin_sources(self, lib: str) -> None:
         """A symbol we probe after dlopen must actually be defined somewhere."""

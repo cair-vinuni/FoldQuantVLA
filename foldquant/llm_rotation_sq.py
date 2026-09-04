@@ -271,8 +271,7 @@ def compute_sq_scales_llm(
             w = w.clamp(min=1e-8)
             if a.shape != w.shape:
                 raise RuntimeError(
-                    f"{key}: activation amax {tuple(a.shape)} does not match weight "
-                    f"input-channel amax {tuple(w.shape)}"
+                    f"{key}: activation amax {tuple(a.shape)} does not match weight input-channel amax {tuple(w.shape)}"
                 )
             s = (a.pow(alpha) / w.pow(1.0 - alpha)).clamp(min=1e-5, max=1e5)
             out[key] = s.cpu()

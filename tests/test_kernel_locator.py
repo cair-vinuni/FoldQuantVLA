@@ -1,7 +1,7 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
 
-"""Unit tests for ``kernels.locator`` (issue #48).
+"""Unit tests for ``kernels.locator``.
 
 Device/TensorRT-version resolution is exercised by monkeypatching
 ``current_target_tuple()`` — no CUDA device or TensorRT installation is

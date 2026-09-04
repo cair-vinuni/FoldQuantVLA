@@ -1,7 +1,7 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
 
-"""Unit tests for the INT4 groupwise-GEMM ONNX graph surgery (issue #48).
+"""Unit tests for the INT4 groupwise-GEMM ONNX graph surgery.
 
 All graphs here are synthetic, built directly with ``onnx``/``onnx_graphsurgeon``
 in-memory — no GPU, no TensorRT, and no real ModelOpt export are needed.
