@@ -60,21 +60,36 @@ class VerifyConfig:
     """Sample from every episode, calibration ones included — for datasets too small to hold any out.
     The report then measures fit, not generalisation, and says so."""
 
+    split_from: Optional[str] = None
+    """Engine directory whose FoldQuant manifest defines the calibration split (default: ``engine_dir``).
+    A float directory built by upstream has no manifest; point this at the quantized arm it is
+    compared with, and both score the same held-out observations — the float engines are the
+    floor of the drift metric, not zero."""
+
     video_backend: str = "torchcodec"
     mode: str = "n17_full_pipeline"
     """``trt_model_forward.setup_tensorrt_engines`` mode."""
 
 
+# float64: the LLM stream carries Qwen's massive-activation tokens (|x| ~ 1e3),
+# and a flat fp32 cosine over 151x2048 of them accumulates enough rounding to
+# read 1.00015 for two identical-to-bf16 tensors.
 def _cos(a: torch.Tensor, b: torch.Tensor) -> float:
     return float(
-        torch.nn.functional.cosine_similarity(a.float().flatten(), b.float().flatten(), dim=0)
+        torch.nn.functional.cosine_similarity(a.double().flatten(), b.double().flatten(), dim=0)
     )
 
 
 def _token_cos_min(a: torch.Tensor, b: torch.Tensor) -> float:
-    a2 = a.float().reshape(-1, a.shape[-1])
-    b2 = b.float().reshape(-1, b.shape[-1])
+    a2 = a.double().reshape(-1, a.shape[-1])
+    b2 = b.double().reshape(-1, b.shape[-1])
     return float(torch.nn.functional.cosine_similarity(a2, b2, dim=1).min())
+
+
+def _load_manifest(engine_dir: Path) -> Optional[Dict[str, Any]]:
+    """The ``foldquant_export.json`` of a FoldQuant engine directory; ``None`` for a float one."""
+    path = engine_dir / MANIFEST_NAME
+    return json.loads(path.read_text()) if path.is_file() else None
 
 
 def _action_vector(result: Any) -> torch.Tensor:
@@ -114,8 +129,14 @@ def run_pass(
 def main(args: VerifyConfig) -> Dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     engine_dir = Path(args.engine_dir)
-    manifest = json.loads((engine_dir / MANIFEST_NAME).read_text())
-    calib_episodes = sorted({s["episode"] for s in manifest["calibration"]["samples"]})
+    manifest = _load_manifest(engine_dir)
+    split = _load_manifest(Path(args.split_from)) if args.split_from else manifest
+    if split is None:
+        raise FileNotFoundError(
+            f"{engine_dir / MANIFEST_NAME} not found: a float engine directory carries no calibration "
+            "split. Pass --split-from <quantized engine dir> to score it on that arm's held-out set."
+        )
+    calib_episodes = sorted({s["episode"] for s in split["calibration"]["samples"]})
     excluded = [] if args.allow_calibration_episodes else calib_episodes
 
     t0 = time.time()
@@ -143,7 +164,8 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     repeat = min(_cos(a, b) for a, b in zip(ref["actions"], again["actions"]))
     logger.info("PyTorch repeatability (seeded): action cosine min %.6f", repeat)
 
-    load_plugins(manifest["plugin_libs"])
+    if manifest is not None:
+        load_plugins(manifest["plugin_libs"])
     ensure_deployment_on_path()
     from trt_model_forward import setup_tensorrt_engines
 
@@ -158,11 +180,22 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     act_abs = [float((a - b).abs().max()) for a, b in zip(got["actions"], ref["actions"])]
     report = {
         "engine_dir": str(engine_dir),
-        "schemes": manifest["schemes"],
-        "cascade": manifest.get("cascade", False),
+        "schemes": manifest["schemes"] if manifest is not None else {},
+        "cascade": manifest.get("cascade", False) if manifest is not None else False,
+        "split_from": args.split_from,
         "num_samples": len(samples),
         "held_out": bool(excluded),
-        "samples": [{"episode": s.episode, "step": s.step} for s in samples],
+        "samples": [
+            {
+                "episode": s.episode,
+                "step": s.step,
+                "backbone_cos": fc,
+                "backbone_token_cos_min": ft,
+                "action_cos": ac,
+                "action_max_abs": aa,
+            }
+            for s, fc, ft, ac, aa in zip(samples, feat_cos, feat_tok, act_cos, act_abs)
+        ],
         "pytorch_repeat_action_cos_min": repeat,
         "backbone_features": {
             "cos_mean": float(np.mean(feat_cos)),

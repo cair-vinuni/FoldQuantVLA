@@ -97,7 +97,9 @@ ABI-mismatched library.
 
    `verify` follows upstream's `verify_n1d7_trt.py` (backbone features and
    the decoded action chunk, seeded flow-matching noise) on held-out
-   observations from episodes the calibration never saw. `eval_libero` runs
+   observations from episodes the calibration never saw, and records every
+   observation's drift in `verify.json`; `--split-from <quantized engine
+   dir>` scores a float directory on that arm's held-out set. `eval_libero` runs
    the upstream `MultiStepWrapper` rollout over every task of the requested
    suites with a resume-safe `summary.json`. `benchmark` and `rollout` are
    upstream's own scripts with the plugin library preloaded — the arguments
