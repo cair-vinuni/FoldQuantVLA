@@ -1,11 +1,16 @@
 # FoldQuant
 
-W4A4 / W8A8 quantization for vision-language-action (VLA) inference on edge
-GPUs by **offline folding**: the SmoothQuant scale, a per-block rotation and
-the weight rounding are folded into each linear site's weights before export,
-so at inference a single fused TensorRT plugin quantizes the activation row,
-runs the INT4 / INT8 GEMM and dequantizes — no online rotation, no per-token
-scale search, no extra graph nodes between the plugin and its neighbours.
+**FoldQuantVLA: Native Low-Bit Quantization for Vision-Language-Action
+Inference on Edge GPUs via Unified Offline Folding**
+
+Native low-bit — W8A8 and W4A4 executed on the device's INT8 / INT4 tensor
+cores, not simulated — quantization for vision-language-action (VLA)
+inference on edge GPUs via **unified offline folding**: the SmoothQuant
+scale, a per-block rotation and the weight rounding are folded into each
+linear site's weights before export, so at inference a single fused TensorRT
+plugin quantizes the activation row, runs the INT4 / INT8 GEMM and
+dequantizes — no online rotation, no per-token scale search, no extra graph
+nodes between the plugin and its neighbours.
 
 This repository is the paper's artifact. It has two parts:
 
