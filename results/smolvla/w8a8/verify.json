@@ -1,0 +1,288 @@
+{
+  "engine_dir": "exports/w8a8/engines",
+  "schemes": {
+    "llm": "w8a8_sr",
+    "expert": "w8a8_sh"
+  },
+  "cascade": false,
+  "components": [
+    "expert",
+    "llm"
+  ],
+  "components_requested": null,
+  "split_from": null,
+  "num_samples": 32,
+  "held_out": true,
+  "samples": [
+    {
+      "episode": 78,
+      "step": 7,
+      "kv_stack_cos": 0.9998902414046442,
+      "kv_stack_position_cos_min": 0.9986436978788742,
+      "action_cos": 0.999762800615233,
+      "action_max_abs": 0.041943490505218506
+    },
+    {
+      "episode": 148,
+      "step": 59,
+      "kv_stack_cos": 0.9998807704380869,
+      "kv_stack_position_cos_min": 0.998320109636739,
+      "action_cos": 0.9328538776888378,
+      "action_max_abs": 2.003185749053955
+    },
+    {
+      "episode": 95,
+      "step": 53,
+      "kv_stack_cos": 0.9998700643057211,
+      "kv_stack_position_cos_min": 0.9973617158656347,
+      "action_cos": 0.9468576366507602,
+      "action_max_abs": 1.9439871311187744
+    },
+    {
+      "episode": 128,
+      "step": 48,
+      "kv_stack_cos": 0.9998683946418705,
+      "kv_stack_position_cos_min": 0.9983102620253351,
+      "action_cos": 0.9999805073211809,
+      "action_max_abs": 0.010194182395935059
+    },
+    {
+      "episode": 101,
+      "step": 9,
+      "kv_stack_cos": 0.9998796164159149,
+      "kv_stack_position_cos_min": 0.9982651402631367,
+      "action_cos": 0.9999517571733534,
+      "action_max_abs": 0.01692098379135132
+    },
+    {
+      "episode": 120,
+      "step": 138,
+      "kv_stack_cos": 0.999873366727867,
+      "kv_stack_position_cos_min": 0.9980658110664349,
+      "action_cos": 0.9997316685812068,
+      "action_max_abs": 0.056053876876831055
+    },
+    {
+      "episode": 63,
+      "step": 88,
+      "kv_stack_cos": 0.9998678138966925,
+      "kv_stack_position_cos_min": 0.9967215802445125,
+      "action_cos": 0.9999400505452208,
+      "action_max_abs": 0.021752983331680298
+    },
+    {
+      "episode": 62,
+      "step": 7,
+      "kv_stack_cos": 0.9998398880499719,
+      "kv_stack_position_cos_min": 0.9973607219902072,
+      "action_cos": 0.9998397752380277,
+      "action_max_abs": 0.029631972312927246
+    },
+    {
+      "episode": 73,
+      "step": 248,
+      "kv_stack_cos": 0.9998649366195136,
+      "kv_stack_position_cos_min": 0.9973167616011186,
+      "action_cos": 0.9998578864390354,
+      "action_max_abs": 0.025574833154678345
+    },
+    {
+      "episode": 45,
+      "step": 180,
+      "kv_stack_cos": 0.99985821800923,
+      "kv_stack_position_cos_min": 0.9968498564879167,
+      "action_cos": 0.9996876663022216,
+      "action_max_abs": 0.03849285840988159
+    },
+    {
+      "episode": 14,
+      "step": 69,
+      "kv_stack_cos": 0.9998560291832693,
+      "kv_stack_position_cos_min": 0.9961438187145271,
+      "action_cos": 0.9319171775140227,
+      "action_max_abs": 2.009272575378418
+    },
+    {
+      "episode": 21,
+      "step": 78,
+      "kv_stack_cos": 0.9997899227154919,
+      "kv_stack_position_cos_min": 0.9924909526424017,
+      "action_cos": 0.9998552731416737,
+      "action_max_abs": 0.03560006618499756
+    },
+    {
+      "episode": 76,
+      "step": 229,
+      "kv_stack_cos": 0.9998899049680332,
+      "kv_stack_position_cos_min": 0.9987267232142113,
+      "action_cos": 0.99993838563351,
+      "action_max_abs": 0.021550238132476807
+    },
+    {
+      "episode": 69,
+      "step": 221,
+      "kv_stack_cos": 0.9998784246107311,
+      "kv_stack_position_cos_min": 0.997878409697705,
+      "action_cos": 0.9987743963953888,
+      "action_max_abs": 0.43363523483276367
+    },
+    {
+      "episode": 121,
+      "step": 252,
+      "kv_stack_cos": 0.9998475239296165,
+      "kv_stack_position_cos_min": 0.9980536792475494,
+      "action_cos": 0.9671335330367486,
+      "action_max_abs": 1.9505380392074585
+    },
+    {
+      "episode": 7,
+      "step": 70,
+      "kv_stack_cos": 0.9998988691547109,
+      "kv_stack_position_cos_min": 0.9992791311530322,
+      "action_cos": 0.9999518837089105,
+      "action_max_abs": 0.04464656114578247
+    },
+    {
+      "episode": 86,
+      "step": 94,
+      "kv_stack_cos": 0.9998751940910148,
+      "kv_stack_position_cos_min": 0.9976785872652503,
+      "action_cos": 0.9999204736950411,
+      "action_max_abs": 0.020545601844787598
+    },
+    {
+      "episode": 127,
+      "step": 74,
+      "kv_stack_cos": 0.9998628486413721,
+      "kv_stack_position_cos_min": 0.9978950100283959,
+      "action_cos": 0.9999717121157365,
+      "action_max_abs": 0.011257991194725037
+    },
+    {
+      "episode": 163,
+      "step": 135,
+      "kv_stack_cos": 0.999860366649479,
+      "kv_stack_position_cos_min": 0.9981932449334342,
+      "action_cos": 0.9957953087877434,
+      "action_max_abs": 0.7563693523406982
+    },
+    {
+      "episode": 158,
+      "step": 37,
+      "kv_stack_cos": 0.9998041338962229,
+      "kv_stack_position_cos_min": 0.9943098783858908,
+      "action_cos": 0.9404212830557505,
+      "action_max_abs": 1.9688457250595093
+    },
+    {
+      "episode": 61,
+      "step": 4,
+      "kv_stack_cos": 0.9998543680547518,
+      "kv_stack_position_cos_min": 0.996849741516596,
+      "action_cos": 0.9997840276775007,
+      "action_max_abs": 0.09763950109481812
+    },
+    {
+      "episode": 29,
+      "step": 266,
+      "kv_stack_cos": 0.9998774528277307,
+      "kv_stack_position_cos_min": 0.997449672592784,
+      "action_cos": 0.999987893441132,
+      "action_max_abs": 0.008656442165374756
+    },
+    {
+      "episode": 125,
+      "step": 218,
+      "kv_stack_cos": 0.9998045843231245,
+      "kv_stack_position_cos_min": 0.9971059372586024,
+      "action_cos": 0.9999115768549717,
+      "action_max_abs": 0.020939618349075317
+    },
+    {
+      "episode": 96,
+      "step": 49,
+      "kv_stack_cos": 0.99989114294023,
+      "kv_stack_position_cos_min": 0.9988632122120245,
+      "action_cos": 0.9999415495058499,
+      "action_max_abs": 0.030051052570343018
+    },
+    {
+      "episode": 169,
+      "step": 47,
+      "kv_stack_cos": 0.9998234204198484,
+      "kv_stack_position_cos_min": 0.9962225129925855,
+      "action_cos": 0.9998460885109943,
+      "action_max_abs": 0.05728566646575928
+    },
+    {
+      "episode": 26,
+      "step": 229,
+      "kv_stack_cos": 0.9998778105199679,
+      "kv_stack_position_cos_min": 0.9963820764015414,
+      "action_cos": 0.9998713481871251,
+      "action_max_abs": 0.04447281360626221
+    },
+    {
+      "episode": 49,
+      "step": 186,
+      "kv_stack_cos": 0.9998913476412211,
+      "kv_stack_position_cos_min": 0.9987279922956673,
+      "action_cos": 0.9999812364228589,
+      "action_max_abs": 0.008735567331314087
+    },
+    {
+      "episode": 131,
+      "step": 132,
+      "kv_stack_cos": 0.9998886467221186,
+      "kv_stack_position_cos_min": 0.9988105609529756,
+      "action_cos": 0.999962559054006,
+      "action_max_abs": 0.02359640598297119
+    },
+    {
+      "episode": 56,
+      "step": 263,
+      "kv_stack_cos": 0.9998910154032834,
+      "kv_stack_position_cos_min": 0.9987697606427173,
+      "action_cos": 0.9999885228261463,
+      "action_max_abs": 0.009641915559768677
+    },
+    {
+      "episode": 115,
+      "step": 20,
+      "kv_stack_cos": 0.9998682839715979,
+      "kv_stack_position_cos_min": 0.9962998336539771,
+      "action_cos": 0.9998700626937076,
+      "action_max_abs": 0.016121193766593933
+    },
+    {
+      "episode": 104,
+      "step": 73,
+      "kv_stack_cos": 0.999839890113264,
+      "kv_stack_position_cos_min": 0.996944956098163,
+      "action_cos": 0.9999884540174037,
+      "action_max_abs": 0.007438749074935913
+    },
+    {
+      "episode": 77,
+      "step": 217,
+      "kv_stack_cos": 0.9998845320150767,
+      "kv_stack_position_cos_min": 0.9985279160949914,
+      "action_cos": 0.9998938077977275,
+      "action_max_abs": 0.037553489208221436
+    }
+  ],
+  "pytorch_repeat_action_cos_min": 0.9999999999999996,
+  "kv_stack": {
+    "cos_mean": 0.9998640319781772,
+    "cos_median": 0.9998692294737959,
+    "cos_min": 0.9997899227154919,
+    "position_cos_min": 0.9924909526424017
+  },
+  "actions": {
+    "cos_mean": 0.990974068144657,
+    "cos_median": 0.9998707054404163,
+    "cos_min": 0.9319171775140227,
+    "max_abs": 2.009272575378418,
+    "max_abs_mean": 0.368816620670259
+  }
+}
