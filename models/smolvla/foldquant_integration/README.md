@@ -112,6 +112,13 @@ states by hand.
    the dataset load, so a hub dataset fetches only the files those episodes
    live in. Keep `--num-calib` at 128 or more for a GPTQ (`_g`) arm.
 
+   A hub dataset reaches the network even when every file it will read is
+   already cached: LeRobot resolves the dataset revision through a hub version
+   lookup whenever its reader cannot load the requested episodes outright,
+   which a partially fetched release always trips. `HF_HUB_OFFLINE=1` fails
+   there, and what it fetches is metadata rather than data. Pass the snapshot
+   directory instead of the repo id to stay offline.
+
 2. **Build the engine directory.**
 
    ```bash
