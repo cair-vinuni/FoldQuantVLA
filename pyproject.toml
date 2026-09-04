@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "foldquant"
+version = "0.1.0"
+description = "FoldQuant: W4A4 / W8A8 quantization for vision-language-action inference on edge GPUs by offline folding"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "The FoldQuant Authors" }]
+# Deliberately loose: the package is installed INTO each model's own
+# environment (models/*/), which pins its own torch / numpy / TensorRT.
+dependencies = [
+    "torch>=2.4",
+    "numpy>=1.26",
+    "onnx>=1.16",
+    "onnx-graphsurgeon>=0.5",
+]
+
+[project.optional-dependencies]
+# TensorRT is needed to build and run engines; the model environments pin their
+# own version (10.x on Jetson / the upstream releases, 11.x on newer hosts), so it
+# is not a hard dependency of the algorithm package.
+trt = ["tensorrt>=10.3"]
+dev = ["pytest>=7.4", "ruff>=0.7"]
+
+[tool.setuptools.packages.find]
+include = ["foldquant*"]
+
+[tool.setuptools.package-data]
+# The plugin sources ship with the package so `python -m foldquant.kernels build`
+# can compile them for whatever device it runs on.
+"foldquant.kernels" = [
+    "tensorrt/CMakeLists.txt",
+    "tensorrt/**/kernel.cmake",
+    "tensorrt/**/*.cu",
+    "tensorrt/**/*.cuh",
+    "tensorrt/**/*.cpp",
+    "tensorrt/**/*.h",
+    "tensorrt/**/*.md",
+    "prebuilt/*.so",
+    "prebuilt/README.md",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["models", "third_party"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the FoldQuant paper."
+title: "FoldQuant: W4A4 / W8A8 Quantization for Vision-Language-Action Inference on Edge GPUs by Offline Folding"
+authors:
+  - name: "The FoldQuant Authors"
+license: PolyForm-Noncommercial-1.0.0
+version: 0.1.0
+date-released: 2026-09-04
+preferred-citation:
+  type: conference-paper
+  title: "FoldQuant: W4A4 / W8A8 Quantization for Vision-Language-Action Inference on Edge GPUs by Offline Folding"
+  authors:
+    - name: "The FoldQuant Authors"
+  year: 2027
+  conference:
+    name: "IEEE International Conference on Robotics and Automation (ICRA), under review"

@@ -1,0 +1,195 @@
+# Copyright (c) 2026 The FoldQuant Authors.
+# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+
+"""Held-out drift of a FoldQuant engine directory against the bf16 PyTorch policy.
+
+Upstream ``verify_n1d7_trt.py`` compares one observation (trajectory 0,
+step 0) under ``torch.manual_seed(42)``. This tool keeps its two seams —
+``backbone_features`` (what the LLM engine hands the action head) and the
+decoded action chunk — and its seeding, but scores ``--num-samples``
+observations drawn from episodes the calibration never saw (read off the
+export manifest), reporting per-seam cosine mean / min and the action
+max-abs error. Both passes integrate from the same flow-matching noise, so
+the difference measures the engines, not the sampler.
+
+Example::
+
+    python -m foldquant_integration.verify --model-path ... --dataset-path ... \\
+        --engine-dir exports/n17_w4a4/engines --output exports/n17_w4a4/verify.json
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import logging
+from pathlib import Path
+import time
+from typing import Any, Dict, List, Optional
+
+from foldquant.runtime.plugins import load_plugins
+import numpy as np
+import torch
+import tyro
+
+from . import calibration
+from ._upstream import MANIFEST_NAME, ensure_deployment_on_path
+
+
+logger = logging.getLogger("foldquant.groot_n1_7.verify")
+
+
+@dataclass
+class VerifyConfig:
+    model_path: str
+    dataset_path: str
+    engine_dir: str
+    """Engine directory produced by :mod:`.build_engines`."""
+
+    output: Optional[str] = None
+    """Write the report here as JSON (default: ``<engine_dir>/verify.json``)."""
+
+    embodiment_tag: Optional[str] = None
+    num_samples: int = 16
+    """Held-out observations, from episodes outside the calibration split."""
+
+    seed: int = 42
+    """``torch.manual_seed(seed + i)`` before observation ``i``'s get_action, both passes."""
+
+    allow_calibration_episodes: bool = False
+    """Sample from every episode, calibration ones included — for datasets too small to hold any out.
+    The report then measures fit, not generalisation, and says so."""
+
+    video_backend: str = "torchcodec"
+    mode: str = "n17_full_pipeline"
+    """``trt_model_forward.setup_tensorrt_engines`` mode."""
+
+
+def _cos(a: torch.Tensor, b: torch.Tensor) -> float:
+    return float(
+        torch.nn.functional.cosine_similarity(a.float().flatten(), b.float().flatten(), dim=0)
+    )
+
+
+def _token_cos_min(a: torch.Tensor, b: torch.Tensor) -> float:
+    a2 = a.float().reshape(-1, a.shape[-1])
+    b2 = b.float().reshape(-1, b.shape[-1])
+    return float(torch.nn.functional.cosine_similarity(a2, b2, dim=1).min())
+
+
+def _action_vector(result: Any) -> torch.Tensor:
+    action = result[0] if isinstance(result, tuple) else result
+    parts = []
+    for k in sorted(action.keys()):
+        v = action[k]
+        t = v if isinstance(v, torch.Tensor) else torch.as_tensor(np.asarray(v))
+        parts.append(t.float().flatten().cpu())
+    return torch.cat(parts)
+
+
+def run_pass(
+    policy, observations: List[Dict[str, Any]], seed: int
+) -> Dict[str, List[torch.Tensor]]:
+    feats: List[torch.Tensor] = []
+    acts: List[torch.Tensor] = []
+
+    def _hook(_m, _args, output):
+        feats.append(output["backbone_features"].detach().float().cpu().clone())
+
+    handle = policy.model.backbone.register_forward_hook(_hook)
+    try:
+        with torch.inference_mode():
+            for i, obs in enumerate(observations):
+                torch.manual_seed(seed + i)
+                acts.append(_action_vector(policy.get_action(obs)))
+    finally:
+        handle.remove()
+    if len(feats) != len(observations):
+        raise RuntimeError(
+            f"captured {len(feats)} backbone outputs for {len(observations)} observations"
+        )
+    return {"backbone_features": feats, "actions": acts}
+
+
+def main(args: VerifyConfig) -> Dict[str, Any]:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    engine_dir = Path(args.engine_dir)
+    manifest = json.loads((engine_dir / MANIFEST_NAME).read_text())
+    calib_episodes = sorted({s["episode"] for s in manifest["calibration"]["samples"]})
+    excluded = [] if args.allow_calibration_episodes else calib_episodes
+
+    t0 = time.time()
+    policy = calibration.load_policy(args.model_path, args.embodiment_tag, "cuda")
+    dataset = calibration.load_dataset(policy, args.dataset_path, args.video_backend)
+    samples, observations = calibration.sample_observations(
+        policy,
+        dataset,
+        args.num_samples,
+        seed=args.seed,
+        exclude_episodes=excluded,
+        heldout=True,
+    )
+    logger.info(
+        "%d %s observations from %d episodes (calibration used %d episodes) in %.0fs",
+        len(samples),
+        "held-out" if excluded else "NOT held-out",
+        len({s.episode for s in samples}),
+        len(calib_episodes),
+        time.time() - t0,
+    )
+
+    ref = run_pass(policy, observations, args.seed)
+    again = run_pass(policy, observations, args.seed)
+    repeat = min(_cos(a, b) for a, b in zip(ref["actions"], again["actions"]))
+    logger.info("PyTorch repeatability (seeded): action cosine min %.6f", repeat)
+
+    load_plugins(manifest["plugin_libs"])
+    ensure_deployment_on_path()
+    from trt_model_forward import setup_tensorrt_engines
+
+    setup_tensorrt_engines(policy, str(engine_dir), mode=args.mode)
+    got = run_pass(policy, observations, args.seed)
+
+    feat_cos = [_cos(a, b) for a, b in zip(got["backbone_features"], ref["backbone_features"])]
+    feat_tok = [
+        _token_cos_min(a, b) for a, b in zip(got["backbone_features"], ref["backbone_features"])
+    ]
+    act_cos = [_cos(a, b) for a, b in zip(got["actions"], ref["actions"])]
+    act_abs = [float((a - b).abs().max()) for a, b in zip(got["actions"], ref["actions"])]
+    report = {
+        "engine_dir": str(engine_dir),
+        "schemes": manifest["schemes"],
+        "cascade": manifest.get("cascade", False),
+        "num_samples": len(samples),
+        "held_out": bool(excluded),
+        "samples": [{"episode": s.episode, "step": s.step} for s in samples],
+        "pytorch_repeat_action_cos_min": repeat,
+        "backbone_features": {
+            "cos_mean": float(np.mean(feat_cos)),
+            "cos_min": float(np.min(feat_cos)),
+            "token_cos_min": float(np.min(feat_tok)),
+        },
+        "actions": {
+            "cos_mean": float(np.mean(act_cos)),
+            "cos_min": float(np.min(act_cos)),
+            "max_abs": float(np.max(act_abs)),
+            "max_abs_mean": float(np.mean(act_abs)),
+        },
+    }
+    logger.info(
+        "backbone_features cos mean %.5f min %.5f token-min %.4f | actions cos mean %.5f min %.5f max_abs %.4f",
+        report["backbone_features"]["cos_mean"],
+        report["backbone_features"]["cos_min"],
+        report["backbone_features"]["token_cos_min"],
+        report["actions"]["cos_mean"],
+        report["actions"]["cos_min"],
+        report["actions"]["max_abs"],
+    )
+    out = Path(args.output) if args.output else engine_dir / "verify.json"
+    out.write_text(json.dumps(report, indent=2))
+    logger.info("wrote %s", out)
+    return report
+
+
+if __name__ == "__main__":
+    main(tyro.cli(VerifyConfig))

@@ -1,0 +1,6 @@
+[submodule "third_party/cutlass"]
+	path = third_party/cutlass
+	url = https://github.com/NVIDIA/cutlass.git
+[submodule "models/groot_n1_7/external_dependencies/LIBERO"]
+	path = models/groot_n1_7/external_dependencies/LIBERO
+	url = https://github.com/Lifelong-Robot-Learning/LIBERO.git

@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# device-specific plugin binaries are built into the user cache, never committed
+foldquant/kernels/prebuilt/*.so
+
+# model checkpoints, datasets, exports, engines, eval outputs (repository root only)
+/checkpoints/
+/weights/
+/data/
+/exports/
+*.onnx
+*.engine
+*.safetensors
+*.pt
+*.pth
