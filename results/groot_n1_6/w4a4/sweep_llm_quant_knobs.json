@@ -1,0 +1,146 @@
+{
+  "family": "groot_n1_6",
+  "objective": "seam",
+  "samples": 16,
+  "rot_block_size": 64,
+  "stage1_rtn": [
+    {
+      "alpha": 0.3,
+      "clip": 1.0,
+      "rtn_cosine": 0.9507794193923473
+    },
+    {
+      "alpha": 0.3,
+      "clip": 0.95,
+      "rtn_cosine": 0.9561999887228012
+    },
+    {
+      "alpha": 0.3,
+      "clip": 0.9,
+      "rtn_cosine": 0.9588516391813755
+    },
+    {
+      "alpha": 0.3,
+      "clip": 0.85,
+      "rtn_cosine": 0.9636656641960144
+    },
+    {
+      "alpha": 0.4,
+      "clip": 1.0,
+      "rtn_cosine": 0.9632796160876751
+    },
+    {
+      "alpha": 0.4,
+      "clip": 0.95,
+      "rtn_cosine": 0.9647249951958656
+    },
+    {
+      "alpha": 0.4,
+      "clip": 0.9,
+      "rtn_cosine": 0.9639528095722198
+    },
+    {
+      "alpha": 0.4,
+      "clip": 0.85,
+      "rtn_cosine": 0.9635331779718399
+    },
+    {
+      "alpha": 0.5,
+      "clip": 1.0,
+      "rtn_cosine": 0.9592011980712414
+    },
+    {
+      "alpha": 0.5,
+      "clip": 0.95,
+      "rtn_cosine": 0.9639331623911858
+    },
+    {
+      "alpha": 0.5,
+      "clip": 0.9,
+      "rtn_cosine": 0.9675747193396091
+    },
+    {
+      "alpha": 0.5,
+      "clip": 0.85,
+      "rtn_cosine": 0.9653071016073227
+    },
+    {
+      "alpha": 0.6,
+      "clip": 1.0,
+      "rtn_cosine": 0.949711125344038
+    },
+    {
+      "alpha": 0.6,
+      "clip": 0.95,
+      "rtn_cosine": 0.9659612476825714
+    },
+    {
+      "alpha": 0.6,
+      "clip": 0.9,
+      "rtn_cosine": 0.9658253863453865
+    },
+    {
+      "alpha": 0.6,
+      "clip": 0.85,
+      "rtn_cosine": 0.9679129458963871
+    },
+    {
+      "alpha": 0.7,
+      "clip": 1.0,
+      "rtn_cosine": 0.9297221824526787
+    },
+    {
+      "alpha": 0.7,
+      "clip": 0.95,
+      "rtn_cosine": 0.9446461759507656
+    },
+    {
+      "alpha": 0.7,
+      "clip": 0.9,
+      "rtn_cosine": 0.961731243878603
+    },
+    {
+      "alpha": 0.7,
+      "clip": 0.85,
+      "rtn_cosine": 0.9615467414259911
+    }
+  ],
+  "stage2_gptq": [
+    {
+      "alpha": 0.6,
+      "clip": 0.85,
+      "gptq_cosine": 0.9821518361568451
+    },
+    {
+      "alpha": 0.5,
+      "clip": 0.9,
+      "gptq_cosine": 0.9799352400004864
+    },
+    {
+      "alpha": 0.6,
+      "clip": 0.95,
+      "gptq_cosine": 0.9783890806138515
+    },
+    {
+      "alpha": 0.4,
+      "clip": 1.0,
+      "gptq_cosine": 0.9762782454490662
+    }
+  ],
+  "best": {
+    "alpha": 0.6,
+    "clip": 0.85,
+    "gptq_cosine": 0.9821518361568451
+  },
+  "shipped_config": {
+    "alpha": 0.4,
+    "clip": 1.0,
+    "gptq_cosine": 0.9762782454490662
+  },
+  "gain_over_shipped": 0.005873590707778931,
+  "llm_params": {
+    "sq_alpha": 0.6,
+    "act_clip_ratio": 0.85
+  },
+  "note": "recorded by the sweep this script reproduces (scripts/sweep_llm_quant_knobs.py); 16 calibration observations, W4A4 LLM fold, rotation block 64"
+}
