@@ -229,7 +229,8 @@ term crosses processes. Pairing an arm with a different log's eager moves the
 split by a few points (73-78% across the four N1.7 logs, whose eager action
 head spans 37.74-39.47 ms) without changing the reading.
 
-Three module-level measurements across two families, all landing at 75-78%:
+Three module-level measurements across two families, landing at 75-78% under
+the pairing above and 73-78% across every pairing:
 **roughly three quarters of the latency a FoldQuant arm saves against eager is
 TensorRT compiling the graph, and roughly one quarter is the precision.** That
 is not an argument against the arms — it is what the deployment path is worth
