@@ -222,6 +222,13 @@ the split is consistent:
 | N1.7 action head | 39.47 | 21.76 | 15.84 | 17.71 (75%) | 5.92 (25%) |
 | N1.6 action head | 38.20 | 19.86 | 14.60 | 18.33 (78%) | 5.26 (22%) |
 
+Each difference above is taken within one process wherever it can be: upstream's
+N1.7 script re-times eager on every invocation, so the graph term pairs the
+float arm with the eager measured in *its own* log, and only the float-to-W4A4
+term crosses processes. Pairing an arm with a different log's eager moves the
+split by a few points (73-78% across the four N1.7 logs, whose eager action
+head spans 37.74-39.47 ms) without changing the reading.
+
 Three module-level measurements across two families, all landing at 75-78%:
 **roughly three quarters of the latency a FoldQuant arm saves against eager is
 TensorRT compiling the graph, and roughly one quarter is the precision.** That
