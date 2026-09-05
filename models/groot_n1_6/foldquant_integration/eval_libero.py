@@ -114,6 +114,10 @@ def list_tasks(suites: List[str]) -> List[Dict[str, str]]:
 
 
 def main(args: EvalConfig) -> Dict[str, Any]:
+    # First, before anything reaches a LIBERO import: this module has two
+    # such sites (list_tasks and the env registry) and hooking only the
+    # later one leaves the first failing with the path correctly set.
+    ensure_libero_on_path()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
@@ -143,8 +147,6 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         WrapperConfigs,
         run_rollout_gymnasium_policy,
     )
-
-    ensure_libero_on_path()
     from gr00t.eval.sim.LIBERO.libero_env import register_libero_envs
     from gr00t.policy.gr00t_policy import Gr00tPolicy, Gr00tSimPolicyWrapper
 

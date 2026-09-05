@@ -156,6 +156,13 @@ TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 
 ## Smoke check
 
+`eval_libero` installation check (not a suite result): on the `w8a8` engines,
+`--suites libero_spatial --n-episodes 2` completes **20/20**, ten tasks, zero
+task failures, ~12 s per task on one RTX 4070 Ti SUPER. Two episodes per task
+is an installation check — it says the rollout, the engines and the LIBERO
+environment work together end to end, and nothing about success rate. Paper
+numbers come from the full sweep.
+
 The chain above, run end to end on the LIBERO 4-suite fine-tune
 (`--embodiment-tag libero_sim`, RTX 4070 Ti SUPER / sm89, TensorRT 10.15):
 LLM `w8a8_sr`, `--cascade`, 128 calibration observations, scored by

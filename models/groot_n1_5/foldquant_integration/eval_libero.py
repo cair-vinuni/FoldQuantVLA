@@ -124,7 +124,7 @@ def _write_summary(path: Path, summary: dict[str, Any]) -> None:
 
 def _make_wrapper(policy):
     """Upstream's ``GR00TPolicy`` LIBERO wrapper around an in-process ``Gr00tPolicy``."""
-    ensure_libero_on_path()
+    ensure_libero_on_path()  # idempotent; main() has normally done this already
     from examples.Libero.eval.run_libero_eval import GR00TPolicy
 
     class InProcessGR00TPolicy(GR00TPolicy):
@@ -192,6 +192,10 @@ def main(args: EvalConfig) -> dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     os.environ.setdefault("MUJOCO_GL", "egl")
     ensure_upstream_on_path()
+    # Before any LIBERO import, not before one of them: this module reaches
+    # `libero.libero` here and `examples.Libero` further down, and hooking the
+    # later site leaves this one failing with FOLDQUANT_LIBERO_DIR correctly set.
+    ensure_libero_on_path()
     from libero.libero import benchmark
 
     out = Path(args.output)
