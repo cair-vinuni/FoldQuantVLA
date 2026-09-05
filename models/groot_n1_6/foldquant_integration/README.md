@@ -57,11 +57,16 @@ stack, and one version pin matters:
 
 ```bash
 git submodule update --init external_dependencies/LIBERO
-uv pip install "robosuite==1.4.0" bddl mujoco easydict hydra-core einops termcolor thop gym
+uv pip install "robosuite==1.4.0" "mujoco==2.3.7" bddl easydict hydra-core einops termcolor thop gym
 ```
 
-`robosuite==1.4.0` is LIBERO's own pin and is required: 1.5 moved
+Both pins are required. `robosuite==1.4.0` is LIBERO's own: 1.5 moved
 `robosuite.environments.manipulation.single_arm_env`, which LIBERO imports.
+`mujoco==2.3.7` is required by that robosuite, which declares only
+`mujoco>=2.3.0` and so resolves to 3.x — where the rollout dies inside
+`robosuite.utils.binding_utils.get_joint_qpos_addr` on an assertion about
+joint types. That one fails at the first `env.reset()`, not at import, so it
+survives any check short of actually rolling an episode.
 Do **not** install LIBERO's `requirements.txt` — it pins `numpy==1.22.4`,
 `transformers==4.21.1` and `robomimic==0.2.0`, which would tear out the stack
 the policy runs on. The list above was resolved against this environment and
