@@ -159,7 +159,7 @@ the single most-damaged prefix decodes to an action cosine of 0.9987 or
 better. The two depths measure the same arm; they are not two views of the
 same observations, and a per-observation reading across them is not supported
 by these files — see [`groot_n1_7/README.md`](groot_n1_7/README.md) for the
-case that prompted the check. `scripts/prefix_action_correlation.py`
+case that prompted the check. `scripts/results_tables.py --table correlation`
 regenerates the six figures from the committed records alone.
 
 ## Success rate (`eval_libero`)
@@ -323,6 +323,67 @@ calibration, 8 held-out observations, one RTX 4070 Ti SUPER — that exercises
 the whole export → build → verify → benchmark chain on that family. Those
 numbers are sanity gates, not the paper's: the tables below are filled from
 the 128-observation exports and the full LIBERO sweeps.
+
+Every table in this section is emitted by `scripts/results_tables.py`, which
+reads only the committed records — no GPU, no engines, no upstream
+environment — so a stale cell shows up as a diff rather than as a discrepancy
+nobody notices.
+
+### Drift — all families
+
+Held-out action cosine per arm, 32 observations, seeded
+(`<family>/<arm>/verify.json`). The PyTorch repeatability floor is 1.000000
+under the same seeds in every family, so the deficits below are the arm's, not
+the sampler's.
+
+| family | arm | n | mean | median | min | worst \|Δ\| |
+|---|---|---|---|---|---|---|
+| GR00T N1.7 | `float` | 32 | 0.99977 | 0.99999 | 0.99415 | 0.436 |
+| GR00T N1.7 | `w8a8` | 32 | 0.99965 | 0.99996 | 0.99086 | 0.540 |
+| GR00T N1.7 | `w4a4` | 32 | 0.98575 | 0.99817 | 0.80213 | 1.000 |
+| GR00T N1.7 | `w4a4_cascade` | 32 | 0.98591 | 0.99825 | 0.80649 | 1.000 |
+| GR00T N1.6 | `float` | 32 | 0.99997 | 0.99997 | 0.99990 | 0.015 |
+| GR00T N1.6 | `w8a8` | 32 | 0.99996 | 0.99998 | 0.99948 | 0.049 |
+| GR00T N1.6 | `w4a4` | 32 | 0.97411 | 0.99876 | 0.46067 | 1.000 |
+| GR00T N1.6 | `w4a4_cascade` | 32 | 0.97437 | 0.99874 | 0.46649 | 1.000 |
+| GR00T N1.5 | `w8a8` | 32 | 0.99996 | 0.99999 | 0.99944 | 0.146 |
+| GR00T N1.5 | `w4a4` | 32 | 0.99585 | 0.99885 | 0.96967 | 0.848 |
+| GR00T N1.5 | `w4a4_cascade` | 32 | 0.99598 | 0.99865 | 0.97245 | 0.927 |
+| π₀.₅ | `w8a8` | 32 | 1.00000 | 1.00000 | 0.99999 | 0.009 |
+| π₀.₅ | `w4a4` | 32 | 0.99450 | 0.99942 | 0.84749 | 1.998 |
+| π₀.₅ | `w4a4_cascade` | 32 | 0.99449 | 0.99945 | 0.84704 | 2.005 |
+| SmolVLA | `w8a8` | 32 | 0.99097 | 0.99987 | 0.93192 | 2.009 |
+| SmolVLA | `w4a4` | 32 | 0.86210 | 0.92967 | 0.30339 | 2.069 |
+| Evo-1 | `w8a8` | 32 | 0.99749 | 0.99991 | 0.95569 | 1.005 |
+| Evo-1 | `w4a4` | 32 | 0.96357 | 0.96881 | 0.89392 | 1.036 |
+| Evo-1 | `w4a4_cascade` | 32 | 0.96335 | 0.97243 | 0.89841 | 1.032 |
+
+Read the median beside the mean: these distributions have tails, and on the
+families where W4A4 breaks it is a minority of observations that carry the
+deficit. Worst \|Δ\| is per family's action scale — 1.000 is a saturated 0/1
+gripper on GR00T, ~2.0 is a saturated channel where actions run [-1, 1].
+
+### Latency — all families
+
+End-to-end median ms per action chunk, one RTX 4070 Ti SUPER (sm89, TensorRT
+10.15), 20 timed chunks after 5 warm-up. GR00T N1.7 re-times eager in every
+arm's log; the column shows the eager from the W4A4 log, the pairing the split
+above uses.
+
+| family | eager | float TRT | W8A8 | W4A4 | W4A4 cascade | W4A4 vs eager |
+|---|---|---|---|---|---|---|
+| GR00T N1.7 | 67.80 | 41.50 | 36.50 | 32.60 | 33.20 | 2.08x |
+| GR00T N1.6 | 69.26 | 50.71 | 40.93 | 35.79 | 35.79 | 1.94x |
+| GR00T N1.5 | 54.54 | - | 37.22 | 32.76 | 33.53 | 1.66x |
+| π₀.₅ | 169.36 | - | 89.85 | 76.55 | 76.54 | 2.21x |
+| SmolVLA | 209.98 | - | 38.74 | 36.67 | - | 5.73x |
+| Evo-1 | 175.61 | - | 119.58 | 113.33 | 112.42 | 1.55x |
+
+The last column is the deployment-path result against upstream's own serving
+configuration, **not** a quantization result — see the graph-versus-precision
+split above, where roughly three quarters of it is the graph.
+
+_Jetson AGX Orin (sm87, JetPack TensorRT 10.3) — pending._
 
 ### GR00T N1.7 — LIBERO
 

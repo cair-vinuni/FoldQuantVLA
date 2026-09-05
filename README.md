@@ -65,6 +65,7 @@ models/evo_1/         upstream Evo-1 (InternVL3 tower + flow-matching head) + fo
 third_party/          CUTLASS (submodule), vendored TensorRT public headers
 tests/                unit tests for the algorithm, emitters, kernel locator / build
 results/              evaluation protocol and measured results
+docs/real_robot/      deploying a quantized arm to ALOHA / UR10e hardware
 ```
 
 ## Install
@@ -106,6 +107,21 @@ export/engines with the upstream pipeline → `export_foldquant` → `build_engi
 [`results/README.md`](results/README.md) describes the protocol (upstream
 harnesses, held-out drift, LIBERO success rate, latency on RTX 4070 Ti SUPER
 and Jetson AGX Orin) and holds the measured numbers per family and arm.
+
+## Deploying on a real robot
+
+[`docs/real_robot/`](docs/real_robot/README.md) covers serving a FoldQuant arm
+to real hardware: the engines are installed into the **upstream release's own
+policy server**, so an unmodified upstream client drives a quantized policy by
+changing a host and a port. Per-robot guides for
+[ALOHA](docs/real_robot/aloha.md) — where two families ship a client already —
+and [UR10e](docs/real_robot/ur10e.md), which needs a fine-tune and ships a
+reference client here.
+
+The rule that governs all of it: quantization changes the arithmetic, not the
+policy. An engine built from a LIBERO checkpoint emits LIBERO actions on any
+robot, so a real deployment starts from a checkpoint fine-tuned for that
+embodiment.
 
 ## License
 
