@@ -211,6 +211,14 @@ Evo-1 — all three serve eagerly upstream — and for π₀.₅ both eager and
 upstream's `torch.compile(max-autotune)` default (the FoldQuant seams need the
 eager model, so the compiled arm is timed end to end only).
 
+**Every latency figure quoted anywhere in this repository is a median.** The
+records carry more than that on one line — upstream's N1.7 log prints
+`median=`, `mean= ± sd`, `min` and `max` together, and the component rows
+beneath it are medians already — so a cell copied from the wrong field of the
+right line is an easy and invisible error. Medians for the same reason the
+drift tables report them: 20 timed chunks have a tail, and a mean moves with
+it. Where a family's records offer both, the tables take `median=`.
+
 **A speedup against eager is not a quantization speedup**, and on these
 records most of it is not. The float TRT arm is the control that separates the
 two — the same graph, compiled, with nothing quantized — and where one exists
