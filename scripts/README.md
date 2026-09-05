@@ -95,6 +95,11 @@ Reading notes:
 - **arc** = the LLM `(sq_alpha, act_clip_ratio)` the sweep above picked for
   that checkpoint (`results/<family>/w4a4/sweep_llm_quant_knobs.json`); the
   clip is a W4A4-only knob and `w4a8_srg` therefore carries the alpha alone.
+  The values are **selections on the LIBERO checkpoints**; applied to a
+  different checkpoint of the same family they are borrowed constants, not
+  selections, and should be re-swept (on one N1.7 ALOHA checkpoint the LIBERO
+  clip of 0.85 improved one task's held-out drift and worsened another's,
+  while adding `site_bits` recovered both).
 - **fb** = fold-before on the action module. Butterfly arms (`sh`, `shg`)
   already default to fold-before with `sq_alpha 0.5` (`foldquant.export._act_fold_knobs`),
   so for them the params are a restatement; for the dense `sr` head, whose
