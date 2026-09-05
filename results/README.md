@@ -25,10 +25,31 @@ families in one column, it comes from such a uniform harness and says so.
 | W4A4 | `w4a4_srg` | `w4a4_shg` | INT4 weights and activations, folded, GPTQ |
 | W4A4 cascade | `w4a4_srg` | `w4a4_shg` (`--cascade`) | action expert calibrated under the quantized LLM |
 
-For GR00T N1.7 / N1.6 the untouched modules of every TensorRT arm (vision
-tower, VL self-attention, state / action encoders, action decoder) are the
-upstream float engines, and the float TRT arm is the upstream pipeline with
-nothing quantized. GR00T N1.5's upstream engines use a different DiT contract
+For GR00T N1.7 the untouched modules of every TensorRT arm (vision tower, VL
+self-attention, state / action encoders, action decoder) are the upstream float
+engines, and the float TRT arm is upstream's full pipeline
+(`n17_full_pipeline`) with nothing quantized — eight engines, text tower
+included.
+
+**N1.6's upstream TensorRT path covers the action head alone.** Upstream's
+`scripts/deployment/export_onnx_n1d6.py` exports the DiT and nothing else, so
+no float text-tower engine exists to build from, and this repository does not
+manufacture one: its exporter emits FoldQuant graphs, and `--llm-scheme none`
+skips the module rather than writing a float replacement. N1.6's float TRT arm
+is therefore upstream's pipeline as upstream ships it — DiT under TensorRT,
+text tower in eager PyTorch — which the timings show directly: that arm's
+backbone matches eager to within a fifth of a millisecond, while the quantized
+arms' backbone falls to 17–18 ms.
+
+The consequence is a reading trap, and it is the reason the tables quote
+speedup against **eager PyTorch** rather than against the float TRT arm. N1.6's
+float baseline leaves the larger of the two modules unaccelerated, so a
+float-relative ratio flatters it: measured on one RTX 4070 Ti SUPER, W4A4 is
+1.42x its float arm on N1.6 against 1.27x on N1.7, while against eager the
+order reverses to 1.94x and 2.08x. Only the second pair compares the two
+families.
+
+GR00T N1.5's upstream engines use a different DiT contract
 (fp16, `sa_embs`/`vl_embs` inputs), and openpi, LeRobot and Evo-1 ship no
 TensorRT path at all, so for those four families only the two FoldQuant
 engines run under TensorRT, the rest of the policy stays in PyTorch, there is
