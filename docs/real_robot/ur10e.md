@@ -54,9 +54,23 @@ Follow `models/pi05/examples/ur5/README.md`, which gives `UR5Inputs`,
 verbatim. Two details from that file matter downstream:
 
 - `delta_action_mask = make_bool_mask(6, -1)` — the six joints are trained as
-  **delta** actions and the gripper as absolute. The client must apply them the
-  same way, so pass `--action-space delta`; it defaults to `absolute` and
-  getting this wrong turns a small correction into an absolute joint target.
+  **delta** actions and the gripper as absolute. This is a *training-side*
+  encoding only: the same block installs `AbsoluteActions(delta_action_mask)`
+  in the **outputs** pipeline, and that transform adds the observation's state
+  back before the chunk leaves the policy (`transforms.py:226`). So the client
+  receives **absolute joint targets** and must keep `--action-space absolute`,
+  the default. Passing `delta` there would add the state a second time.
+
+  The same holds for GR00T, and it is worth stating because both look like
+  delta policies from the config alone: N1.7's action modality declares
+  `rep: RELATIVE`, and `StateActionProcessor.unapply_action` converts back to
+  absolute using the state you passed in. Measured on a fine-tuned N1.7 ALOHA
+  checkpoint outside the paper's families: with the arm at
+  `[0.7332, 0.4004, -0.0291, ...]` the first predicted step is
+  `[0.7419, 0.3926, -0.0913, ...]` — tracking the state, not a small
+  correction around zero. **Check this on your own checkpoint the same way**
+  before the arm is powered: one observation, one `get_action`, compare the
+  first step against the state you sent.
 - `assets=AssetsConfig(assets_dir=..., asset_id="ur5e")` reuses the base
   model's UR statistics.
 
@@ -123,9 +137,9 @@ treat it as a template whose safety envelope you must set:
 | `MAX_JOINT_STEP` | 0.03 rad/tick | your cell's tolerance; at 100 Hz this is ~3 rad/s per joint |
 | `JOINT_LIMITS` | full controller range | your reachable box — the default constrains nothing |
 | `CONTROL_HZ` | 100 | your `servoJ` rate |
-| `GRIPPER_RANGE` | (0, 1) | your gripper's units and convention |
+| `GRIPPER_RANGE` | `None` (no clamp) | your gripper's real range, read off the checkpoint's `dataset_statistics.json` — **not** an assumed 0..1 |
 | `--action-horizon` | 10 | how long the arm may run open loop per chunk |
-| `--action-space` | `absolute` | `delta` if you trained under openpi's UR5 recipe |
+| `--action-space` | `absolute` | leave it — openpi and GR00T both return absolute; `delta` only for a config with no absolute-conversion on output |
 
 What it does with a chunk: rejects it outright if it contains NaN/inf or has
 the wrong width, then rate-limits every step so no single action can be
@@ -136,6 +150,12 @@ limits are applied after the rate clamp, per step.
 plumbing is cell-specific (Robotiq over the UR controller, a digital output, a
 separate socket), and a wrong guess there is a closing gripper. Wire them
 before the gripper channel means anything.
+
+Do not assume the gripper channel is 0..1. The GR00T ALOHA checkpoint measured
+here emits 0.647..1.632, so a 0..1 clamp would pin most of the trajectory at
+1.0 and the gripper would appear dead. `GRIPPER_RANGE` therefore defaults to
+`None` — no clamp — and logs a warning if you set one and it fires. Read the
+real range from the checkpoint's `experiment_cfg/dataset_statistics.json`.
 
 ## If you use a different family
 

@@ -50,8 +50,15 @@ the default is the controller's full range and constrains nothing."""
 CONTROL_HZ = 100.0
 SERVO_LOOKAHEAD = 0.1
 SERVO_GAIN = 300
-GRIPPER_RANGE = (0.0, 1.0)
-"""Policy gripper convention: 0 open, 1 closed. Map to your gripper's units."""
+GRIPPER_RANGE: tuple[float, float] | None = None
+"""Clamp for the gripper channel, or None to pass the policy's value through.
+
+Set this from the CHECKPOINT's own statistics, never from an assumed 0..1. A
+GR00T ALOHA checkpoint measured here emits gripper values in 0.647..1.632 —
+read off experiment_cfg/dataset_statistics.json — so a (0, 1) clamp would
+silently flatten most of that signal into a constant 1.0 and the gripper would
+stop responding. Leaving this None is the safe default: an out-of-range value
+is then visible in the log rather than quietly destroyed."""
 
 
 class Stopped(Exception):
@@ -141,7 +148,12 @@ class Arm:
         self.ctrl.servoJ(q.tolist(), 0.0, 0.0, dt, SERVO_LOOKAHEAD, SERVO_GAIN)
 
     def set_gripper(self, value: float) -> None:
-        value = float(np.clip(value, *GRIPPER_RANGE))
+        if GRIPPER_RANGE is not None:
+            clamped = float(np.clip(value, *GRIPPER_RANGE))
+            if clamped != value:
+                log.warning("gripper %.4f clamped to %.4f by GRIPPER_RANGE", value, clamped)
+            value = clamped
+        value = float(value)
         if self.dry_run:
             log.info("dry run gripper=%.3f", value)
             return
