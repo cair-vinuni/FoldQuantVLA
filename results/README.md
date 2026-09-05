@@ -181,6 +181,10 @@ Measured outputs are committed beside this file as `<family>/<arm>/`:
 `foldquant_export.json`. Tables in this file are regenerated from those files,
 so every cell traces to a committed artifact rather than to a transcript.
 
+Where a family's records need a note that does not generalize — a reading
+the files do not support, a correction to something already pushed — it sits
+in that family's folder: [`groot_n1_7/README.md`](groot_n1_7/README.md).
+
 Each integration README carries a **smoke check** — a 16-observation
 calibration, 8 held-out observations, one RTX 4070 Ti SUPER — that exercises
 the whole export → build → verify → benchmark chain on that family. Those
