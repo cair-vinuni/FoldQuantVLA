@@ -211,6 +211,46 @@ Evo-1 — all three serve eagerly upstream — and for π₀.₅ both eager and
 upstream's `torch.compile(max-autotune)` default (the FoldQuant seams need the
 eager model, so the compiled arm is timed end to end only).
 
+**A speedup against eager is not a quantization speedup**, and on these
+records most of it is not. The float TRT arm is the control that separates the
+two — the same graph, compiled, with nothing quantized — and where one exists
+the split is consistent:
+
+| module | eager | float engine | W4A4 | graph | precision |
+|---|---|---|---|---|---|
+| N1.7 text tower | 27.47 | 16.84 | 13.87 | 10.63 (78%) | 2.97 (22%) |
+| N1.7 action head | 39.47 | 21.76 | 15.84 | 17.71 (75%) | 5.92 (25%) |
+| N1.6 action head | 38.20 | 19.86 | 14.60 | 18.33 (78%) | 5.26 (22%) |
+
+Three module-level measurements across two families, all landing at 75-78%:
+**roughly three quarters of the latency a FoldQuant arm saves against eager is
+TensorRT compiling the graph, and roughly one quarter is the precision.** That
+is not an argument against the arms — it is what the deployment path is worth
+end to end — but a number quoted against eager measures both, and only the
+float arm tells them apart.
+
+The remaining four families have no float engine for their action module, so
+their tables cannot make this split at all. What they can bound is the last
+step alone, 8-bit to 4-bit, which no graph change explains:
+
+| | eager → W4A4 saved | of which 8→4 bit |
+|---|---|---|
+| N1.5 action head | 8.88 ms | 2.74 ms (31%) |
+| π₀.₅ denoise loop | 48.70 ms | 3.46 ms (7%) |
+| Evo-1 denoise loop | 51.47 ms | 6.59 ms (13%) |
+| SmolVLA denoise loop | 155.71 ms | 1.60 ms (1%) |
+
+The remainder of each row is graph and 8-bit quantization together, which
+these records do not separate — not evidence that precision did the work.
+SmolVLA is the row to read carefully: its 5.7x end-to-end is the largest here
+and the least attributable to quantization. Upstream's eager denoise step
+materializes a dense `[batch, suffix, prefix + suffix]` attention mask and
+re-crops the KV cache on every one of the ten steps, and its measured cost —
+17.6 ms per step — is more than double π₀.₅'s 8.0 ms for a *larger* expert.
+Most of what the SmolVLA engines recover is that overhead. Quoting 5.7x as a
+quantization result would be wrong; it is a deployment-path result, which is
+what this table measures and what the arm names say.
+
 ## Results
 
 Measured outputs are committed beside this file as `<family>/<arm>/`:
