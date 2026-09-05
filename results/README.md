@@ -245,9 +245,19 @@ is not an argument against the arms — it is what the deployment path is worth
 end to end — but a number quoted against eager measures both, and only the
 float arm tells them apart.
 
-The remaining four families have no float engine for their action module, so
-their tables cannot make this split at all. What they can bound is the last
-step alone, 8-bit to 4-bit, which no graph change explains:
+A float engine is not the only control that isolates the graph. Compiling the
+model with nothing quantized does the same job by another route, and π₀.₅ has
+such an arm already — upstream's `torch.compile(max-autotune)` default. It
+recovers 69.07 ms of the 92.81 ms between eager and W4A4: **74.4%**, landing
+inside the 73-78% the float engines give on a different family through a
+different mechanism. Two unrelated ways of holding precision fixed agree on
+roughly three quarters.
+
+No family outside GR00T has a float engine for its action module, so none of
+their tables makes the split that way; π₀.₅ and SmolVLA make it with a
+compile-only arm instead, and N1.5 and Evo-1 have neither. What every row
+can bound is the last step alone, 8-bit to 4-bit, which no graph change
+explains:
 
 | | eager → W4A4 saved | of which 8→4 bit |
 |---|---|---|
@@ -256,8 +266,9 @@ step alone, 8-bit to 4-bit, which no graph change explains:
 | Evo-1 denoise loop | 51.47 ms | 6.59 ms (13%) |
 | SmolVLA denoise loop | 155.71 ms | 1.60 ms (1%) |
 
-The remainder of each row is graph and 8-bit quantization together, which
-these records do not separate — not evidence that precision did the work.
+The remainder of each row is graph and 8-bit quantization together. For N1.5
+and Evo-1 these records do not separate the two — which is not evidence that
+precision did the work, only that nothing here isolates it.
 SmolVLA is the row to read carefully: its 5.7x end-to-end is the largest here
 and the least attributable to quantization. Upstream's eager denoise step
 materializes a dense `[batch, suffix, prefix + suffix]` attention mask and
@@ -266,6 +277,35 @@ re-crops the KV cache on every one of the ten steps, and its measured cost —
 Most of what the SmolVLA engines recover is that overhead. Quoting 5.7x as a
 quantization result would be wrong; it is a deployment-path result, which is
 what this table measures and what the arm names say.
+
+For SmolVLA that is no longer an inference. A compile-only control —
+`--compiled`, `torch.compile(sample_actions, max-autotune)`, no quantization
+anywhere — was measured against the same fixed observation in one process
+(`smolvla/benchmark_compiled.json`):
+
+| SmolVLA, e2e median | ms | min-max |
+|---|---|---|
+| eager | 210.01 | 206.38-214.70 |
+| `torch.compile(max-autotune)` | 38.93 | 38.17-40.19 |
+| W8A8 | 39.31 | 38.97-40.88 |
+| W4A4 | 36.74 | 36.43-37.88 |
+
+**Compiling alone recovers 171.1 ms of the 173.3 ms between eager and W4A4 —
+98.7% of the gap, with nothing quantized.** The compiled graph and W8A8 are
+indistinguishable here (their ranges overlap; no ordering should be read), and
+W4A4 sits 2.18 ms under the compiled graph, 1.06x. So the family's 5.7x is
+almost entirely the graph, and the quantization is worth the two-and-a-bit
+milliseconds the 8-to-4-bit row already reports.
+
+Two limits on that control. It is timed end to end only, because
+`torch.compile` inlines the pieces the component stopwatches wrap — so it
+speaks to e2e, not to the denoise loop. And the benchmark holds one
+observation for every iteration, which pins `prefix_len` and means the
+compiled graph never recompiles; SmolVLA does not pad (`pad_language_to=
+"longest"`), and the engines carry a 130-177 profile for exactly that reason.
+A compiled deployment would meet the varying length this measurement does not,
+so 38.93 ms is an optimistic bound for compilation in a way the engine numbers
+are not.
 
 ## Results
 
