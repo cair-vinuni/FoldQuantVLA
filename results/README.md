@@ -125,6 +125,22 @@ leaves the other in PyTorch, which is how a drift figure is attributed to a
 seam rather than to the sum of both. GR00T N1.7 does the same through
 upstream's own `--mode` (`vit_llm_only`, `dit_only`).
 
+That attribution is by seam, not by observation. **Damage to the backbone
+output does not predict which observation's chunk breaks.** Each `verify.json`
+sample carries the worst per-position cosine of the representation the action
+module consumes — `backbone_token_cos_min` for the three GR00T families,
+`kv_stack_position_cos_min` for π₀.₅ and SmolVLA,
+`fused_tokens_position_cos_min` for Evo-1 — and over the 32 held-out
+observations of each W4A4 arm its Pearson correlation with the action cosine
+is +0.30 (N1.7), +0.16 (N1.6), +0.08 (N1.5), +0.31 (π₀.₅), +0.10 (SmolVLA),
++0.21 (Evo-1). Positive in every family, weak in all six: in four of the six
+the single most-damaged prefix decodes to an action cosine of 0.9987 or
+better. The two depths measure the same arm; they are not two views of the
+same observations, and a per-observation reading across them is not supported
+by these files — see [`groot_n1_7/README.md`](groot_n1_7/README.md) for the
+case that prompted the check. `scripts/prefix_action_correlation.py`
+regenerates the six figures from the committed records alone.
+
 ## Success rate (`eval_libero`)
 
 LIBERO `spatial`, `object`, `goal`, `10` — 10 tasks each, `n` episodes per
@@ -181,8 +197,8 @@ Measured outputs are committed beside this file as `<family>/<arm>/`:
 `foldquant_export.json`. Tables in this file are regenerated from those files,
 so every cell traces to a committed artifact rather than to a transcript.
 
-Where a family's records need a note that does not generalize — a reading
-the files do not support, a correction to something already pushed — it sits
+Where a family's records need a note of their own — a reading the files do
+not support, a correction to something already pushed — it sits
 in that family's folder: [`groot_n1_7/README.md`](groot_n1_7/README.md).
 
 Each integration README carries a **smoke check** — a 16-observation

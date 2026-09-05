@@ -34,6 +34,12 @@ follow is a per-observation link between the two depths. The position-level
 finding and the action-level finding are two measurements of the same arm, not
 two views of the same observations.
 
+That holds beyond this family: the same correlation, computed from the
+per-sample backbone field each `verify.json` records, is weak in all six
+(+0.08 to +0.31) — see the Drift section of [`../README.md`](../README.md).
+`positions.json` remains an N1.7-only depth record; the cross-family check
+does not need it.
+
 The pushed history is left as it is; this file is the correction of record.
 
 ## Reproducing the table
