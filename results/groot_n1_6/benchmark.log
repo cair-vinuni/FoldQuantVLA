@@ -1,0 +1,438 @@
+<repo>/models/groot_n1_6/.venv/lib/python3.10/site-packages/albumentations/__init__.py:13: UserWarning: A new version of Albumentations is available: 2.0.8 (you have 1.4.18). Upgrade using: pip install -U albumentations. To disable automatic update checks, set the environment variable NO_ALBUMENTATIONS_UPDATE to 1.
+  check_for_updates()
+2026-09-05 09:39:59,896 transformers_modules.Eagle-Block2A-2B-v2.modeling_eagle3_vl mlp_checkpoint: False
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+<repo>/models/groot_n1_6/gr00t/model/modules/dit.py:240: FutureWarning: Accessing config attribute `compute_dtype` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'compute_dtype' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.compute_dtype'.
+  embedding_dim=self.inner_dim, compute_dtype=self.compute_dtype
+<repo>/models/groot_n1_6/gr00t/model/modules/dit.py:271: FutureWarning: Accessing config attribute `output_dim` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'output_dim' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.output_dim'.
+  self.proj_out_2 = nn.Linear(self.inner_dim, self.output_dim)
+2026-09-05 09:40:01,386 transformers_modules.Eagle-Block2A-2B-v2.processing_eagle3_vl set VIDEO_TOTAL_PIXELS: 90316800
+`use_fast` is set to `True` but the image processor class does not have a fast version.  Falling back to the slow version.
+2026-09-05 09:40:01,817 transformers_modules.Eagle-Block2A-2B-v2.processing_eagle3_vl Processor Eagle3_VLProcessor:
+- image_processor: Eagle3_VLImageProcessorFast {
+  "auto_map": {
+    "AutoImageProcessor": "image_processing_eagle3_vl_fast.Eagle3_VLImageProcessorFast",
+    "AutoProcessor": "processing_eagle3_vl.Eagle3_VLProcessor"
+  },
+  "crop_size": null,
+  "data_format": "channels_first",
+  "default_to_square": false,
+  "device": null,
+  "do_center_crop": null,
+  "do_convert_rgb": true,
+  "do_normalize": true,
+  "do_pad": false,
+  "do_rescale": true,
+  "do_resize": false,
+  "image_mean": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "image_processor_type": "Eagle3_VLImageProcessorFast",
+  "image_std": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "input_data_format": null,
+  "processor_class": "Eagle3_VLProcessor",
+  "resample": 3,
+  "rescale_factor": 0.00392156862745098,
+  "return_tensors": null,
+  "size": {
+    "height": 448,
+    "width": 448
+  }
+}
+
+- tokenizer: Qwen2TokenizerFast(name_or_path='<repo>/models/groot_n1_6/gr00t/model/gr00t_n1d6/../modules/nvidia/Eagle-Block2A-2B-v2', vocab_size=151643, model_max_length=32768, is_fast=True, padding_side='right', truncation_side='right', special_tokens={'eos_token': '<|im_end|>', 'pad_token': '<|endoftext|>', 'additional_special_tokens': ['<|im_start|>', '<|im_end|>', '<|object_ref_start|>', '<|object_ref_end|>', '<|box_start|>', '<|box_end|>', '<|quad_start|>', '<|quad_end|>', '<|vision_start|>', '<|vision_end|>', '<|vision_pad|>', '<|image_pad|>', '<|video_pad|>', '<IMG_CONTEXT>', '<img>', '</img>', '<box>', '</box>', '<quad>', '</quad>', '<ref>', '</ref>', '<interval>', '</interval>']}, clean_up_tokenization_spaces=False, added_tokens_decoder={
+	151643: AddedToken("<|endoftext|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151644: AddedToken("<|im_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151645: AddedToken("<|im_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151646: AddedToken("<|object_ref_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151647: AddedToken("<|object_ref_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151648: AddedToken("<|box_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151649: AddedToken("<|box_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151650: AddedToken("<|quad_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151651: AddedToken("<|quad_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151652: AddedToken("<|vision_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151653: AddedToken("<|vision_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151654: AddedToken("<|vision_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151655: AddedToken("<|image_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151656: AddedToken("<|video_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151657: AddedToken("<tool_call>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151658: AddedToken("</tool_call>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151659: AddedToken("<|fim_prefix|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151660: AddedToken("<|fim_middle|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151661: AddedToken("<|fim_suffix|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151662: AddedToken("<|fim_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151663: AddedToken("<|repo_name|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151664: AddedToken("<|file_sep|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151665: AddedToken("<tool_response>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151666: AddedToken("</tool_response>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151667: AddedToken("<think>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151668: AddedToken("</think>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151669: AddedToken("<IMG_CONTEXT>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151670: AddedToken("<img>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151671: AddedToken("</img>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151672: AddedToken("<box>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151673: AddedToken("</box>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151674: AddedToken("<quad>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151675: AddedToken("</quad>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151676: AddedToken("<ref>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151677: AddedToken("</ref>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151678: AddedToken("<interval>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151679: AddedToken("</interval>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+}
+)
+
+{
+  "auto_map": {
+    "AutoProcessor": "processing_eagle3_vl.Eagle3_VLProcessor"
+  },
+  "image_end_token": "</img>",
+  "image_placeholder": "image",
+  "image_start_token": "<img>",
+  "image_token": "<IMG_CONTEXT>",
+  "pixels_per_token": 784,
+  "processor_class": "Eagle3_VLProcessor",
+  "video_placeholder": "video",
+  "video_token": "<IMG_CONTEXT>",
+  "vision_feature_select_strategy": null
+}
+
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:00<00:00,  5.06it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00,  5.88it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00,  5.74it/s]
+2026-09-05 09:40:37,966 transformers_modules.Eagle-Block2A-2B-v2.processing_eagle3_vl Processor Eagle3_VLProcessor:
+- image_processor: Eagle3_VLImageProcessorFast {
+  "auto_map": {
+    "AutoImageProcessor": "image_processing_eagle3_vl_fast.Eagle3_VLImageProcessorFast",
+    "AutoProcessor": "processing_eagle3_vl.Eagle3_VLProcessor"
+  },
+  "crop_size": null,
+  "data_format": "channels_first",
+  "default_to_square": false,
+  "device": null,
+  "do_center_crop": null,
+  "do_convert_rgb": true,
+  "do_normalize": true,
+  "do_pad": false,
+  "do_rescale": true,
+  "do_resize": false,
+  "image_mean": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "image_processor_type": "Eagle3_VLImageProcessorFast",
+  "image_std": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "input_data_format": null,
+  "processor_class": "Eagle3_VLProcessor",
+  "resample": 3,
+  "rescale_factor": 0.00392156862745098,
+  "return_tensors": null,
+  "size": {
+    "height": 448,
+    "width": 448
+  }
+}
+
+- tokenizer: Qwen2TokenizerFast(name_or_path='<repo>/models/groot_n1_6/gr00t/model/gr00t_n1d6/../modules/nvidia/Eagle-Block2A-2B-v2', vocab_size=151643, model_max_length=32768, is_fast=True, padding_side='right', truncation_side='right', special_tokens={'eos_token': '<|im_end|>', 'pad_token': '<|endoftext|>', 'additional_special_tokens': ['<|im_start|>', '<|im_end|>', '<|object_ref_start|>', '<|object_ref_end|>', '<|box_start|>', '<|box_end|>', '<|quad_start|>', '<|quad_end|>', '<|vision_start|>', '<|vision_end|>', '<|vision_pad|>', '<|image_pad|>', '<|video_pad|>', '<IMG_CONTEXT>', '<img>', '</img>', '<box>', '</box>', '<quad>', '</quad>', '<ref>', '</ref>', '<interval>', '</interval>']}, clean_up_tokenization_spaces=False, added_tokens_decoder={
+	151643: AddedToken("<|endoftext|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151644: AddedToken("<|im_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151645: AddedToken("<|im_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151646: AddedToken("<|object_ref_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151647: AddedToken("<|object_ref_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151648: AddedToken("<|box_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151649: AddedToken("<|box_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151650: AddedToken("<|quad_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151651: AddedToken("<|quad_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151652: AddedToken("<|vision_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151653: AddedToken("<|vision_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151654: AddedToken("<|vision_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151655: AddedToken("<|image_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151656: AddedToken("<|video_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151657: AddedToken("<tool_call>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151658: AddedToken("</tool_call>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151659: AddedToken("<|fim_prefix|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151660: AddedToken("<|fim_middle|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151661: AddedToken("<|fim_suffix|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151662: AddedToken("<|fim_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151663: AddedToken("<|repo_name|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151664: AddedToken("<|file_sep|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151665: AddedToken("<tool_response>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151666: AddedToken("</tool_response>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151667: AddedToken("<think>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151668: AddedToken("</think>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151669: AddedToken("<IMG_CONTEXT>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151670: AddedToken("<img>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151671: AddedToken("</img>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151672: AddedToken("<box>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151673: AddedToken("</box>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151674: AddedToken("<quad>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151675: AddedToken("</quad>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151676: AddedToken("<ref>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151677: AddedToken("</ref>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151678: AddedToken("<interval>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151679: AddedToken("</interval>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+}
+)
+
+{
+  "auto_map": {
+    "AutoProcessor": "processing_eagle3_vl.Eagle3_VLProcessor"
+  },
+  "image_end_token": "</img>",
+  "image_placeholder": "image",
+  "image_start_token": "<img>",
+  "image_token": "<IMG_CONTEXT>",
+  "pixels_per_token": 784,
+  "processor_class": "Eagle3_VLProcessor",
+  "video_placeholder": "video",
+  "video_token": "<IMG_CONTEXT>",
+  "vision_feature_select_strategy": null
+}
+
+2026-09-05 09:40:38,347 transformers_modules.Eagle-Block2A-2B-v2.processing_eagle3_vl Processor Eagle3_VLProcessor:
+- image_processor: Eagle3_VLImageProcessorFast {
+  "auto_map": {
+    "AutoImageProcessor": "image_processing_eagle3_vl_fast.Eagle3_VLImageProcessorFast",
+    "AutoProcessor": "processing_eagle3_vl.Eagle3_VLProcessor"
+  },
+  "crop_size": null,
+  "data_format": "channels_first",
+  "default_to_square": false,
+  "device": null,
+  "do_center_crop": null,
+  "do_convert_rgb": true,
+  "do_normalize": true,
+  "do_pad": false,
+  "do_rescale": true,
+  "do_resize": false,
+  "image_mean": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "image_processor_type": "Eagle3_VLImageProcessorFast",
+  "image_std": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "input_data_format": null,
+  "processor_class": "Eagle3_VLProcessor",
+  "resample": 3,
+  "rescale_factor": 0.00392156862745098,
+  "return_tensors": null,
+  "size": {
+    "height": 448,
+    "width": 448
+  }
+}
+
+- tokenizer: Qwen2TokenizerFast(name_or_path='<repo>/models/groot_n1_6/gr00t/model/gr00t_n1d6/../modules/nvidia/Eagle-Block2A-2B-v2', vocab_size=151643, model_max_length=32768, is_fast=True, padding_side='right', truncation_side='right', special_tokens={'eos_token': '<|im_end|>', 'pad_token': '<|endoftext|>', 'additional_special_tokens': ['<|im_start|>', '<|im_end|>', '<|object_ref_start|>', '<|object_ref_end|>', '<|box_start|>', '<|box_end|>', '<|quad_start|>', '<|quad_end|>', '<|vision_start|>', '<|vision_end|>', '<|vision_pad|>', '<|image_pad|>', '<|video_pad|>', '<IMG_CONTEXT>', '<img>', '</img>', '<box>', '</box>', '<quad>', '</quad>', '<ref>', '</ref>', '<interval>', '</interval>']}, clean_up_tokenization_spaces=False, added_tokens_decoder={
+	151643: AddedToken("<|endoftext|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151644: AddedToken("<|im_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151645: AddedToken("<|im_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151646: AddedToken("<|object_ref_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151647: AddedToken("<|object_ref_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151648: AddedToken("<|box_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151649: AddedToken("<|box_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151650: AddedToken("<|quad_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151651: AddedToken("<|quad_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151652: AddedToken("<|vision_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151653: AddedToken("<|vision_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151654: AddedToken("<|vision_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151655: AddedToken("<|image_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151656: AddedToken("<|video_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151657: AddedToken("<tool_call>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151658: AddedToken("</tool_call>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151659: AddedToken("<|fim_prefix|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151660: AddedToken("<|fim_middle|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151661: AddedToken("<|fim_suffix|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151662: AddedToken("<|fim_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151663: AddedToken("<|repo_name|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151664: AddedToken("<|file_sep|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151665: AddedToken("<tool_response>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151666: AddedToken("</tool_response>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151667: AddedToken("<think>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151668: AddedToken("</think>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),
+	151669: AddedToken("<IMG_CONTEXT>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151670: AddedToken("<img>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151671: AddedToken("</img>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151672: AddedToken("<box>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151673: AddedToken("</box>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151674: AddedToken("<quad>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151675: AddedToken("</quad>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151676: AddedToken("<ref>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151677: AddedToken("</ref>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151678: AddedToken("<interval>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+	151679: AddedToken("</interval>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),
+}
+)
+
+{
+  "auto_map": {
+    "AutoProcessor": "processing_eagle3_vl.Eagle3_VLProcessor"
+  },
+  "image_end_token": "</img>",
+  "image_placeholder": "image",
+  "image_start_token": "<img>",
+  "image_token": "<IMG_CONTEXT>",
+  "pixels_per_token": 784,
+  "processor_class": "Eagle3_VLProcessor",
+  "video_placeholder": "video",
+  "video_token": "<IMG_CONTEXT>",
+  "vision_feature_select_strategy": null
+}
+
+2026-09-05 09:40:38,911 foldquant_integration.calibration built 1 observations from 1 episodes
+2026-09-05 09:40:38,917 foldquant.groot_n1_6.benchmark NVIDIA GeForce RTX 4070 Ti SUPER | action horizon 50 | 4 denoising steps
+2026-09-05 09:40:39,407 foldquant.groot_n1_6.benchmark arm: PyTorch Eager
+2026-09-05 09:40:42,207 foldquant.groot_n1_6.benchmark E2E 69 ms (14.4 Hz) | data 4 | backbone 27 | action head 38 ms
+2026-09-05 09:40:42,207 foldquant.groot_n1_6.benchmark arm: float (<repo>/models/groot_n1_6/exports/float/engines)
+2026-09-05 09:40:42,208 foldquant.groot_n1_6.runtime llm: no llm_bf16.engine in <repo>/models/groot_n1_6/exports/float/engines, PyTorch module kept
+2026-09-05 09:40:44,371 foldquant.groot_n1_6.runtime dit: serving <repo>/models/groot_n1_6/exports/float/engines/dit_bf16.engine
+2026-09-05 09:40:46,367 foldquant.groot_n1_6.benchmark E2E 51 ms (19.7 Hz) | data 4 | backbone 27 | action head 20 ms
+2026-09-05 09:40:46,433 foldquant.groot_n1_6.benchmark arm: w4a4_cascade (<repo>/models/groot_n1_6/exports/w4a4_cascade/engines)
+2026-09-05 09:40:46,435 foldquant.kernels.locator Loaded TRT plugin library: ~/.cache/foldquant/plugins/sm89-x86_64-trt10.16/foldquant_int4_per_row.so
+2026-09-05 09:40:47,309 foldquant.groot_n1_6.runtime llm: serving <repo>/models/groot_n1_6/exports/w4a4_cascade/engines/llm_bf16.engine
+2026-09-05 09:40:48,628 foldquant.groot_n1_6.runtime dit: serving <repo>/models/groot_n1_6/exports/w4a4_cascade/engines/dit_bf16.engine
+2026-09-05 09:40:50,236 foldquant.groot_n1_6.benchmark E2E 36 ms (27.9 Hz) | data 4 | backbone 17 | action head 15 ms
+2026-09-05 09:40:50,319 foldquant.groot_n1_6.benchmark arm: w4a4 (<repo>/models/groot_n1_6/exports/w4a4/engines)
+2026-09-05 09:40:50,844 foldquant.groot_n1_6.runtime llm: serving <repo>/models/groot_n1_6/exports/w4a4/engines/llm_bf16.engine
+2026-09-05 09:40:51,788 foldquant.groot_n1_6.runtime dit: serving <repo>/models/groot_n1_6/exports/w4a4/engines/dit_bf16.engine
+2026-09-05 09:40:53,398 foldquant.groot_n1_6.benchmark E2E 36 ms (27.9 Hz) | data 4 | backbone 17 | action head 15 ms
+2026-09-05 09:40:53,476 foldquant.groot_n1_6.benchmark arm: w8a8 (<repo>/models/groot_n1_6/exports/w8a8/engines)
+2026-09-05 09:40:53,479 foldquant.kernels.locator Loaded TRT plugin library: ~/.cache/foldquant/plugins/sm89-x86_64-trt10.16/foldquant_int8_per_row.so
+2026-09-05 09:40:54,379 foldquant.groot_n1_6.runtime llm: serving <repo>/models/groot_n1_6/exports/w8a8/engines/llm_bf16.engine
+2026-09-05 09:40:55,705 foldquant.groot_n1_6.runtime dit: serving <repo>/models/groot_n1_6/exports/w8a8/engines/dit_bf16.engine
+2026-09-05 09:40:57,544 foldquant.groot_n1_6.benchmark E2E 41 ms (24.4 Hz) | data 4 | backbone 18 | action head 18 ms
+2026-09-05 09:40:57,683 foldquant.groot_n1_6.benchmark wrote <repo>/results/groot_n1_6/benchmark.json
+
+====================================================================================================
+MARKDOWN TABLE (copy/paste into README)
+====================================================================================================
+
+GR00T-N1.6-3B Inference Timing (4 denoising steps):
+
+### Component-wise Breakdown
+
+| Device | Mode | Data Processing | Backbone | Action Head | E2E | Frequency |
+|--------|------|-----------------|----------|-------------|-----|-----------|
+| GeForce | PyTorch Eager | 4 ms | 27 ms | 38 ms | 69 ms | 14.4 Hz |
+| GeForce | float | 4 ms | 27 ms | 20 ms | 51 ms | 19.7 Hz |
+| GeForce | w4a4_cascade | 4 ms | 17 ms | 15 ms | 36 ms | 27.9 Hz |
+| GeForce | w4a4 | 4 ms | 17 ms | 15 ms | 36 ms | 27.9 Hz |
+| GeForce | w8a8 | 4 ms | 18 ms | 18 ms | 41 ms | 24.4 Hz |
+
+### Speedup vs PyTorch Eager
+
+| Device | Mode | E2E Speedup | Action Head Speedup |
+|--------|------|-------------|---------------------|
+| GeForce | PyTorch Eager | 1.00x | 1.00x |
+| GeForce | float | 1.37x | 1.92x |
+| GeForce | w4a4_cascade | 1.94x | 2.62x |
+| GeForce | w4a4 | 1.94x | 2.62x |
+| GeForce | w8a8 | 1.69x | 2.08x |
+
+====================================================================================================

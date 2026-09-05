@@ -24,12 +24,16 @@
 # — it wraps upstream's benchmark_inference.py, which takes one engine
 # directory and prints to stdout, so it gets one benchmark.log per arm.
 #
-# Paths differ per machine; override any of these:
-: "${N17_MODEL:=$HOME/vr_repos/VLA-OPT/weights/nvidia/GR00T-N1.7-LIBERO-4suite}"
-: "${N16_MODEL:=$HOME/vr_repos/VLA-OPT/weights/nvidia/GR00T-N1.6-LIBERO}"
-: "${N15_MODEL:=$HOME/vr_repos/VLA-OPT/weights/nvidia/GR00T-N1.5-LIBERO-4suite}"
-: "${PI05_CKPT:=$HOME/vr_repos/VLA-OPT/weights/openpi/pi05_libero_pytorch}"
-: "${GROOT_DATA:=$HOME/vr_repos/VLA-OPT/tmp/data/libero_4suites_calib}"
+# Paths differ per machine, so every checkpoint/dataset root is an environment
+# variable; the script refuses to guess. Optional knobs have defaults below.
+: "${N17_MODEL:?set N17_MODEL to the GR00T N1.7 LIBERO checkpoint directory}"
+: "${N16_MODEL:?set N16_MODEL to the GR00T N1.6 LIBERO checkpoint directory}"
+# N1.6's processor_config.json names several embodiments; the LIBERO one is
+# what the verify rows in results/groot_n1_6 were measured with.
+: "${N16_EMBODIMENT:=libero_panda}"
+: "${N15_MODEL:?set N15_MODEL to the GR00T N1.5 LIBERO checkpoint directory}"
+: "${PI05_CKPT:?set PI05_CKPT to the converted pi05_libero PyTorch checkpoint directory}"
+: "${GROOT_DATA:?set GROOT_DATA to the LIBERO 4-suite calibration dataset (LeRobot layout)}"
 : "${SMOLVLA_DATA:=HuggingFaceVLA/libero}"
 : "${SMOLVLA_EPISODES:=0-149}"
 : "${EVO1_CKPT:?set EVO1_CKPT to the Evo1_LIBERO snapshot directory}"
@@ -42,14 +46,17 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FAMILIES=("$@")
 [ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 pi05 smolvla evo_1)
 
-# --arms LABEL=DIR for every built arm of a family; empty when none exist.
+# LABEL=DIR for every built arm of a family; empty when none exist. Emitted as
+# ONE `--arms a=... b=...` group: tyro's list flag keeps only the last `--arms`
+# when the flag is repeated, so `--arms a=x --arms b=y` would time b alone.
 arms_of() {
   local fam="$1" spec=() d
   for d in "$REPO/models/$fam/exports"/*/engines; do
     [ -d "$d" ] || continue
-    spec+=("--arms" "$(basename "$(dirname "$d")")=$d")
+    spec+=("$(basename "$(dirname "$d")")=$d")
   done
-  printf '%s\n' "${spec[@]:-}"
+  [ ${#spec[@]} -gt 0 ] && printf '%s\n' "--arms" "${spec[@]}"
+  return 0
 }
 
 busy() {
@@ -78,7 +85,7 @@ for fam in "${FAMILIES[@]}"; do
       "$venv" -m foldquant_integration.benchmark \
         --model-path "$N17_MODEL" \
         --trt-engine-path "$d" --trt-mode n17_full_pipeline \
-        2>&1 | tee "$out/$arm/benchmark.log"
+        2>&1 | tee "$out/$arm/benchmark.log" || echo "  FAIL: $fam/$arm (see results/$fam/$arm/benchmark.log)"
     done
     cd "$REPO"; continue
   fi
@@ -88,7 +95,7 @@ for fam in "${FAMILIES[@]}"; do
   echo "  arms: ${ARMS[*]}"
 
   case "$fam" in
-    groot_n1_6) set -- --model-path "$N16_MODEL" --dataset-path "$GROOT_DATA" ;;
+    groot_n1_6) set -- --model-path "$N16_MODEL" --dataset-path "$GROOT_DATA" --embodiment-tag "$N16_EMBODIMENT" ;;
     groot_n1_5) set -- --model-path "$N15_MODEL" --dataset-path "$GROOT_DATA" ;;
     pi05)       set -- --checkpoint-dir "$PI05_CKPT" --dataset-path "$GROOT_DATA" ;;
     smolvla)    set -- --dataset-path "$SMOLVLA_DATA" --episodes "$SMOLVLA_EPISODES" ;;
@@ -97,7 +104,8 @@ for fam in "${FAMILIES[@]}"; do
 
   "$venv" -m foldquant_integration.benchmark "$@" "${ARMS[@]}" \
       --num-iterations "$ITERS" --warmup "$WARMUP" \
-      --output "$out/benchmark.json" 2>&1 | tee "$out/benchmark.log"
+      --output "$out/benchmark.json" 2>&1 | tee "$out/benchmark.log" \
+      || echo "  FAIL: $fam (see results/$fam/benchmark.log)"
   cd "$REPO"
 done
 

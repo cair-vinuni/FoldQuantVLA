@@ -1,0 +1,192 @@
+<repo>/models/groot_n1_7/.venv/lib/python3.10/site-packages/albumentations/__init__.py:13: UserWarning: A new version of Albumentations is available: 2.0.8 (you have 1.4.18). Upgrade using: pip install -U albumentations. To disable automatic update checks, set the environment variable NO_ALBUMENTATIONS_UPDATE to 1.
+  check_for_updates()
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3VLForConditionalGeneration is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3VLModel is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3VLVisionModel is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3VLTextModel is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+<repo>/models/groot_n1_7/gr00t/model/modules/dit.py:255: FutureWarning: Accessing config attribute `compute_dtype` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'compute_dtype' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.compute_dtype'.
+  embedding_dim=self.inner_dim, compute_dtype=self.compute_dtype
+<repo>/models/groot_n1_7/gr00t/model/modules/dit.py:286: FutureWarning: Accessing config attribute `output_dim` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'output_dim' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.output_dim'.
+  self.proj_out_2 = nn.Linear(self.inner_dim, self.output_dim)
+====================================================================================================
+GR00T INFERENCE BENCHMARK
+====================================================================================================
+Device: GeForce (NVIDIA GeForce RTX 4070 Ti SUPER)
+Model: <weights>/nvidia/GR00T-N1.7-LIBERO-4suite
+Dataset: <repo>/models/groot_n1_7/demo_data/libero_demo
+Iterations: 20
+Warmup: 5
+Use Trajectory: False
+
+Loading policy...
+Total number of DiT parameters:  1091722240
+Total number of SelfAttentionTransformer parameters:  201433088
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 3/3 [00:00<00:00, 60.59it/s]
+<repo>/models/groot_n1_7/gr00t/model/modules/dit.py:255: FutureWarning: Accessing config attribute `compute_dtype` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'compute_dtype' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.compute_dtype'.
+  embedding_dim=self.inner_dim, compute_dtype=self.compute_dtype
+<repo>/models/groot_n1_7/gr00t/model/modules/dit.py:286: FutureWarning: Accessing config attribute `output_dim` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'output_dim' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.output_dim'.
+  self.proj_out_2 = nn.Linear(self.inner_dim, self.output_dim)
+Action Horizon: 40
+Denoising Steps: 4
+
+--------------------------------------------------
+Benchmarking Data Processing (shared across all modes)...
+--------------------------------------------------
+  Data Processing: 2.78 ± 0.26 ms
+
+--------------------------------------------------
+Benchmarking PyTorch Eager...
+--------------------------------------------------
+  E2E:             69 ms (14.5 Hz)
+  Data Processing: 3 ms
+  Backbone:        27 ms
+  Action Head:     39 ms
+
+--------------------------------------------------
+Benchmarking torch.compile (mode='max-autotune')...
+(This may take a while due to JIT compilation on first run)
+--------------------------------------------------
+Total number of DiT parameters:  1091722240
+Total number of SelfAttentionTransformer parameters:  201433088
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 3/3 [00:00<00:00, 58.66it/s]
+  E2E:             55 ms (18.1 Hz)
+  Data Processing: 3 ms
+  Backbone:        28 ms
+  Action Head:     25 ms
+
+--------------------------------------------------
+Benchmarking TensorRT (n17_full_pipeline)...
+--------------------------------------------------
+Total number of DiT parameters:  1091722240
+Total number of SelfAttentionTransformer parameters:  201433088
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 3/3 [00:00<00:00, 57.19it/s]
+Loading ViT engine: exports/w4a4_cascade/engines/vit_bf16.engine
+============= TRT Engine Detail =============
+Engine file: exports/w4a4_cascade/engines/vit_bf16.engine
+Inputs: 1
+   0. pixel_values: 512x1536 [torch.float32]
+Outputs: 2
+   0. image_embeds: 128x2048 [torch.float32]
+   1. deepstack_features: 3x128x2048 [torch.float32]
+=============================================
+  Deleted PyTorch ViT (replaced by TRT engine)
+Loading LLM engine: exports/w4a4_cascade/engines/llm_bf16.engine
+============= TRT Engine Detail =============
+Engine file: exports/w4a4_cascade/engines/llm_bf16.engine
+Inputs: 7
+   0. inputs_embeds: 1x-1x2048 [torch.bfloat16]
+   1. attention_mask: 1x-1 [torch.int64]
+   2. position_ids: 3x1x-1 [torch.int64]
+   3. visual_pos_masks: 1x-1 [torch.bool]
+   4. deepstack_0: 128x2048 [torch.bfloat16]
+   5. deepstack_1: 128x2048 [torch.bfloat16]
+   6. deepstack_2: 128x2048 [torch.bfloat16]
+Outputs: 1
+   0. embeddings: 1x-1x2048 [torch.bfloat16]
+=============================================
+  Deleted PyTorch LLM layers (replaced by TRT engine)
+Loading VL Self-Attention engine: exports/w4a4_cascade/engines/vl_self_attention.engine
+============= TRT Engine Detail =============
+Engine file: exports/w4a4_cascade/engines/vl_self_attention.engine
+Inputs: 1
+   0. hidden_states: 1x-1x2048 [torch.bfloat16]
+Outputs: 1
+   0. output: 1x-1x2048 [torch.bfloat16]
+=============================================
+  Deleted PyTorch vl_self_attention (replaced by TRT engine)
+Loading action head engines from: exports/w4a4_cascade/engines
+============= TRT Engine Detail =============
+Engine file: exports/w4a4_cascade/engines/state_encoder.engine
+Inputs: 2
+   0. state: 1x1x132 [torch.bfloat16]
+   1. embodiment_id: 1 [torch.int64]
+Outputs: 1
+   0. output: 1x1x1536 [torch.bfloat16]
+=============================================
+============= TRT Engine Detail =============
+Engine file: exports/w4a4_cascade/engines/action_encoder.engine
+Inputs: 3
+   0. actions: 1x40x132 [torch.bfloat16]
+   1. timesteps: 1 [torch.int64]
+   2. embodiment_id: 1 [torch.int64]
+Outputs: 1
+   0. output: 1x40x1536 [torch.bfloat16]
+=============================================
+============= TRT Engine Detail =============
+Engine file: exports/w4a4_cascade/engines/dit_bf16.engine
+Inputs: 5
+   0. sa_embs: 1x-1x1536 [torch.bfloat16]
+   1. vl_embs: 1x-1x2048 [torch.bfloat16]
+   2. timestep: 1 [torch.int64]
+   3. image_mask: 1x-1 [torch.bool]
+   4. backbone_attention_mask: 1x-1 [torch.bool]
+Outputs: 1
+   0. output: 1x-1x1024 [torch.bfloat16]
+=============================================
+============= TRT Engine Detail =============
+Engine file: exports/w4a4_cascade/engines/action_decoder.engine
+Inputs: 2
+   0. model_output: 1x41x1024 [torch.bfloat16]
+   1. embodiment_id: 1 [torch.int64]
+Outputs: 1
+   0. output: 1x41x132 [torch.bfloat16]
+=============================================
+N1.7 full-pipeline TRT engines loaded.
+  ViT: TRT | LLM: TRT | Action Head: TRT
+  E2E:             33 ms (30.2 Hz)
+  Data Processing: 3 ms
+  Backbone:        14 ms
+  Action Head:     16 ms
+
+====================================================================================================
+MARKDOWN TABLE (copy/paste into README)
+====================================================================================================
+
+GR00T N1.7 Inference Timing (4 denoising steps):
+
+### Component-wise Breakdown
+
+| Device | Mode | Data Processing | Backbone | Action Head | E2E | Frequency |
+|--------|------|-----------------|----------|-------------|-----|-----------|
+| GeForce | PyTorch Eager | 3 ms | 27 ms | 39 ms | 69 ms | 14.5 Hz |
+| GeForce | torch.compile | 3 ms | 28 ms | 25 ms | 55 ms | 18.1 Hz |
+| GeForce | TensorRT (n17_full_pipeline) | 3 ms | 14 ms | 16 ms | 33 ms | 30.2 Hz |
+
+### Speedup vs PyTorch Eager
+
+| Device | Mode | E2E Speedup | Action Head Speedup |
+|--------|------|-------------|---------------------|
+| GeForce | PyTorch Eager | 1.00x | 1.00x |
+| GeForce | torch.compile | 1.25x | 1.55x |
+| GeForce | TensorRT (n17_full_pipeline) | 2.08x | 2.41x |
+
+====================================================================================================
+
+====================================================================================================
+DETAILED SUMMARY
+====================================================================================================
+
+Hardware: NVIDIA GeForce RTX 4070 Ti SUPER
+Model: <weights>/nvidia/GR00T-N1.7-LIBERO-4suite
+Action Horizon: 40
+Denoising Steps: 4
+
+PyTorch Eager:
+  E2E:             median=69.1 ms, mean=69.0 ± 0.9 ms, min=67.5, max=70.3 (14.5 Hz)
+  Data Processing: 2.69 ms (median)
+  Backbone:        27.41 ms (median)
+  Action Head:     38.63 ms (median)
+
+torch.compile:
+  E2E:             median=55.4 ms, mean=55.8 ± 1.3 ms, min=54.5, max=58.7 (18.1 Hz)
+  Data Processing: 2.69 ms (median)
+  Backbone:        27.62 ms (median)
+  Action Head:     24.87 ms (median)
+
+TensorRT (n17_full_pipeline):
+  E2E:             median=33.2 ms, mean=33.3 ± 0.8 ms, min=32.3, max=34.6 (30.2 Hz)
+  Data Processing: 2.69 ms (median)
+  Backbone:        13.99 ms (median)
+  Action Head:     16.02 ms (median)
+
+====================================================================================================
