@@ -202,6 +202,13 @@ upstream client sends one observation per request.
 
 ## Smoke check
 
+`eval_libero` installation check (not a suite result): on the `w8a8` engines,
+`--suites libero_spatial --n-episodes 2` completes **18/20**, ten tasks, zero
+task failures, ~16 s per task on one RTX 4070 Ti SUPER. Two episodes per task
+is an installation check — it says the rollout, the engines and a supplied
+LIBERO checkout work together end to end, and nothing about success rate.
+Paper numbers come from the full sweep.
+
 `w8a8_sr` LLM + `w4a4_sh` DiT, 16 calibration observations, 8 held-out
 observations, float64 cosines against the bf16 PyTorch policy (`verify`),
 LIBERO four-suite checkpoint at its own 4 denoising steps, one RTX 4070 Ti
