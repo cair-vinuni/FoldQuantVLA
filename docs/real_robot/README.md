@@ -64,7 +64,7 @@ the reference arm every quantized number should be read against.
 | GR00T N1.5 | ZMQ | 5555 | `--model-path` `--embodiment-tag` `--engine-dir` `--data-config` `--denoising-steps` `--api-token` |
 | π₀.₅ | websocket | 8000 | `--checkpoint-dir` `--config` `--engine-dir` |
 | Evo-1 | websocket (JSON) | 9000 | `--checkpoint-dir` `--engine-dir` `--arm-key` `--dataset-key` |
-| SmolVLA | — | — | no server in this integration; see below |
+| SmolVLA | gRPC | 8080 | `--engine-dir` `--host` `--port` `--fps` — see below |
 
 `--embodiment-tag` is required wherever the checkpoint declares more than one
 (N1.7's release declares nine and refuses to guess). π₀.₅'s `--config` is the
@@ -72,12 +72,30 @@ upstream training config name and must be the one the checkpoint was trained
 under — `pi05_libero` is only the default because that is what the paper
 measures.
 
-**SmolVLA has no `serve.py` here.** Upstream ships an async policy server
-(`src/lerobot/async_inference/policy_server.py`, gRPC) that builds its policy
-lazily when a client connects, so installing engines needs a hook after that
-construction rather than before it — the pattern the other five use does not
-transfer directly. Until that exists, SmolVLA runs quantized in-process
-(`runtime.install_engines`) but not behind a server.
+**SmolVLA's server installs its engines later than the other five**, and the
+difference is worth knowing before you point a robot at it. Upstream's async
+policy server (`src/lerobot/async_inference/policy_server.py`, gRPC) builds the
+policy **lazily**: the server starts with no model, and the checkpoint is named
+by the *client* in its `RemotePolicyConfig` handshake. There is therefore no
+assembled policy to install engines into before the server starts, so
+`foldquant_integration.serve` subclasses upstream's server and installs them
+inside the handshake instead, after upstream's own method has built the policy
+and before the first observation can arrive.
+
+Two consequences. The server binds its port without touching the GPU, so a
+listening SmolVLA server proves nothing about the engines yet — the first
+client connection is when they load. And nothing can check that the engine
+directory matches the checkpoint the client asks for: the engines carry shapes,
+the checkpoint carries weights, and a mismatch shows up as wrong actions rather
+than as an error.
+
+    # inference host
+    python -m foldquant_integration.serve --engine-dir exports/w8a8/engines --port 8080
+
+    # robot host — upstream's client, unchanged
+    python -m lerobot.async_inference.robot_client \
+        --server_address=<host>:8080 --policy_type=smolvla \
+        --pretrained_name_or_path=<ckpt> ...
 
 ## Clients
 

@@ -101,6 +101,16 @@ without it, by upstream's loader as much as by these tools.
    `--llm-scheme none` (or `--dit-scheme none`) to leave a module at the
    float export.
 
+   `--llm-params` / `--dit-params` take the fold's own knobs as JSON —
+   `sq_alpha`, `act_clip_ratio`, `site_bits`, `rot_block_size`,
+   `learned_calib`. The tuned arms built from them (`arc`, `res8`, `w4a8`) and
+   the two scripts that select the values are in
+   [`scripts/README.md`](../../../scripts/README.md). One trap worth knowing
+   before reading a preset: `sq_fold_order` resolves to `before` whenever the
+   scheme carries an FWHT (`_h`, `_sh`, `_shg`) and to `after` otherwise
+   (`foldquant/export.py:100`), so a preset's `sq_fold_order: before` is a
+   no-op on the action module's `_h` schemes and only changes an `_r` head.
+
    The export is reproducible: the sample plan and the flow-matching noise
    `get_action` starts from are both driven by `--seed`, so the same
    checkpoint, dataset and arguments emit byte-identical plugin graphs (two

@@ -101,6 +101,16 @@ upstream's loader as much as by these tools.
    graphs; keep `--num-calib` at 128 or more for a GPTQ (`_g`) arm — see the
    N1.7 README for why 32 observations leave the DiT Hessians rank deficient.
 
+   `--llm-params` / `--dit-params` take the fold's own knobs as JSON —
+   `sq_alpha`, `act_clip_ratio`, `site_bits`, `rot_block_size`,
+   `learned_calib`. The tuned arms built from them (`arc`, `res8`, `w4a8`) and
+   the two scripts that select the values are in
+   [`scripts/README.md`](../../../scripts/README.md). One trap worth knowing
+   before reading a preset: `sq_fold_order` resolves to `before` whenever the
+   scheme carries an FWHT (`_h`, `_sh`, `_shg`) and to `after` otherwise
+   (`foldquant/export.py:100`), so a preset's `sq_fold_order: before` is a
+   no-op on the action module's `_h` schemes and only changes an `_r` head.
+
 2. **Build the engine directory.**
 
    ```bash
