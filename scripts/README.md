@@ -97,9 +97,15 @@ Reading notes:
   clip is a W4A4-only knob and `w4a8_srg` therefore carries the alpha alone.
   The values are **selections on the LIBERO checkpoints**; applied to a
   different checkpoint of the same family they are borrowed constants, not
-  selections, and should be re-swept (on one N1.7 ALOHA checkpoint the LIBERO
-  clip of 0.85 improved one task's held-out drift and worsened another's,
-  while adding `site_bits` recovered both).
+  selections, and should be re-swept (on a fine-tuned N1.7 checkpoint outside
+  the paper's families the LIBERO clip of 0.85 improved one task's held-out
+  drift and worsened another's, while adding `site_bits` recovered both).
+- **Private fine-tunes: pass a local path, not the hub id.** Every record
+  runs its paths through `foldquant.provenance.public_path`, which strips an
+  absolute path to its basename but passes an `org/name` hub id through
+  verbatim — the point, for upstream releases. For a personal or institutional
+  fine-tune the org half of that id is an identity, and it would be committed
+  with the record.
 - **fb** = fold-before on the action module. Butterfly arms (`sh`, `shg`)
   already default to fold-before with `sq_alpha 0.5` (`foldquant.export._act_fold_knobs`),
   so for them the params are a restatement; for the dense `sr` head, whose
