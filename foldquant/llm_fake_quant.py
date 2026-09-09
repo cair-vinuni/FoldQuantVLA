@@ -36,7 +36,7 @@ rounding — negligible against the 4-bit grid.
 Supported: Qwen2 / Qwen3 / Qwen3-VL decoders (GR00T + Evo-1 families) and Gemma
 (Pi0/Pi0.5) — Gemma's ``(1+γ)`` RMSNorm is handled by folding in the effective
 gamma and writing back ``gamma_folded − 1``, matching the deployed emitter's
-``gemma_mode``. SmolLM2/Llama are refused rather than emulated unvalidated.
+``gemma_mode``. SmolLM2/Llama take the plain-RMSNorm path.
 
 Torch is imported lazily (build-time only). No ``tensorrt`` / ``.so`` /
 ``foldquant.runtime`` imports.
@@ -197,11 +197,8 @@ def install_llm_per_row_emulation(
 
     decoder = resolve_qwen3_decoder(module)
     cls_name = type(decoder).__name__
-    if "SmolLM" in cls_name or "Llama" in cls_name:
-        raise NotImplementedError(
-            f"install_llm_per_row_emulation: {cls_name} is not a validated decoder convention for "
-            "this emulation — cascade calibration is not wired for SmolLM2/Llama LLMs yet."
-        )
+    # SmolLM2 / Llama: same projection layout and gamma keys as Qwen, plain RMSNorm — the Qwen
+    # path below applies unchanged (gemma_plus_one is False for them).
     # GemmaRMSNorm applies its weight as (1+w) (y = rms(x)·(1+w); rms from x
     # BEFORE the gamma, same as Qwen) — so the SQ fold must see gamma=(1+w),
     # exactly as the deployed emitter materializes it, and the value written

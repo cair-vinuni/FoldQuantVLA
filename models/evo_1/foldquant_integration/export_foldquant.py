@@ -38,10 +38,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import torch
 import tyro
 
 from foldquant import schemes
 from foldquant.export import export_action_head, export_llm, install_llm_emulation
+from foldquant.float_export import FLOAT, Binding, export_module_float, export_with_example
 from foldquant.provenance import public_path
 
 from . import calibration
@@ -56,7 +58,7 @@ from .runtime import ContextCapture, head_module, llm_module, model_of
 
 logger = logging.getLogger("foldquant.evo_1.export")
 
-_NONE = ("", "none", "float")
+_NONE = ("", "none")
 
 
 @dataclass
@@ -145,6 +147,154 @@ def capture_shape_metadata(deployed, request: dict[str, Any], *, seed: int) -> d
     return seen
 
 
+
+# ---------------------------------------------------------------------------
+# Float (unquantized) engines. Two things make Evo-1 more than a plain trace, and
+# both mirror what the plugin graph does (foldquant/llm.py, padded_query_mask):
+#  * the prompt is padded to a fixed length and upstream runs flash-attn, which
+#    unpads/attends/re-pads with zeros. A traced eager attention must reproduce
+#    that: an additive key-padding bias at HALF the causal mask's magnitude (so a
+#    padded query's own key, both causally blocked and padded, sums to a finite
+#    value instead of -inf -> NaN), and each layer's attention output zeroed at
+#    padded QUERY positions before o_proj;
+#  * the action head's deployed unit is one Euler step, not its forward.
+# ---------------------------------------------------------------------------
+import math
+from contextlib import contextmanager
+
+
+@contextmanager
+def _flash_parity_attention(tower: torch.nn.Module, masks: dict):
+    """Swap every ``Qwen2Attention.forward`` for an eager re-implementation that reads
+    ``masks['pad_bias']`` ([B,1,1,S]) and ``masks['keep']`` ([B,S,1]) set by the wrapper."""
+    from transformers.models.qwen2.modeling_qwen2 import apply_rotary_pos_emb, repeat_kv
+
+    layers = tower.layers if hasattr(tower, "layers") else tower.model.layers
+    saved = []
+
+    def make_forward(attn):
+        def forward(hidden_states, attention_mask=None, position_ids=None, past_key_value=None,
+                    output_attentions=False, use_cache=False, **_):
+            bsz, q_len, _h = hidden_states.size()
+            q = attn.q_proj(hidden_states).view(bsz, q_len, attn.num_heads, attn.head_dim).transpose(1, 2)
+            k = attn.k_proj(hidden_states).view(bsz, q_len, attn.num_key_value_heads, attn.head_dim).transpose(1, 2)
+            v = attn.v_proj(hidden_states).view(bsz, q_len, attn.num_key_value_heads, attn.head_dim).transpose(1, 2)
+            cos, sin = attn.rotary_emb(v, seq_len=q_len)
+            q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
+            k = repeat_kv(k, attn.num_key_value_groups)
+            v = repeat_kv(v, attn.num_key_value_groups)
+            w = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(attn.head_dim)
+            # Under flash_attention_2 the model hands the layers NO mask and relies on the kernel's
+            # causal flag, so build causality here and ignore whatever HF passed. Causal at half
+            # finfo.min, padding at a quarter: their sum stays finite in bf16 (see header).
+            causal = torch.triu(torch.full((q_len, q_len), torch.finfo(torch.bfloat16).min * 0.5,
+                                           dtype=w.dtype, device=w.device), diagonal=1)
+            w = w + causal[None, None] + masks["pad_bias"].to(w.dtype)
+            w = torch.nn.functional.softmax(w, dim=-1, dtype=torch.float32).to(q.dtype)
+            o = torch.matmul(w, v).transpose(1, 2).contiguous().reshape(bsz, q_len, -1)
+            o = o * masks["keep"].to(o.dtype)          # flash parity: padded queries emit zeros
+            return attn.o_proj(o), None, past_key_value
+        return forward
+
+    for layer in layers:
+        saved.append((layer.self_attn, layer.self_attn.forward))
+        layer.self_attn.forward = make_forward(layer.self_attn)
+    try:
+        yield
+    finally:
+        for attn, fwd in saved:
+            attn.forward = fwd
+
+
+def export_llm_float_evo1(tower, onnx_path, *, forward_loop):
+    masks: dict = {}
+
+    def call(inputs_embeds, attention_mask, **rest):
+        am = attention_mask.to(inputs_embeds.dtype)
+        neg = torch.finfo(torch.bfloat16).min * 0.25
+        # (mask - 1) * |neg| -> 0 at real keys, -|neg| at padded keys; |neg| = finfo.min/4 (see header)
+        masks["pad_bias"] = ((am - 1.0) * (-neg))[:, None, None, :]
+        masks["keep"] = am[:, :, None]
+        # attention_mask=None: HF builds the causal mask only; padding enters through masks[].
+        rest = {k: v for k, v in rest.items() if k not in ("attention_mask",)}
+        rest["output_hidden_states"] = True
+        with _flash_parity_attention(tower, masks):
+            return tower(inputs_embeds=inputs_embeds, attention_mask=None, **rest)
+
+    from foldquant.float_export import capture_call
+    c = capture_call(tower, forward_loop)
+    kw = dict(c.kwargs)
+    if c.args:
+        import inspect
+        names = [p for p in inspect.signature(tower.forward).parameters if p != "self"]
+        for n, v in zip(names, c.args):
+            kw.setdefault(n, v)
+    return export_with_example(
+        tower, onnx_path, module_name="llm",
+        bindings=[Binding("inputs_embeds", "inputs_embeds", torch.bfloat16, {1: "seq_len"}),
+                  Binding("attention_mask", "attention_mask", torch.int64, {1: "seq_len"})],
+        output_name="hidden_states", output_dynamic={1: "seq_len"},
+        example_kwargs=kw, extract=lambda o: o.hidden_states[-1], call=call,
+    )
+
+
+class _HeadStep(torch.nn.Module):
+    """One Euler step of the flow-matching head: the unit the engine replaces."""
+
+    def __init__(self, head):
+        super().__init__()
+        self.head = head
+
+    def forward(self, action_seq, context_tokens, time_emb):
+        h = self.head
+        B = action_seq.shape[0]
+        emb = torch.zeros(B, dtype=torch.long, device=action_seq.device)
+        x = h._project_actions(action_seq, emb).to(h.dtype)
+        ctx = context_tokens.to(h.dtype)
+        te = time_emb.to(h.dtype)
+        for block in h.transformer_blocks:
+            x = block(x, ctx, te)
+        x = h.norm_out(x)
+        pooled = h.seq_pool_proj(x.reshape(B, -1)) if h.horizon > 1 else x.squeeze(1)
+        return h.mlp_head(pooled, emb)
+
+
+def export_head_float_evo1(head, onnx_path, *, forward_loop):
+    seen = {}
+
+    def hook(_m, args, kwargs):
+        seen["context_tokens"] = (args[1] if len(args) > 1 else kwargs["context_tokens"]).detach()
+        seen["time_emb"] = (args[2] if len(args) > 2 else kwargs["time_emb"]).detach()
+        raise _Stop()
+
+    class _Stop(Exception):
+        pass
+
+    hnd = head.transformer_blocks[0].register_forward_pre_hook(hook, with_kwargs=True)
+    try:
+        with torch.inference_mode():
+            try:
+                forward_loop(head)
+            except _Stop:
+                pass
+    finally:
+        hnd.remove()
+    if "context_tokens" not in seen:
+        raise RuntimeError("forward_loop never reached the head's first transformer block")
+    B = seen["context_tokens"].shape[0]
+    action_seq = (torch.rand(B, max(head.horizon, 1), head.per_action_dim,
+                             device=seen["context_tokens"].device, dtype=torch.bfloat16) * 2 - 1)
+    step = _HeadStep(head)
+    return export_with_example(
+        head, onnx_path, module_name="action_head",
+        bindings=[Binding("action_seq", "action_seq", torch.bfloat16),
+                  Binding("context_tokens", "context_tokens", torch.bfloat16),
+                  Binding("time_emb", "time_emb", torch.bfloat16)],
+        output_name="velocity",
+        example_kwargs={"action_seq": action_seq, "context_tokens": seen["context_tokens"], "time_emb": seen["time_emb"]},
+        extract=lambda o: o, call=lambda **k: step(**k),
+    )
+
 def main(args: ExportConfig) -> Path:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     llm_scheme = _scheme_or_none(args.llm_scheme)
@@ -184,9 +334,12 @@ def main(args: ExportConfig) -> Path:
     llm_result = None
     if llm_scheme is not None:
         t1 = time.time()
-        llm_result = export_llm(
-            tower, out / "llm_bf16.onnx", scheme=llm_scheme, forward_loop=loop, params=llm_params or None
-        )
+        if llm_scheme == FLOAT:
+            llm_result = export_llm_float_evo1(tower, out / "llm_bf16.onnx", forward_loop=loop)
+        else:
+            llm_result = export_llm(
+                tower, out / "llm_bf16.onnx", scheme=llm_scheme, forward_loop=loop, params=llm_params or None
+            )
         results.append(llm_result)
         logger.info("tower %s exported in %.0fs", llm_scheme, time.time() - t1)
 
@@ -198,13 +351,16 @@ def main(args: ExportConfig) -> Path:
             emulation = install_llm_emulation(tower, llm_result)
             logger.info("cascade: head calibration runs under the quantized-tower emulation")
         try:
-            head_result = export_action_head(
-                head_module(deployed),
-                out / "action_head_bf16.onnx",
-                scheme=head_scheme,
-                forward_loop=loop,
-                params=head_params or None,
-            )
+            if head_scheme == FLOAT:
+                head_result = export_head_float_evo1(head_module(deployed), out / "action_head_bf16.onnx", forward_loop=loop)
+            else:
+                head_result = export_action_head(
+                    head_module(deployed),
+                    out / "action_head_bf16.onnx",
+                    scheme=head_scheme,
+                    forward_loop=loop,
+                    params=head_params or None,
+                )
         finally:
             if emulation is not None:
                 emulation.remove()

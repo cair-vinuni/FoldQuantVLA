@@ -140,6 +140,34 @@ def export_module_float(
         names = [p for p in inspect.signature(module.forward).parameters if p not in ("self",)]
         for name, val in zip(names, call.args):
             kw.setdefault(name, val)
+    return export_with_example(
+        module, onnx_path, module_name=module_name, bindings=bindings, output_name=output_name,
+        example_kwargs=kw, extract=extract, output_dynamic=output_dynamic, opset=opset,
+    )
+
+
+def export_with_example(
+    module: nn.Module,
+    onnx_path: Path,
+    *,
+    module_name: str,
+    bindings: Sequence[Binding],
+    output_name: str,
+    example_kwargs: Dict[str, Any],
+    extract: Callable[[Any], torch.Tensor],
+    output_dynamic: Optional[Dict[int, str]] = None,
+    opset: int = 17,
+    call: Optional[Callable[..., Any]] = None,
+) -> ExportResult:
+    """Like :func:`export_module_float` but with the module's call given explicitly.
+
+    For modules whose deployed step is not their ``forward`` (Evo-1's action head runs its
+    Euler loop inside ``get_action``; the engine is one step of it), the caller assembles the
+    example kwargs itself and may pass ``call`` — a function taking the same kwargs — in place
+    of ``module(**kwargs)``.
+    """
+    kw = dict(example_kwargs)
+    fn = call if call is not None else (lambda **k: module(**k))
     for b in bindings:
         if kw.get(b.kwarg) is None and b.default is not None:
             kw[b.kwarg] = b.default(kw)
@@ -176,7 +204,7 @@ def export_module_float(
                     tgt = b.dtype if orig_dtype[b.kwarg].is_floating_point else orig_dtype[b.kwarg]
                     v = t.to(tgt)
                     call_kw[b.kwarg] = b.transform(v, call_kw) if b.transform else v
-            out = extract(self.m(**call_kw))
+            out = extract(fn(**call_kw))
             for t in keep:  # exact: 0 * finite = 0; keeps the binding in the traced graph
                 out = out + (t.to(out.dtype).sum() * 0).to(out.dtype)
             return out
@@ -235,6 +263,33 @@ def sanitize_onnx(onnx_path: Path) -> int:
                                onnx_path.name, node.name, TensorProto.DataType.Name(attr.i))
                 attr.i = TensorProto.FLOAT
                 n += 1
+    # CumSum over a bool / int8 / uint8 tensor (a traced ``mask.cumsum()`` for positions): TensorRT's
+    # CumulativeLayer takes float/half/bf16/int32/int64 only -> insert Cast(INT64) on that input.
+    cum_ok = {TensorProto.FLOAT, TensorProto.FLOAT16, TensorProto.BFLOAT16, TensorProto.INT32, TensorProto.INT64}
+    cums = [nd for nd in model.graph.node if nd.op_type == "CumSum"]
+    if cums:
+        from onnx import shape_inference
+        try:
+            inferred = shape_inference.infer_shapes(model, strict_mode=False, data_prop=True)
+            dt = {vi.name: vi.type.tensor_type.elem_type for vi in list(inferred.graph.value_info) + list(inferred.graph.input)}
+            dt.update({t.name: t.data_type for t in model.graph.initializer})
+        except Exception as e:  # inference is best-effort; fall back to casting every CumSum input
+            logger.warning("%s: shape inference failed (%s); casting every CumSum input to INT64", onnx_path.name, e)
+            dt = {}
+        new_nodes = []
+        for nd in model.graph.node:
+            if nd.op_type == "CumSum" and dt.get(nd.input[0], 0) not in cum_ok:
+                cast_out = nd.input[0] + "_i64_for_cumsum"
+                new_nodes.append(onnx.helper.make_node("Cast", [nd.input[0]], [cast_out], to=TensorProto.INT64,
+                                                       name=nd.name + "_cast_i64"))
+                nd.input[0] = cast_out
+                n += 1
+                logger.warning("%s: CumSum %s input is %s; inserted Cast to INT64", onnx_path.name, nd.name,
+                               TensorProto.DataType.Name(dt.get(nd.input[0].replace("_i64_for_cumsum", ""), 0)))
+            new_nodes.append(nd)
+        if len(new_nodes) != len(model.graph.node):
+            del model.graph.node[:]
+            model.graph.node.extend(new_nodes)
     if n:
         onnx.save(model, str(onnx_path))
     return n

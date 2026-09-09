@@ -250,11 +250,15 @@ def install_llm_emulation(module: nn.Module, result: ExportResult) -> Any:
     data = result.emulation
     if data is None:
         raise ValueError(f"{result.scheme!r} on {result.module!r} has no LLM emulation to install.")
-    if data["family"] not in ("qwen", "gemma"):
+    if data["family"] not in ("qwen", "gemma", "smollm_llama"):
         raise NotImplementedError(
-            f"cascade calibration: the PyTorch emulation covers Qwen2/Qwen3/Qwen3-VL and Gemma; "
-            f"{data['family']!r} is not validated there."
+            f"cascade calibration: the PyTorch emulation covers Qwen2/Qwen3/Qwen3-VL, Gemma and "
+            f"SmolLM2/Llama; {data['family']!r} is not validated there."
         )
+    if data["family"] == "smollm_llama":
+        # Llama layout, plain RMSNorm (y = rms(x)*w): the Qwen path applies unchanged. Validated
+        # against the W4A4 kv-stack engine on SmolVLA (see models/smolvla README, cascade).
+        logger.info("cascade emulation on a SmolLM2/Llama decoder: plain-RMSNorm (Qwen) fold path")
     from .llm_fake_quant import install_llm_per_row_emulation
 
     return install_llm_per_row_emulation(
