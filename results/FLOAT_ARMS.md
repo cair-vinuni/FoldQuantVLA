@@ -33,3 +33,22 @@ Two of these needed more than a plain trace, and both are recorded where they bi
 `groot_n1_6/exports/float_head/` is the earlier head-only arm (upstream's float DiT with
 the LLM left in PyTorch); `results/groot_n1_6/float/verify.json` was produced by it. It
 is kept because the paper's first draft cited it; the end-to-end arm is `exports/float/`.
+
+## CUDA-graph replay (`FOLDQUANT_TRT_CUDA_GRAPH=1`) on the two KV-stack families
+
+Same benchmark, same engines, three repeats of sixty iterations, medians in ms (denoise loop in
+parentheses). The runtime's opt-in graph replay removes per-call enqueue work from the ten-step
+expert loop; the paper's table is measured without it, as is every other family.
+
+| family | eager | torch.compile | float | W8A8 | W4A4 |
+|---|---|---|---|---|---|
+| π₀.₅, no replay | 169.4 | 100.3 | 111.8 (34.4) | 89.9 (34.4) | 76.5 (30.8) |
+| π₀.₅, replay | 166.1 | 100.4 | 111.6 (33.4) | 89.7 (32.9) | 75.0 (29.4) |
+| SmolVLA, no replay | 210.0 | 38.93 | 36.8 (~20) | 38.7 (21.8) | 36.7 (20.2) |
+| SmolVLA, replay | 212.5 | 38.8 | 32.3 (13.4) | 34.8 (18.2) | 32.6 (16.6) |
+
+Two readings. On π₀.₅ replay changes nothing (≤1.5 ms on a 30 ms loop): the 3.3 ms per
+expert step is the engine itself, not launch overhead, and `torch.compile` stays the stronger
+floating-point control there. On SmolVLA replay is worth 5–7 ms and reverses the order inside the
+loop — float 13.4 < W4A4 16.6 < W8A8 18.2 — which is the same statement as the row above:
+SmolLM2's projections are too small for the INT4/INT8 plugins to pay back their own overhead.
