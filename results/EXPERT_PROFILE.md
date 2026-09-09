@@ -37,3 +37,19 @@ than float without CUDA graphs and 0.3 ms slower with them (13.4 vs 16.6 ms per 
 kernel count per layer and is expected to reach parity with float, not the GR00T ratios. It merges
 the per-site SmoothQuant scales into one per shared input, i.e. it is a new arm whose fidelity and
 success would have to be re-established.
+
+## Follow-up: taking the fused attention kernel out of the π₀.₅ float expert
+
+`Softmax` rewritten as `ReduceMax → Sub → Exp → ReduceSum → Div` (the same function; the builder
+can no longer form its fused-MHA pattern), expert engine rebuilt, everything else unchanged
+(`exports/float_nomha/`). Per-layer profile: `_gemm_mha_v2` 18 → 0, step 3.34 → **2.82 ms**.
+Held-out verify (n = 32): actions cosine 0.99035 / min 0.91525 against 0.99037 / 0.91556 for the
+fused engine — identical to the fourth digit, as expected from a kernel change. Benchmark in one
+process: eager 164.6, float 110.5 (loop 34.4), float-no-MHA **105.0** (loop 28.9); `torch.compile`
+is 100.3.
+
+The remaining 5 ms is scope, not kernels: upstream's `torch.compile` wraps the whole of
+`sample_actions`, vision tower included (`pi0_pytorch.py:113`), while every engine arm here leaves
+the SigLIP tower in eager PyTorch at 16.7 ms. A float vision engine would close that on every arm
+alike. Both changes are engine changes rather than re-timings — the paper reports the fused-attention
+engines it measured in closed loop, and cites this experiment as the measured direction of the fix.
