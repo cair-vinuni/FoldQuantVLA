@@ -44,7 +44,7 @@ expert loop; the paper's table is measured without it, as is every other family.
 |---|---|---|---|---|---|
 | π₀.₅, no replay | 169.4 | 100.3 | 111.8 (34.4) | 89.9 (34.4) | 76.5 (30.8) |
 | π₀.₅, replay | 166.1 | 100.4 | 111.6 (33.4) | 89.7 (32.9) | 75.0 (29.4) |
-| SmolVLA, no replay | 210.0 | 38.93 | 36.8 (~20) | 38.7 (21.8) | 36.7 (20.2) |
+| SmolVLA, no replay | 210.0 | 38.93 | 36.8 (17.0) | 38.7 (21.8) | 36.7 (20.2) |
 | SmolVLA, replay | 212.5 | 38.8 | 32.3 (13.4) | 34.8 (18.2) | 32.6 (16.6) |
 
 Two readings. On π₀.₅ replay changes nothing (≤1.5 ms on a 30 ms loop): the 3.3 ms per
