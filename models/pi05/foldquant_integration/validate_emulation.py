@@ -20,13 +20,13 @@ def main():
     deployed = calibration.load_policy(a.checkpoint_dir, device="cuda")
     model, llm = model_of(deployed), llm_module(deployed)
     ds = calibration.load_dataset(a.dataset_path)
-    samples, obs = calibration.sample_observations(deployed, ds, a.num_calib, seed=0)
+    samples, obs = calibration.sample_observations(ds, a.num_calib, seed=0)
     loop = calibration.make_forward_loop(deployed, obs, seed=0)
     eng_dir = Path(a.engine_dir); manifest = json.loads((eng_dir / "foldquant_export.json").read_text())
     scheme = manifest["schemes"]["llm"]
     # 1) engine kv_stack on held-out prefixes
     load_plugins(plugin_libs_of(eng_dir)); engine = TensorRTEngine(eng_dir / "llm_bf16.engine")
-    _, held = calibration.sample_observations(deployed, ds, a.num, seed=42)
+    _, held = calibration.sample_observations(ds, a.num, seed=42)
     prefixes = []
     vwe = model.paligemma_with_expert; orig = vwe.forward
     def spy(*args, **kw):

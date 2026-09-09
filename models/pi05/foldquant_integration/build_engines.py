@@ -108,13 +108,14 @@ def build(args: BuildConfig) -> Path:
         profiles = profiles_from_onnx(src, ranges)
         t0 = time.time()
         logger.info("%s: building %s from %s", name, engine_name, src.name)
+        is_float = manifest.get("schemes", {}).get(name) == "float"  # traced float graph: weakly typed, no plugins
         build_engine(
             src,
             engine_dir / engine_name,
             profiles=profiles,
-            plugin_libs=plugin_libs,
-            strongly_typed=True,
-            int8=True,
+            plugin_libs=() if is_float else plugin_libs,
+            strongly_typed=not is_float,
+            int8=not is_float,
             workspace_mb=args.workspace_mb,
         )
         record["components"][name] = {

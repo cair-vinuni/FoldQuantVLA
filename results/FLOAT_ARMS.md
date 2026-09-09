@@ -16,7 +16,7 @@ one RTX 4070 Ti SUPER (sm_89), batch 1:
 | GR00T N1.7 | see `groot_n1_7/float` | 70.0 | **41.5** | — | — | upstream full-pipeline export, `build_engines --float-onnx-dir` |
 | Evo-1 | 0.99870 / 0.98081 | 174.5 | **135.9** | 123.3 | 115.6 | flash-parity attention re-implemented for the trace |
 | SmolVLA | 0.99374 / 0.95629 (kv_stack 0.99995) | 214.8 | **36.8** | 39.5 | 37.0 | float and W4A4 within run-to-run noise: SmolLM2 projections are too small for the plugins to pay back |
-| π₀.₅ | _pending_ | | | | | |
+| π₀.₅ | 0.99037 / 0.91556 (kv_stack 0.99279) | 166.5 | **111.8** | 89.9 | 76.5 | `torch.compile` reaches 100.7 here: on this family the compiled-PyTorch control is the stronger one, which is what the paper's table uses |
 
 Two of these needed more than a plain trace, and both are recorded where they bit:
 
