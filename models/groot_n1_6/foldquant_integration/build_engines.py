@@ -148,8 +148,14 @@ def build(args: BuildConfig) -> Path:
         if name in manifest["files"]:
             assert onnx_dir is not None
             src = onnx_dir / manifest["files"][name]
-            strongly_typed, int8 = True, True
-            source = "foldquant"
+            if manifest.get("schemes", {}).get(name) == "float":
+                # A traced float graph mixes fp32 masks with bf16 activations by nature;
+                # build it weakly typed, like upstream's float DiT, and let TensorRT insert casts.
+                strongly_typed, int8 = False, False
+                source = "float"
+            else:
+                strongly_typed, int8 = True, True
+                source = "foldquant"
         elif name == "dit" and float_dir is not None:
             src = float_dir / UPSTREAM_DIT_ONNX
             strongly_typed, int8 = False, False

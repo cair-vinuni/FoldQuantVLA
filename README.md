@@ -42,6 +42,14 @@ in a fixed order: `s` SmoothQuant scale, then `r` (learned dense block
 rotation) or `h` (fixed Sylvester butterfly, applied as an FWHT), then `g`
 GPTQ rounding. `w8a8` alone is the dynamic per-row baseline and folds nothing.
 
+`float` is the unquantized engine of a module — the floor of every ladder and the compiled
+control the latency table divides by. It is traced, not emitted: `foldquant/float_export.py`
+captures the module's real call and exports it under the runtime's binding names, so
+`build_engines` compiles it (weakly typed, no plugins) and `install_engines` serves it like
+any other arm. `none` keeps the module in PyTorch instead. On GR00T N1.7 the FoldQuant graphs
+share upstream's full-pipeline I/O contract, so `float` there takes upstream's own export
+(`build_engines --float-onnx-dir`).
+
 | target | schemes | plugin library |
 |---|---|---|
 | action expert (DiT / action head / expert) | `w4a4_shg` · `w4a4_sh` · `w4a4_sr` · `w8a8_sh` · `w8a8` | `foldquant_int4_per_row` / `foldquant_int8_per_row` |

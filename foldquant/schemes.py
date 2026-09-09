@@ -64,6 +64,9 @@ LLM_FOLDED_SCHEMES: FrozenSet[str] = LLM_INT8_SCHEMES | LLM_INT4_SCHEMES
 LLM_MODULES: FrozenSet[str] = frozenset({"llm"})
 
 MODULES: FrozenSet[str] = ACT_MODULES | LLM_MODULES
+FLOAT = "float"
+"""The unquantized engine of a module - traced, not emitted; see :mod:`foldquant.float_export`.
+Valid for every module, needs no calibration, loads no plugin. ``none`` keeps PyTorch instead."""
 ALL_SCHEMES: FrozenSet[str] = frozenset({W8A8}) | ACT_FOLDED_SCHEMES | LLM_FOLDED_SCHEMES
 
 
@@ -76,6 +79,8 @@ def validate(module: str, scheme: str) -> None:
     """
     if module not in MODULES:
         raise ValueError(f"FoldQuant has plugin graphs for {sorted(MODULES)}; module {module!r} has none.")
+    if scheme == FLOAT:
+        return
     if scheme not in ALL_SCHEMES:
         raise ValueError(f"unknown FoldQuant scheme {scheme!r}; known: {sorted(ALL_SCHEMES)}")
     if scheme in ACT_FOLDED_SCHEMES and module not in ACT_MODULES:
@@ -89,11 +94,13 @@ def validate(module: str, scheme: str) -> None:
 
 def needs_calibration(scheme: str) -> bool:
     """Every folded scheme measures its SmoothQuant scales (and GPTQ Hessians) from real inputs."""
-    return scheme != W8A8
+    return scheme not in (W8A8, FLOAT)
 
 
 def bits_of(scheme: str) -> int:
-    """Weight width of *scheme* (4 or 8)."""
+    """Weight width of *scheme* (4 or 8; 16 for the float engine)."""
+    if scheme == FLOAT:
+        return 16
     return 4 if scheme in ACT_W4A4_SCHEMES or scheme in LLM_INT4_SCHEMES else 8
 
 
@@ -110,6 +117,8 @@ def plugin_libs(scheme: str, *, params: Optional[Mapping[str, Any]] = None) -> L
     at INT8 emits a mixed graph and needs both libraries wherever it is built or
     served.
     """
+    if scheme == FLOAT:
+        return []
     is_llm_int4_act = scheme in LLM_INT4_SCHEMES and scheme not in LLM_W4A8_SCHEMES
     libs = [INT4_PER_ROW_LIB] if (scheme in ACT_W4A4_SCHEMES or is_llm_int4_act) else [INT8_PER_ROW_LIB]
     site_bits: Dict[str, Any] = dict((params or {}).get("site_bits") or {})

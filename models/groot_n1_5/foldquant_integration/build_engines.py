@@ -128,15 +128,18 @@ def build(args: BuildConfig) -> Path:
         if not src.is_file():
             raise FileNotFoundError(src)
         profiles = profiles_from_onnx(src, ranges)
+        # A traced float graph mixes fp32 masks with bf16 activations by nature; build it
+        # weakly typed with no plugins, like upstream's float DiT, and let TensorRT insert casts.
+        is_float = manifest.get("schemes", {}).get(name) == "float"
         t0 = time.time()
-        logger.info("%s: building %s from %s", name, engine_name, src.name)
+        logger.info("%s: building %s from %s (%s)", name, engine_name, src.name, "float" if is_float else "foldquant")
         build_engine(
             src,
             engine_dir / engine_name,
             profiles=profiles,
-            plugin_libs=plugin_libs,
-            strongly_typed=True,
-            int8=True,
+            plugin_libs=() if is_float else plugin_libs,
+            strongly_typed=not is_float,
+            int8=not is_float,
             workspace_mb=args.workspace_mb,
         )
         record["components"][name] = {

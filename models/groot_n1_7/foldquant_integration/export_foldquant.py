@@ -51,7 +51,8 @@ logger = logging.getLogger("foldquant.groot_n1_7.export")
 #: The upstream export writes ``export_metadata.json`` with these keys; the
 #: engine builder reads the first three as shape hints. ``batch_size`` is what
 #: the FoldQuant LLM graph pins its batch to (the captured batch, 1).
-_NONE = ("", "none", "float")
+_NONE = ("", "none")
+FLOAT = "float"
 
 
 @dataclass
@@ -69,10 +70,12 @@ class ExportConfig:
     """Embodiment tag; read off the checkpoint's processor_config.json when omitted."""
 
     llm_scheme: str = schemes.W8A8_SR
-    """FoldQuant scheme for the Qwen3-VL text tower, or ``none`` to keep it float."""
+    """FoldQuant scheme for the Qwen3-VL text tower; ``float`` takes upstream's full-pipeline export of it
+    (build with ``--float-onnx-dir``); ``none`` keeps PyTorch."""
 
     dit_scheme: str = schemes.W4A4_SHG
-    """FoldQuant scheme for the action-head DiT, or ``none`` to keep it float."""
+    """FoldQuant scheme for the action-head DiT; ``float`` takes upstream's full-pipeline export of it
+    (build with ``--float-onnx-dir``); ``none`` keeps PyTorch."""
 
     num_calib: int = 128
     """Calibration observations (episode, step) pairs spread over the dataset."""
@@ -149,6 +152,17 @@ def main(args: ExportConfig) -> Path:
     dit_scheme = _scheme_or_none(args.dit_scheme)
     if llm_scheme is None and dit_scheme is None:
         raise SystemExit("nothing to export: both --llm-scheme and --dit-scheme are none")
+    if args.cascade and llm_scheme == FLOAT:
+        raise SystemExit("--cascade emulates a folded LLM; a float LLM folds nothing")
+    # N1.7's FoldQuant graphs share upstream's full-pipeline I/O contract, so the float arm
+    # of a tower IS upstream's ONNX for it: nothing is emitted here, the manifest records the
+    # scheme, and build_engines sources the file from --float-onnx-dir like the other five
+    # components. (This is how results/groot_n1_7/float was produced.)
+    float_towers = [t for t, sch in (("llm", llm_scheme), ("dit", dit_scheme)) if sch == FLOAT]
+    if float_towers:
+        logger.info("float tower(s) %s: taken from upstream's export at build time (--float-onnx-dir)", float_towers)
+    llm_scheme = None if llm_scheme == FLOAT else llm_scheme
+    dit_scheme = None if dit_scheme == FLOAT else dit_scheme
     if llm_scheme is not None:
         schemes.validate("llm", llm_scheme)
     if dit_scheme is not None:
@@ -241,7 +255,8 @@ def main(args: ExportConfig) -> Path:
         "model_path": public_path(args.model_path),
         "embodiment_tag": str(policy.embodiment_tag),
         "dataset_path": public_path(args.dataset_path),
-        "schemes": {r.module: r.scheme for r in results},
+        "schemes": {**{r.module: r.scheme for r in results}, **{t: FLOAT for t in float_towers}},
+        **{t: FLOAT for t in float_towers},
         "params": {"llm": llm_params, "dit": dit_params},
         "cascade": bool(args.cascade),
         "plugin_libs": plugin_libs,

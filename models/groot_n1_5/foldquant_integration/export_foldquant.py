@@ -41,6 +41,7 @@ import torch
 import tyro
 from foldquant import schemes
 from foldquant.export import export_dit, export_llm, install_llm_emulation
+from foldquant.float_export import FLOAT, Binding, causal_additive_mask_4d, export_module_float
 from foldquant.provenance import public_path
 
 from . import calibration
@@ -49,7 +50,7 @@ from .runtime import dit_module, llm_module, select_layer_of
 
 logger = logging.getLogger("foldquant.groot_n1_5.export")
 
-_NONE = ("", "none", "float")
+_NONE = ("", "none")
 
 
 @dataclass
@@ -73,10 +74,10 @@ class ExportConfig:
     """Flow-matching steps; the checkpoint's own value when omitted."""
 
     llm_scheme: str = schemes.W8A8_SR
-    """FoldQuant scheme for the Qwen3 text tower, or ``none`` to keep it float."""
+    """FoldQuant scheme for the Qwen3 text tower; ``float`` exports the unquantized engine; ``none`` keeps PyTorch."""
 
     dit_scheme: str = schemes.W4A4_SHG
-    """FoldQuant scheme for the action-head DiT, or ``none`` to keep it float."""
+    """FoldQuant scheme for the action-head DiT; ``float`` exports the unquantized engine; ``none`` keeps PyTorch."""
 
     num_calib: int = 128
     """Calibration observations (episode, step) pairs spread over the dataset."""
@@ -204,14 +205,29 @@ def main(args: ExportConfig) -> Path:
     llm_result = None
     if llm_scheme is not None:
         t1 = time.time()
-        llm_result = export_llm(
-            modules["llm"],
-            out / "llm_bf16.onnx",
-            scheme=llm_scheme,
-            forward_loop=loop,
-            params=llm_params or None,
-            final_norm=shapes["final_norm"],
-        )
+        if llm_scheme == FLOAT:
+            llm_result = export_module_float(
+                modules["llm"],
+                out / "llm_bf16.onnx",
+                module_name="llm",
+                bindings=[
+                    Binding("inputs_embeds", "inputs_embeds", torch.bfloat16, {1: "seq_len"}),
+                    Binding("attention_mask", "attention_mask", torch.int64, {1: "seq_len"}, transform=causal_additive_mask_4d),
+                ],
+                output_name="hidden_states",
+                output_dynamic={1: "seq_len"},
+                forward_loop=loop,
+                extract=lambda o: o.hidden_states[-1],
+            )
+        else:
+            llm_result = export_llm(
+                modules["llm"],
+                out / "llm_bf16.onnx",
+                scheme=llm_scheme,
+                forward_loop=loop,
+                params=llm_params or None,
+                final_norm=shapes["final_norm"],
+            )
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
 
@@ -223,13 +239,34 @@ def main(args: ExportConfig) -> Path:
             emulation = install_llm_emulation(modules["llm"], llm_result)
             logger.info("cascade: DiT calibration runs under the quantized-LLM emulation")
         try:
-            dit_result = export_dit(
-                modules["dit"],
-                out / "dit_bf16.onnx",
-                scheme=dit_scheme,
-                forward_loop=loop,
-                params=dit_params or None,
-            )
+            if dit_scheme == FLOAT:
+                _ones = lambda kw: torch.ones(kw["encoder_hidden_states"].shape[:2], dtype=torch.bool,
+                                              device=kw["encoder_hidden_states"].device)
+                dit_result = export_module_float(
+                    modules["dit"],
+                    out / "dit_bf16.onnx",
+                    module_name="dit",
+                    bindings=[
+                        Binding("sa_embs", "hidden_states", torch.bfloat16),
+                        Binding("vl_embs", "encoder_hidden_states", torch.bfloat16, {1: "vl_seq_len"}),
+                        Binding("timestep", "timestep", torch.int64),
+                        # plain DiT attends every encoder token; the runtime feeds all-True masks the
+                        # module never sees. Kept as bindings so the engine matches the contract.
+                        Binding("image_mask", "image_mask", torch.bool, {1: "vl_seq_len"}, default=_ones, passthrough=True),
+                        Binding("backbone_attention_mask", "backbone_attention_mask", torch.bool, {1: "vl_seq_len"}, default=_ones, passthrough=True),
+                    ],
+                    output_name="output",
+                    forward_loop=loop,
+                    extract=lambda o: o[0] if isinstance(o, (tuple, list)) else o,
+                )
+            else:
+                dit_result = export_dit(
+                    modules["dit"],
+                    out / "dit_bf16.onnx",
+                    scheme=dit_scheme,
+                    forward_loop=loop,
+                    params=dit_params or None,
+                )
         finally:
             if emulation is not None:
                 emulation.remove()
