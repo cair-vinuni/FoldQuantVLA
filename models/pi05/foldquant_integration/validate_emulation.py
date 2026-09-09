@@ -17,7 +17,7 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--checkpoint-dir", required=True); ap.add_argument("--dataset-path", required=True)
     ap.add_argument("--engine-dir", required=True); ap.add_argument("--num", type=int, default=8); ap.add_argument("--num-calib", type=int, default=128)
     a = ap.parse_args()
-    deployed = calibration.load_policy(a.checkpoint_dir, device="cuda")
+    deployed = calibration.load_policy(a.checkpoint_dir, device="cuda", compile=False)
     model, llm = model_of(deployed), llm_module(deployed)
     ds = calibration.load_dataset(a.dataset_path)
     samples, obs = calibration.sample_observations(ds, a.num_calib, seed=0)
