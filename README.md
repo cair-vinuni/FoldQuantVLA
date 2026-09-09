@@ -1,4 +1,4 @@
-# FoldQuant
+# FoldQuantVLA
 
 **FoldQuantVLA: Native Low-Bit Quantization for Vision-Language-Action
 Inference on Edge GPUs via Unified Offline Folding**
@@ -11,6 +11,9 @@ linear site's weights before export, so at inference a single fused TensorRT
 plugin quantizes the activation row, runs the INT4 / INT8 GEMM and
 dequantizes — no online rotation, no per-token scale search, no extra graph
 nodes between the plugin and its neighbours.
+
+**Naming.** *FoldQuantVLA* is the system and this repository; *FoldQuant* is the folding
+method, the Python package (`foldquant/`) and the name the paper's tables use for its arms.
 
 This repository is the paper's artifact. It has two parts:
 

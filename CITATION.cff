@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite the FoldQuantVLA paper."
-title: "FoldQuant"
+title: "FoldQuantVLA"
 authors:
   - name: "The FoldQuant Authors"
 license: PolyForm-Noncommercial-1.0.0
