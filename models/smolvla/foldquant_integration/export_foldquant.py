@@ -203,18 +203,19 @@ def export_llm_float_smolvla(deployed, onnx_path, *, forward_loop):
     if am.dim() == 2:
         am = am[None]
 
+    vwe = model.vlm_with_expert
+
     def call(prefix_embs, attention_mask, position_ids, **_):
-        # bool block mask -> static-dtype additive 4-D mask; HF uses a 4-D mask as given.
-        keep = attention_mask.to(torch.bool)[:, None, :, :]          # [1,1,S,S]
-        neg = torch.finfo(prefix_embs.dtype).min
-        mask4 = torch.where(keep, torch.zeros((), dtype=prefix_embs.dtype, device=prefix_embs.device),
-                            torch.full((), neg, dtype=prefix_embs.dtype, device=prefix_embs.device))
-        out = text_model(inputs_embeds=prefix_embs, attention_mask=mask4, position_ids=position_ids,
-                         past_key_values=None, use_cache=True)
-        return stack_cache(out.past_key_values)
+        # Upstream's OWN prefix forward (the runtime's PyTorch branch runs exactly this): its
+        # hand-written attention applies RoPE in a convention HF's LlamaModel does not share -
+        # tracing LlamaModel gave V exact and K at cosine 0.74. Tracing this reproduces the
+        # deployed cache by construction.
+        _hidden, cache = vwe.forward(attention_mask=attention_mask.to(torch.bool), position_ids=position_ids,
+                                     past_key_values=None, inputs_embeds=[prefix_embs, None], use_cache=True)
+        return stack_cache(cache)
 
     return export_with_example(
-        text_model, onnx_path, module_name="llm",
+        vwe, onnx_path, module_name="llm",
         # dim names match the plugin graph so build_engines' prefix_len profile (min/opt/max) applies
         bindings=[Binding("prefix_embs", "prefix_embs", torch.bfloat16, {1: "seq_len"}),
                   Binding("attention_mask", "attention_mask", torch.bool, {1: "seq_len", 2: "seq_len2"}),

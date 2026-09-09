@@ -42,7 +42,9 @@ from foldquant import schemes
 from foldquant.export import export_expert
 from foldquant.export import export_llm
 from foldquant.export import install_llm_emulation
+from foldquant.float_export import FLOAT, Binding, export_with_example
 from foldquant.provenance import public_path
+import torch
 import tyro
 
 from . import calibration
@@ -56,7 +58,7 @@ from .runtime import model_of
 
 logger = logging.getLogger("foldquant.pi05.export")
 
-_NONE = ("", "none", "float")
+_NONE = ("", "none")
 
 
 @dataclass
@@ -138,6 +140,104 @@ def capture_shape_metadata(policy, observation: dict[str, Any], *, seed: int) ->
     return seen
 
 
+
+# ---------------------------------------------------------------------------
+# Float engines under the KV-stack contract (see smolvla for the mirror). Pi0.5's
+# prefix seam already receives upstream's 4-D additive mask, so it passes through.
+# ---------------------------------------------------------------------------
+class _Stop(Exception):
+    pass
+
+
+def _capture_prefix(model, forward_loop):
+    pwe = model.paligemma_with_expert
+    seen, orig = {}, pwe.forward
+
+    def spy(*a, **k):
+        if k.get("inputs_embeds") is not None and k["inputs_embeds"][1] is None:
+            seen.update({kk: (vv.detach() if torch.is_tensor(vv) else vv) for kk, vv in k.items()})
+            raise _Stop()
+        return orig(*a, **k)
+
+    pwe.forward = spy
+    try:
+        with torch.inference_mode():
+            try:
+                forward_loop(pwe)
+            except _Stop:
+                pass
+    finally:
+        pwe.__dict__.pop("forward", None)
+    if "attention_mask" not in seen:
+        raise RuntimeError("forward_loop never reached the prefix pass of paligemma_with_expert")
+    return seen
+
+
+def export_llm_float_pi05(policy, onnx_path, *, forward_loop):
+    from .runtime import llm_module, model_of, stack_cache
+    model, lm = model_of(policy), llm_module(policy)
+    seen = _capture_prefix(model, forward_loop)
+    prefix = seen["inputs_embeds"][0]
+    am, pid = seen["attention_mask"], seen["position_ids"]
+    am_dtype = torch.bfloat16 if am.is_floating_point() else torch.bool   # the runtime feeds the engine bf16
+
+    pwe = model.paligemma_with_expert
+
+    def call(prefix_embs, attention_mask, position_ids, **_):
+        # upstream's own prefix forward - see smolvla: HF's decoder applies RoPE differently.
+        _hidden, cache = pwe.forward(attention_mask=attention_mask, position_ids=position_ids,
+                                     past_key_values=None, inputs_embeds=[prefix_embs, None], use_cache=True)
+        return stack_cache(cache)
+
+    return export_with_example(
+        pwe, onnx_path, module_name="llm",
+        bindings=[Binding("prefix_embs", "prefix_embs", torch.bfloat16),
+                  Binding("attention_mask", "attention_mask", am_dtype),
+                  Binding("position_ids", "position_ids", torch.int64)],
+        output_name="kv_stack",
+        example_kwargs={"prefix_embs": prefix.to(torch.bfloat16), "attention_mask": am.to(am_dtype), "position_ids": pid.to(torch.int64)},
+        extract=lambda o: o, call=call,
+    )
+
+
+def export_expert_float_pi05(policy, onnx_path, *, forward_loop):
+    from .runtime import cache_from_stack, model_of, stack_cache
+    model = model_of(policy)
+    seen, orig = {}, model.denoise_step
+
+    def spy(state, prefix_pad_masks, past_key_values, x_t, timestep):
+        seen.update(state=state.detach(), prefix_pad_masks=prefix_pad_masks.detach(),
+                    kv_stack=(past_key_values if torch.is_tensor(past_key_values) else stack_cache(past_key_values)).detach(),
+                    x_t=x_t.detach(), timestep=timestep.detach())
+        raise _Stop()
+
+    model.denoise_step = spy
+    try:
+        with torch.inference_mode():
+            try:
+                forward_loop(model)
+            except _Stop:
+                pass
+    finally:
+        model.__dict__.pop("denoise_step", None)
+    if "x_t" not in seen:
+        raise RuntimeError("forward_loop never reached denoise_step")
+
+    def call(x_t, timestep, prefix_pad_masks, kv_stack, state, **_):
+        return orig(state, prefix_pad_masks.to(torch.bool), cache_from_stack(kv_stack), x_t, timestep.reshape(-1))
+
+    return export_with_example(
+        model, onnx_path, module_name="expert",
+        bindings=[Binding("x_t", "x_t", torch.float32), Binding("timestep", "timestep", torch.float32),
+                  Binding("prefix_pad_masks", "prefix_pad_masks", torch.bool), Binding("kv_stack", "kv_stack", torch.bfloat16),
+                  Binding("state", "state", torch.float32)],
+        output_name="velocity",
+        example_kwargs={"x_t": seen["x_t"].to(torch.float32), "timestep": seen["timestep"].reshape(1).to(torch.float32),
+                        "prefix_pad_masks": seen["prefix_pad_masks"].to(torch.bool), "kv_stack": seen["kv_stack"].to(torch.bfloat16),
+                        "state": seen["state"].to(torch.float32)},
+        extract=lambda o: o, call=call,
+    )
+
 def main(args: ExportConfig) -> Path:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     llm_scheme = _scheme_or_none(args.llm_scheme)
@@ -177,9 +277,12 @@ def main(args: ExportConfig) -> Path:
         t1 = time.time()
         # Gemma pins the prefix length from a captured call, so the loop is
         # passed for every scheme, the per-row one included.
-        llm_result = export_llm(
-            llm, out / "llm_bf16.onnx", scheme=llm_scheme, forward_loop=loop, params=llm_params or None
-        )
+        if llm_scheme == FLOAT:
+            llm_result = export_llm_float_pi05(policy, out / "llm_bf16.onnx", forward_loop=loop)
+        else:
+            llm_result = export_llm(
+                llm, out / "llm_bf16.onnx", scheme=llm_scheme, forward_loop=loop, params=llm_params or None
+            )
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
 
@@ -191,13 +294,16 @@ def main(args: ExportConfig) -> Path:
             emulation = install_llm_emulation(llm, llm_result)
             logger.info("cascade: expert calibration runs under the quantized-LLM emulation")
         try:
-            expert_result = export_expert(
-                expert_view(policy),
-                out / "expert_bf16.onnx",
-                scheme=expert_scheme,
-                forward_loop=loop,
-                params=expert_params or None,
-            )
+            if expert_scheme == FLOAT:
+                expert_result = export_expert_float_pi05(policy, out / "expert_bf16.onnx", forward_loop=loop)
+            else:
+                expert_result = export_expert(
+                    expert_view(policy),
+                    out / "expert_bf16.onnx",
+                    scheme=expert_scheme,
+                    forward_loop=loop,
+                    params=expert_params or None,
+                )
         finally:
             if emulation is not None:
                 emulation.remove()
