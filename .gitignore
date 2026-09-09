@@ -11,6 +11,9 @@ __pycache__/
 # device-specific plugin binaries are built into the user cache, never committed
 foldquant/kernels/prebuilt/*.so
 
+# the paper's figure package — lives beside the artifact, not in it
+/paper_figures/
+
 # model checkpoints, datasets, eval outputs (repository root only)
 /checkpoints/
 /weights/

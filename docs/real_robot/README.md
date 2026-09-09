@@ -21,6 +21,10 @@ talks to a W4A4 engine by changing a host and a port and nothing else.
 The two hosts may be the same machine. Nothing in the protocol knows the
 policy is quantized.
 
+Serving from a Jetson AGX Orin instead of a workstation changes nothing about
+the protocol or the client, but the engines and the plugin library have to be
+built on the board — see [`../deploy/jetson.md`](../deploy/jetson.md).
+
 ## The rule that decides whether any of this works
 
 **FoldQuant changes the arithmetic, not the policy.** An engine built from a

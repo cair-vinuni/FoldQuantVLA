@@ -66,6 +66,7 @@ third_party/          CUTLASS (submodule), vendored TensorRT public headers
 tests/                unit tests for the algorithm, emitters, kernel locator / build
 results/              evaluation protocol and measured results
 docs/real_robot/      deploying a quantized arm to ALOHA / UR10e hardware
+docs/deploy/          export on a workstation, build and serve on Jetson AGX Orin
 ```
 
 ## Install
@@ -122,6 +123,11 @@ The rule that governs all of it: quantization changes the arithmetic, not the
 policy. An engine built from a LIBERO checkpoint emits LIBERO actions on any
 robot, so a real deployment starts from a checkpoint fine-tuned for that
 embodiment.
+
+[`docs/deploy/jetson.md`](docs/deploy/jetson.md) covers the edge target the
+paper measures: what has to be built on the board itself (plugin library and
+engines, because neither is portable across `(SM, TensorRT)`) versus what
+crosses from a workstation as ONNX.
 
 ## License
 
