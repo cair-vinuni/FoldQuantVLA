@@ -52,3 +52,14 @@ expert step is the engine itself, not launch overhead, and `torch.compile` stays
 floating-point control there. On SmolVLA replay is worth 5–7 ms and reverses the order inside the
 loop — float 13.4 < W4A4 16.6 < W8A8 18.2 — which is the same statement as the row above:
 SmolLM2's projections are too small for the INT4/INT8 plugins to pay back their own overhead.
+
+## Framework cross-check of the float arms (Evo-1, SmolVLA)
+
+The same two checkpoints built through the deployment framework's own `float` preset
+(`vla-opt build --target tensorrt --precision bf16 --config <family>/tensorrt/float`) and checked
+with its drift suite against the bf16 PyTorch artifact (`vla-opt validate --suite tensorrt-deploy`,
+16 seeded observations): Evo-1 llm 0.999955 / head 0.999990 / e2e **0.999985**; SmolVLA llm
+0.999921 / expert 0.999945 / e2e **0.999971** — both PASS the framework's SR-safe gates. The
+release-repo arms above are traced independently of that exporter (they run under the runtime's
+engine binding names), so the two paths agreeing is the check that the float control is a property
+of the checkpoint, not of one exporter.
