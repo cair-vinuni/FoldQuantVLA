@@ -38,9 +38,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import torch
 import tyro
 from foldquant import schemes
 from foldquant.export import export_expert, export_llm, install_llm_emulation
+from foldquant.float_export import FLOAT, Binding, export_with_example
 from foldquant.provenance import public_path
 
 from . import calibration
@@ -49,7 +51,7 @@ from .runtime import PrefixCapture, expert_view, llm_module, model_of
 
 logger = logging.getLogger("foldquant.smolvla.export")
 
-_NONE = ("", "none", "float")
+_NONE = ("", "none")
 
 
 @dataclass
@@ -153,6 +155,116 @@ def capture_shape_metadata(deployed, observation: dict[str, Any], *, seed: int) 
     return seen
 
 
+
+# ---------------------------------------------------------------------------
+# Float (unquantized) engines under the KV-stack contract. The LLM engine takes
+# the prefix (embeddings, block mask, position_ids) and returns the stacked
+# post-RoPE KV cache; the expert engine takes one denoising step against that
+# stack. Both are traced from the live modules; the examples are the real
+# prefix / denoise call captured during one calibration iteration.
+# ---------------------------------------------------------------------------
+class _Stop(Exception):
+    pass
+
+
+def _capture_prefix(model, forward_loop):
+    """Kwargs of the first prefix pass through ``vlm_with_expert.forward``."""
+    vwe = model.vlm_with_expert
+    seen = {}
+    orig = vwe.forward
+
+    def spy(*a, **k):
+        if k.get("inputs_embeds") is not None and k["inputs_embeds"][1] is None:  # prefix branch
+            seen.update({kk: (vv.detach() if torch.is_tensor(vv) else vv) for kk, vv in k.items()})
+            raise _Stop()
+        return orig(*a, **k)
+
+    vwe.forward = spy
+    try:
+        with torch.inference_mode():
+            try:
+                forward_loop(vwe)
+            except _Stop:
+                pass
+    finally:
+        vwe.__dict__.pop("forward", None)
+    if "attention_mask" not in seen:
+        raise RuntimeError("forward_loop never reached the prefix pass of vlm_with_expert")
+    return seen
+
+
+def export_llm_float_smolvla(deployed, onnx_path, *, forward_loop):
+    from .runtime import llm_module, model_of, stack_cache
+    model = model_of(deployed)
+    text_model = llm_module(deployed)
+    seen = _capture_prefix(model, forward_loop)
+    inputs_embeds = seen["inputs_embeds"][0]            # [1, S, K]
+    am, pid = seen["attention_mask"], seen["position_ids"]
+    if am.dim() == 2:
+        am = am[None]
+
+    def call(prefix_embs, attention_mask, position_ids, **_):
+        # bool block mask -> static-dtype additive 4-D mask; HF uses a 4-D mask as given.
+        keep = attention_mask.to(torch.bool)[:, None, :, :]          # [1,1,S,S]
+        neg = torch.finfo(prefix_embs.dtype).min
+        mask4 = torch.where(keep, torch.zeros((), dtype=prefix_embs.dtype, device=prefix_embs.device),
+                            torch.full((), neg, dtype=prefix_embs.dtype, device=prefix_embs.device))
+        out = text_model(inputs_embeds=prefix_embs, attention_mask=mask4, position_ids=position_ids,
+                         past_key_values=None, use_cache=True)
+        return stack_cache(out.past_key_values)
+
+    return export_with_example(
+        text_model, onnx_path, module_name="llm",
+        # dim names match the plugin graph so build_engines' prefix_len profile (min/opt/max) applies
+        bindings=[Binding("prefix_embs", "prefix_embs", torch.bfloat16, {1: "seq_len"}),
+                  Binding("attention_mask", "attention_mask", torch.bool, {1: "seq_len", 2: "seq_len2"}),
+                  Binding("position_ids", "position_ids", torch.int64, {1: "seq_len"})],
+        output_name="kv_stack", output_dynamic={3: "seq_len"},
+        example_kwargs={"prefix_embs": inputs_embeds.to(torch.bfloat16), "attention_mask": am.to(torch.bool),
+                        "position_ids": pid.to(torch.int64)},
+        extract=lambda o: o, call=call,
+    )
+
+
+def export_expert_float_smolvla(deployed, onnx_path, *, forward_loop):
+    from .runtime import cache_from_stack, model_of, stack_cache
+    model = model_of(deployed)
+    seen = {}
+    orig = model.denoise_step
+
+    def spy(prefix_pad_masks, past_key_values, x_t, timestep):
+        seen.update(prefix_pad_masks=prefix_pad_masks.detach(),
+                    kv_stack=(past_key_values if torch.is_tensor(past_key_values) else stack_cache(past_key_values)).detach(),
+                    x_t=x_t.detach(), timestep=timestep.detach())
+        raise _Stop()
+
+    model.denoise_step = spy
+    try:
+        with torch.inference_mode():
+            try:
+                forward_loop(model)
+            except _Stop:
+                pass
+    finally:
+        model.__dict__.pop("denoise_step", None)
+    if "x_t" not in seen:
+        raise RuntimeError("forward_loop never reached denoise_step")
+
+    def call(x_t, timestep, prefix_pad_masks, kv_stack, **_):
+        return orig(prefix_pad_masks.to(torch.bool), cache_from_stack(kv_stack), x_t, timestep.reshape(-1))
+
+    return export_with_example(
+        model, onnx_path, module_name="expert",
+        bindings=[Binding("x_t", "x_t", torch.float32),
+                  Binding("timestep", "timestep", torch.float32),
+                  Binding("prefix_pad_masks", "prefix_pad_masks", torch.bool, {1: "prefix_len"}),
+                  Binding("kv_stack", "kv_stack", torch.bfloat16, {3: "prefix_len"})],
+        output_name="velocity",
+        example_kwargs={"x_t": seen["x_t"].to(torch.float32), "timestep": seen["timestep"].reshape(1).to(torch.float32),
+                        "prefix_pad_masks": seen["prefix_pad_masks"].to(torch.bool), "kv_stack": seen["kv_stack"].to(torch.bfloat16)},
+        extract=lambda o: o, call=call,
+    )
+
 def main(args: ExportConfig) -> Path:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     llm_scheme = _scheme_or_none(args.llm_scheme)
@@ -190,9 +302,12 @@ def main(args: ExportConfig) -> Path:
     llm_result = None
     if llm_scheme is not None:
         t1 = time.time()
-        llm_result = export_llm(
-            llm, out / "llm_bf16.onnx", scheme=llm_scheme, forward_loop=loop, params=llm_params or None
-        )
+        if llm_scheme == FLOAT:
+            llm_result = export_llm_float_smolvla(deployed, out / "llm_bf16.onnx", forward_loop=loop)
+        else:
+            llm_result = export_llm(
+                llm, out / "llm_bf16.onnx", scheme=llm_scheme, forward_loop=loop, params=llm_params or None
+            )
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
 
@@ -204,13 +319,16 @@ def main(args: ExportConfig) -> Path:
             emulation = install_llm_emulation(llm, llm_result)
             logger.info("cascade: expert calibration runs under the quantized-LLM emulation")
         try:
-            expert_result = export_expert(
-                expert_view(deployed),
-                out / "expert_bf16.onnx",
-                scheme=expert_scheme,
-                forward_loop=loop,
-                params=expert_params or None,
-            )
+            if expert_scheme == FLOAT:
+                expert_result = export_expert_float_smolvla(deployed, out / "expert_bf16.onnx", forward_loop=loop)
+            else:
+                expert_result = export_expert(
+                    expert_view(deployed),
+                    out / "expert_bf16.onnx",
+                    scheme=expert_scheme,
+                    forward_loop=loop,
+                    params=expert_params or None,
+                )
         finally:
             if emulation is not None:
                 emulation.remove()

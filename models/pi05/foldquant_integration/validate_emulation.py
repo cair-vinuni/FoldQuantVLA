@@ -14,10 +14,10 @@ from . import calibration
 from .runtime import llm_module, model_of, plugin_libs_of, stack_cache
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--checkpoint", required=True); ap.add_argument("--dataset-path", required=True)
+    ap = argparse.ArgumentParser(); ap.add_argument("--checkpoint-dir", required=True); ap.add_argument("--dataset-path", required=True)
     ap.add_argument("--engine-dir", required=True); ap.add_argument("--num", type=int, default=8); ap.add_argument("--num-calib", type=int, default=128)
     a = ap.parse_args()
-    deployed = calibration.load_policy(a.checkpoint, device="cuda", compile=False)
+    deployed = calibration.load_policy(a.checkpoint_dir, device="cuda")
     model, llm = model_of(deployed), llm_module(deployed)
     ds = calibration.load_dataset(a.dataset_path)
     samples, obs = calibration.sample_observations(deployed, ds, a.num_calib, seed=0)
@@ -28,7 +28,7 @@ def main():
     load_plugins(plugin_libs_of(eng_dir)); engine = TensorRTEngine(eng_dir / "llm_bf16.engine")
     _, held = calibration.sample_observations(deployed, ds, a.num, seed=42)
     prefixes = []
-    vwe = model.vlm_with_expert; orig = vwe.forward
+    vwe = model.paligemma_with_expert; orig = vwe.forward
     def spy(*args, **kw):
         if kw.get("inputs_embeds") is not None and kw["inputs_embeds"][1] is None:
             prefixes.append({k: (v.detach().clone() if torch.is_tensor(v) else v) for k, v in kw.items()})
@@ -40,7 +40,7 @@ def main():
     vwe.__dict__.pop("forward", None)
     def eng_stack(p):
         am = p["attention_mask"]; am = am[None] if am.dim() == 2 else am
-        return engine(prefix_embs=p["inputs_embeds"][0].to(torch.bfloat16), attention_mask=am.to(torch.bool),
+        return engine(prefix_embs=p["inputs_embeds"][0].to(torch.bfloat16), attention_mask=(am.to(torch.bfloat16) if am.is_floating_point() else am.to(torch.bool)),
                       position_ids=p["position_ids"].to(torch.int64))["kv_stack"].clone()
     with torch.inference_mode():
         eng = [eng_stack(p) for p in prefixes]
