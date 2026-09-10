@@ -4,6 +4,15 @@
     "llm": "w4a4_srg",
     "dit": "w4a4_shg"
   },
+  "components": [
+    "action_decoder.engine",
+    "action_encoder.engine",
+    "dit_bf16.engine",
+    "llm_bf16.engine",
+    "state_encoder.engine",
+    "vit_bf16.engine",
+    "vl_self_attention.engine"
+  ],
   "cascade": false,
   "split_from": null,
   "num_samples": 32,

@@ -244,6 +244,11 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     report = {
         "engine_dir": public_path(str(engine_dir)),
         "schemes": manifest["schemes"] if manifest is not None else {},
+        # The float arm comes off upstream's pipeline and carries no FoldQuant manifest, so
+        # `schemes` is empty for it. Listing the engines that are actually installed states
+        # the arm's scope either way — without it two arms of different scope can share the
+        # name "float" and nothing in the record distinguishes them.
+        "components": sorted(p.name for p in sorted(engine_dir.glob("*.engine"))),
         "cascade": manifest.get("cascade", False) if manifest is not None else False,
         "split_from": public_path(args.split_from),
         "num_samples": len(samples),

@@ -334,6 +334,12 @@ the whole export → build → verify → benchmark chain on that family. Those
 numbers are sanity gates, not the paper's: the tables below are filled from
 the 128-observation exports and the full LIBERO sweeps.
 
+`scripts/check_records.py` checks the invariants those records have to satisfy —
+a float arm no less faithful than the INT8 one built from the same graph, a stated
+scope, a held-out split, no operator paths. Each rule is there because breaking it
+produced a wrong number that looked plausible. Run it on a clone; it needs nothing
+but `results/`.
+
 Every table in this section is emitted by `scripts/results_tables.py`, which
 reads only the committed records — no GPU, no engines, no upstream
 environment — so a stale cell shows up as a diff rather than as a discrepancy
