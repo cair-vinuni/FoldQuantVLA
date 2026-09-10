@@ -54,14 +54,27 @@ This repository is the paper's artifact. It has two parts:
   are used **unchanged**; the integration only emits the FoldQuant graphs for
   the modules it quantizes and slots them into the upstream TensorRT pipeline.
 
-| family | upstream | integration | status |
-|---|---|---|---|
-| GR00T N1.7 | NVIDIA Isaac GR00T, `n1.7-release` (`23ace64f`) | [`models/groot_n1_7`](models/groot_n1_7/foldquant_integration/README.md) | complete |
-| GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | complete |
-| GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | complete |
-| π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | complete |
-| SmolVLA | LeRobot, `v0.6.1` (`7e241bd6`) | [`models/smolvla`](models/smolvla/foldquant_integration/README.md) | complete |
-| Evo-1 | MINT-SJTU Evo-1, `main` (`5fd14b01`) | [`models/evo_1`](models/evo_1/foldquant_integration/README.md) | complete |
+| family | upstream | integration | drift (cosine) | latency | LIBERO SR |
+|---|---|---|---|---|---|
+| GR00T N1.7 | NVIDIA Isaac GR00T, `n1.7-release` (`23ace64f`) | [`models/groot_n1_7`](models/groot_n1_7/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
+| GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
+| GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | W8A8 · W4A4 · cascade | yes | _pending_ |
+| π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | W8A8 · W4A4 · cascade | yes | _pending_ |
+| SmolVLA | LeRobot, `v0.6.1` (`7e241bd6`) | [`models/smolvla`](models/smolvla/foldquant_integration/README.md) | W8A8 · W4A4 | yes | _pending_ |
+| Evo-1 | MINT-SJTU Evo-1, `main` (`5fd14b01`) | [`models/evo_1`](models/evo_1/foldquant_integration/README.md) | W8A8 · W4A4 · cascade | yes | _pending_ |
+
+Every family's integration is complete — export, engine build, drift, LIBERO
+rollout, latency and a policy server all exist and run. The last three columns
+say what has been **measured and committed**, which is a different claim.
+Held-out drift and desktop latency are in `results/` for all six. **LIBERO
+success rate is not**: those sweeps run on the evaluation cluster, and every
+success-rate cell in [`results/README.md`](results/README.md) reads _Pending_
+until they land. Jetson AGX Orin latency is pending for the same reason —
+the board is not this machine.
+
+Cascade is absent from SmolVLA by design rather than by omission; the reason
+is in the protocol file. Evo-1's cascade arm is measured but its float engine
+is not, because that release ships no TensorRT path to build one from.
 
 ## Schemes
 
