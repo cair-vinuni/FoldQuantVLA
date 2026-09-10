@@ -38,6 +38,7 @@ from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 
+from foldquant.provenance import public_path
 import tyro
 
 from ._upstream import MANIFEST_NAME, ensure_libero_on_path
@@ -125,8 +126,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     summary = _load_summary(summary_path)
     summary.update(
         {
-            "model_path": args.model_path,
-            "engine_dir": args.engine_dir,
+            "model_path": public_path(args.model_path),
+            "engine_dir": public_path(args.engine_dir),
             "n_episodes": args.n_episodes,
             "n_envs": args.n_envs,
             "max_episode_steps": args.max_episode_steps,
@@ -141,12 +142,7 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         )
 
     from gr00t.data.embodiment_tags import EmbodimentTag
-    from gr00t.eval.rollout_policy import (
-        MultiStepConfig,
-        VideoConfig,
-        WrapperConfigs,
-        run_rollout_gymnasium_policy,
-    )
+    from gr00t.eval.rollout_policy import MultiStepConfig, VideoConfig, WrapperConfigs, run_rollout_gymnasium_policy
     from gr00t.eval.sim.LIBERO.libero_env import register_libero_envs
     from gr00t.policy.gr00t_policy import Gr00tPolicy, Gr00tSimPolicyWrapper
 

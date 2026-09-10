@@ -45,6 +45,8 @@ from typing import Any
 import numpy as np
 import tyro
 
+from foldquant.provenance import public_path
+
 from . import calibration
 from ._upstream import LIBERO_DATA_CONFIG, ensure_libero_on_path, ensure_upstream_on_path
 from .runtime import install_engines
@@ -203,8 +205,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
     summary_path = out / "summary.json"
     summary = _load_summary(summary_path)
     summary["arm"] = {
-        "model_path": args.model_path,
-        "engine_dir": args.engine_dir,
+        "model_path": public_path(args.model_path),
+        "engine_dir": public_path(args.engine_dir),
         "embodiment_tag": args.embodiment_tag,
         "data_config": args.data_config,
         "n_episodes": args.n_episodes,

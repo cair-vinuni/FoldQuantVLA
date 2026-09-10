@@ -56,7 +56,7 @@ This repository is the paper's artifact. It has two parts:
 
 | family | upstream | integration | drift (cosine) | latency | LIBERO SR |
 |---|---|---|---|---|---|
-| GR00T N1.7 | NVIDIA Isaac GR00T, `n1.7-release` (`23ace64f`) | [`models/groot_n1_7`](models/groot_n1_7/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
+| GR00T N1.7 | NVIDIA Isaac GR00T, `n1.7-release` (`23ace64f`) | [`models/groot_n1_7`](models/groot_n1_7/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | bf16 only |
 | GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
 | GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | W8A8 · W4A4 · cascade | yes | _pending_ |
 | π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | W8A8 · W4A4 · cascade | yes | _pending_ |

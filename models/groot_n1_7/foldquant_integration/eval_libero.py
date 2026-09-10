@@ -35,6 +35,7 @@ from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 
+from foldquant.provenance import public_path
 from foldquant.runtime.plugins import load_plugins
 import tyro
 
@@ -123,8 +124,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     summary = _load_summary(summary_path)
     summary.update(
         {
-            "model_path": args.model_path,
-            "engine_dir": args.engine_dir,
+            "model_path": public_path(args.model_path),
+            "engine_dir": public_path(args.engine_dir),
             "n_episodes": args.n_episodes,
             "n_envs": args.n_envs,
             "max_episode_steps": args.max_episode_steps,

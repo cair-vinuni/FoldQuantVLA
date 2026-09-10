@@ -405,7 +405,21 @@ _Jetson AGX Orin (sm87, JetPack TensorRT 10.3) — pending._
 
 ### GR00T N1.7 — LIBERO
 
-_Pending: re-measured with the upstream harness (see the integration README)._
+**bf16 PyTorch, the reference arm.** Upstream's `MultiStepWrapper` rollout, all
+four suites, 20 episodes per task, 800 episodes, one RTX 4070 Ti SUPER, 1h54m.
+
+| suite | successes | % |
+|---|---|---|
+| libero_spatial | 194/200 | 97.0 |
+| libero_object | 199/200 | 99.5 |
+| libero_goal | 194/200 | 97.0 |
+| libero_10 | 172/200 | 86.0 |
+| **all four** | **759/800** | **94.9** |
+
+This is the floor every quantized arm is read against, not a FoldQuant result:
+no engine is installed. The quantized rows are still pending — their engine
+directories were deleted in a disk cleanup and have to be rebuilt before the
+comparison means anything.
 
 ### GR00T N1.6 — LIBERO
 

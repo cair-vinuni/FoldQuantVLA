@@ -39,6 +39,7 @@ import sys
 import time
 from typing import Any
 
+from foldquant.provenance import public_path
 import tyro
 
 from ._upstream import LIBERO_TRAIN_CONFIG
@@ -181,8 +182,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
         json.loads(summary_path.read_text())
         if summary_path.is_file()
         else {
-            "checkpoint_dir": args.checkpoint_dir,
-            "engine_dir": args.engine_dir,
+            "checkpoint_dir": public_path(args.checkpoint_dir),
+            "engine_dir": public_path(args.engine_dir),
             "config": args.config,
             "num_trials_per_task": args.num_trials_per_task,
             "replan_steps": args.replan_steps,

@@ -43,6 +43,8 @@ from typing import Any
 
 import tyro
 
+from foldquant.provenance import public_path
+
 from ._upstream import LIBERO_ARM_KEY, LIBERO_CHECKPOINT, LIBERO_CLIENT, LIBERO_DATASET_KEY, UPSTREAM_ROOT
 
 logger = logging.getLogger("foldquant.evo_1.eval")
@@ -194,8 +196,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
     total_success = sum(s["successes"] for s in suites.values())
     total_episodes = sum(s["episodes"] for s in suites.values())
     summary = {
-        "checkpoint_dir": args.checkpoint_dir,
-        "engine_dir": args.engine_dir,
+        "checkpoint_dir": public_path(args.checkpoint_dir),
+        "engine_dir": public_path(args.engine_dir),
         "client_returncode": code,
         "seconds": seconds,
         "suites": suites,
