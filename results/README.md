@@ -352,8 +352,10 @@ the sampler's.
 | π₀.₅ | `w8a8` | 32 | 1.00000 | 1.00000 | 0.99999 | 0.009 |
 | π₀.₅ | `w4a4` | 32 | 0.99450 | 0.99942 | 0.84749 | 1.998 |
 | π₀.₅ | `w4a4_cascade` | 32 | 0.99449 | 0.99945 | 0.84704 | 2.005 |
+| SmolVLA | `float` | 32 | 0.99867 | 0.99996 | 0.98232 | 1.517 |
 | SmolVLA | `w8a8` | 32 | 0.99097 | 0.99987 | 0.93192 | 2.009 |
 | SmolVLA | `w4a4` | 32 | 0.86210 | 0.92967 | 0.30339 | 2.069 |
+| Evo-1 | `float` | 32 | 0.99905 | 0.99994 | 0.98547 | 1.010 |
 | Evo-1 | `w8a8` | 32 | 0.99749 | 0.99991 | 0.95569 | 1.005 |
 | Evo-1 | `w4a4` | 32 | 0.96357 | 0.96881 | 0.89392 | 1.036 |
 | Evo-1 | `w4a4_cascade` | 32 | 0.96335 | 0.97243 | 0.89841 | 1.032 |
@@ -362,6 +364,16 @@ Read the median beside the mean: these distributions have tails, and on the
 families where W4A4 breaks it is a minority of observations that carry the
 deficit. Worst \|Δ\| is per family's action scale — 1.000 is a saturated 0/1
 gripper on GR00T, ~2.0 is a saturated channel where actions run [-1, 1].
+
+**Read the float row before reading the quantized ones.** It is the same
+graph compiled with nothing quantized, so whatever it already costs is not
+quantization. On two families that matters more than the quantized rows do:
+Evo-1's float engine carries a worst \|Δ\| of 1.010 against the bf16 policy,
+and its W4A4 arm carries 1.036 — the four-bit step adds 0.026 to a saturation
+that is already there. SmolVLA's float engine is at 1.517 with a minimum
+cosine of 0.98232, so its arms are read against an engine that is itself not
+exact. Where a family has no float row, its quantized numbers cannot be
+decomposed this way and should not be presented as if they could.
 
 ### Latency — all families
 
