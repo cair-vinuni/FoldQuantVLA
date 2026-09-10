@@ -184,8 +184,6 @@ def install_llm_per_row_emulation(
         A :class:`LlmEmulationHandle`; call ``.remove()`` to restore the module.
 
     Raises:
-        NotImplementedError: For decoder conventions this emulation has not been
-            validated against (SmolLM2 / Llama).
         KeyError: A missing SQ scale or GPTQ Hessian site — the emulation never
             silently skips a site the deployed graph quantizes.
     """

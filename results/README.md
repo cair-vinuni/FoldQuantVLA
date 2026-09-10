@@ -59,21 +59,26 @@ The second quantized module is the family's action generator, whatever its
 shape: a DiT for GR00T, a Gemma-300M expert for pi, SmolVLA's dual-stream
 expert, Evo-1's cross-attention flow-matching head.
 
-**SmolVLA has no W4A4-cascade cell**, and the reason is worth stating rather
-than leaving a blank. Cascade calibrates the action module on the activations
-an already-quantized LLM produces, which needs a PyTorch fake-quant of that
-LLM; the one here is validated for Qwen2/Qwen3/Qwen3-VL and Gemma, and refuses
-SmolLM2 rather than emulating a convention it has not been checked against. An
-unvalidated emulation would still produce a number, and that number would look
-like a cascade measurement without being one.
+**SmolVLA's cascade arm exists now**, and the reason it did not is worth
+keeping. Cascade calibrates the action module on the activations an already
+quantized LLM produces, which needs a PyTorch fake-quant of that LLM; the one
+here was validated for Qwen2/Qwen3/Qwen3-VL and Gemma and refused SmolLM2
+rather than emulating a convention it had not been checked against. Writing
+that path — SmolLM2/Llama share Qwen's projection layout and plain RMSNorm, so
+the Qwen fold applies unchanged — is what the arm was waiting on.
 
-The arm would also have nothing to answer. On this family W4A4 does not
-survive: over the same 32 held-out observations the W4A4 arm reads 0.862 mean
-/ 0.930 median action cosine with a **median** max-abs of 1.99 — saturation in
-the typical observation, not in a tail — against 0.991 / 0.99987 / 0.033 for
-W8A8. Cascade recalibrates the expert; it cannot repair an arm whose median
-observation has already flipped a channel. The honest reporting is the W4A4
-row as measured, with this cell absent and explained.
+It helps, on the family where W4A4 hurts most:
+
+| SmolVLA, 32 held-out observations | mean | median | min | worst \|Δ\| |
+|---|---|---|---|---|
+| `w4a4` | 0.86210 | 0.92967 | 0.30339 | 2.069 |
+| `w4a4_cascade` | 0.89828 | 0.98717 | 0.43551 | 2.076 |
+
+The median moves 0.930 to 0.987 and the minimum 0.303 to 0.436 — the typical
+observation is most of the way back, and the worst one is still broken.
+Recalibrating the expert under the quantized LLM cannot repair an arm whose
+damage is in the LLM: the seam split below puts the collapse there, and
+cascade does not touch it.
 
 Which of the two graphs carries that failure is a separate measurement, and it
 has been made: `--components llm` and `--components expert` on the same
@@ -355,6 +360,7 @@ the sampler's.
 | SmolVLA | `float` | 32 | 0.99867 | 0.99996 | 0.98232 | 1.517 |
 | SmolVLA | `w8a8` | 32 | 0.99097 | 0.99987 | 0.93192 | 2.009 |
 | SmolVLA | `w4a4` | 32 | 0.86210 | 0.92967 | 0.30339 | 2.069 |
+| SmolVLA | `w4a4_cascade` | 32 | 0.89828 | 0.98717 | 0.43551 | 2.076 |
 | Evo-1 | `float` | 32 | 0.99905 | 0.99994 | 0.98547 | 1.010 |
 | Evo-1 | `w8a8` | 32 | 0.99749 | 0.99991 | 0.95569 | 1.005 |
 | Evo-1 | `w4a4` | 32 | 0.96357 | 0.96881 | 0.89392 | 1.036 |
