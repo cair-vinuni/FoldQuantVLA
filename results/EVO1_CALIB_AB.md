@@ -21,7 +21,11 @@ Arm `act_w4a4_shg_llm_w4a4_srg`, both calibrations with the correct `libero_robo
 | B — same frames, 448→256→448 | `libero_evo1_calib_256up` (3b704899…) | **0.9717** | 0.9803 | 0.9972 |
 | campaign arm — 256 px bundle, `libero_panda` tag (H100, P1) | `libero_4suites_calib` | 0.9720 | — | — |
 
-Neither the image detail nor the embodiment tag moves the four-bit fidelity: three calibrations land
-within 0.003 of each other. The pre-registered confound is ruled out as the cause of the Evo-1
-four-bit losses; the loss is a property of uniform W4A4 on this checkpoint, and no closed-loop rerun
-was run. Both defects are recorded as limitations of the Evo-1 arms.
+Neither the image detail nor the embodiment tag moves the four-bit *fidelity*: three calibrations land
+within 0.003 of each other, which makes a large calibration effect less likely. It does not clear the
+pre-registered confound, whose endpoint is closed-loop success: in this cosine band the campaign's own
+data show that differences of a few thousandths in cosine coexist with hundreds of episodes of
+difference in success (0.9655 → 381/800 against 0.9718 → 648/800), and the screening used 64 samples
+from 96 frames where the campaign arms used 128 from 53,635. The Evo-1 four-bit results are therefore
+reported as confounded per the pre-registration until a closed-loop rerun with a 448-pixel calibration
+exists; this screening is recorded as the evidence that the effect, if any, is not visible offline.
