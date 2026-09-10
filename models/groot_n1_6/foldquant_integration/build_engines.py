@@ -149,9 +149,13 @@ def build(args: BuildConfig) -> Path:
             assert onnx_dir is not None
             src = onnx_dir / manifest["files"][name]
             if manifest.get("schemes", {}).get(name) == "float":
-                # A traced float graph mixes fp32 masks with bf16 activations by nature;
-                # build it weakly typed, like upstream's float DiT, and let TensorRT insert casts.
-                strongly_typed, int8 = False, False
+                # STRONGLY_TYPED, like every other arm: a weakly-typed network picks a
+                # precision per layer, and the layers TensorRT runs in fp32 are *more* exact
+                # than the bf16 reference this arm is scored against — which made pi05's float
+                # engine drift further from PyTorch than its INT8 engine did. Honouring the
+                # ONNX's own dtypes keeps the float arm a control that differs from the
+                # quantized arms in the precision of the projections and in nothing else.
+                strongly_typed, int8 = True, False
                 source = "float"
             else:
                 strongly_typed, int8 = True, True

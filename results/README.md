@@ -31,15 +31,20 @@ engines, and the float TRT arm is upstream's full pipeline
 (`n17_full_pipeline`) with nothing quantized — eight engines, text tower
 included.
 
-**N1.6's upstream TensorRT path covers the action head alone.** Upstream's
-`scripts/deployment/export_onnx_n1d6.py` exports the DiT and nothing else, so
-no float text-tower engine exists to build from, and this repository does not
-manufacture one: its exporter emits FoldQuant graphs, and `--llm-scheme none`
-skips the module rather than writing a float replacement. N1.6's float TRT arm
-is therefore upstream's pipeline as upstream ships it — DiT under TensorRT,
-text tower in eager PyTorch — which the timings show directly: that arm's
-backbone matches eager to within a fifth of a millisecond, while the quantized
-arms' backbone falls to 17–18 ms.
+**N1.6's float arm has been two different things, and the records say which.**
+Upstream's `scripts/deployment/export_onnx_n1d6.py` exports the DiT and nothing
+else, so the first float arm built here was upstream's pipeline as upstream
+ships it: DiT under TensorRT, text tower in eager PyTorch. That is the arm the
+latency table below still uses, and its `components` field says `["dit"]`; the
+timings show the scope directly, its backbone matching eager to within a fifth
+of a millisecond while the quantized arms' backbone falls to 17–18 ms.
+
+`--llm-scheme float` traces a float text tower of its own, so the drift table's
+float row is now the full-scope arm — both modules under TensorRT, nothing
+quantized — and reads `schemes {"llm": "float", "dit": "float"}` in its record.
+The two arms answer different questions and are not interchangeable: check the
+`components` or `schemes` field of the record before comparing a number to
+another family's.
 
 The consequence is a reading trap, and it is the reason the tables quote
 speedup against **eager PyTorch** rather than against the float TRT arm. N1.6's
@@ -347,7 +352,7 @@ the sampler's.
 | GR00T N1.7 | `w8a8` | 32 | 0.99965 | 0.99996 | 0.99086 | 0.540 |
 | GR00T N1.7 | `w4a4` | 32 | 0.98575 | 0.99817 | 0.80213 | 1.000 |
 | GR00T N1.7 | `w4a4_cascade` | 32 | 0.98591 | 0.99825 | 0.80649 | 1.000 |
-| GR00T N1.6 | `float` | 32 | 0.99997 | 0.99997 | 0.99990 | 0.015 |
+| GR00T N1.6 | `float` | 32 | 0.99998 | 0.99999 | 0.99971 | 0.026 |
 | GR00T N1.6 | `w8a8` | 32 | 0.99996 | 0.99998 | 0.99948 | 0.049 |
 | GR00T N1.6 | `w4a4` | 32 | 0.97411 | 0.99876 | 0.46067 | 1.000 |
 | GR00T N1.6 | `w4a4_cascade` | 32 | 0.97437 | 0.99874 | 0.46649 | 1.000 |
