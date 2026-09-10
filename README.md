@@ -23,43 +23,23 @@ nodes between the plugin and its neighbours.
 
 ## Highlights
 
-- ⚡ **Native low bit, not simulated.** W8A8 and W4A4 run on the device's INT8 / INT4 tensor cores through one fused TensorRT plugin per linear site; no online rotation, no per-token scale search, no extra graph nodes.
-- 🧮 **One fold, offline.** SmoothQuant scale, block rotation and GPTQ rounding are composed into a single consistent transform `T_v = D^o R D^i` and folded into the weights before export. Every fold is in the weights; the runtime only quantizes rows.
-- 🧩 **Six VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7, π₀.₅, SmolVLA and Evo-1 — upstream code, evaluation harness and policy server used unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in the precision of the projections.
-- 🎯 **Action-referenced calibration.** Presets are selected on decoded actions of the assembled pipeline (fidelity, then closed-loop success), with a floating-point engine of the same scope as the control every latency claim is measured against.
-- 🤖 **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, Jetson AGX Orin and a real ALOHA / UR10e (see [`docs/`](docs)).
+- **Native low bit, not simulated.** W8A8 and W4A4 run on the device's INT8 / INT4 tensor cores through one fused TensorRT plugin per linear site; no online rotation, no per-token scale search, no extra graph nodes.
+- **One fold, offline.** SmoothQuant scale, block rotation and GPTQ rounding are composed into a single consistent transform `T_v = D^o R D^i` and folded into the weights before export. Every fold is in the weights; the runtime only quantizes rows.
+- **Six VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7, π₀.₅, SmolVLA and Evo-1 — upstream code, evaluation harness and policy server used unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in the precision of the projections.
+- **Action-referenced calibration.** Presets are selected on decoded actions of the assembled pipeline (fidelity, then closed-loop success), with a floating-point engine of the same scope as the control every latency claim is measured against.
+- **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, Jetson AGX Orin and a real ALOHA / UR10e (see [`docs/`](docs)).
 
 ## How it works
 
-```mermaid
-flowchart LR
-    subgraph offline["Offline — once per checkpoint (workstation)"]
-        direction LR
-        C["Calibration set<br/>upstream dataset, 128 obs"] --> A["Capture activations<br/>at every linear site"]
-        A --> S["s — SmoothQuant scale<br/>(fold-before / fold-after)"]
-        S --> R["R — block rotation<br/>learned dense (r) or<br/>Sylvester butterfly (h)"]
-        R --> G["g — GPTQ rounding<br/>on the rotated weights"]
-        G --> W["Folded INT4 / INT8 weights<br/>+ per-site amax"]
-        W --> E["Emit ONNX<br/>FoldQuant plugin nodes"]
-    end
-    subgraph device["On the target GPU"]
-        direction LR
-        E --> B["build_engines<br/>TensorRT + plugin .so"]
-        B --> I["install_engines<br/>into the upstream policy"]
-        I --> V["verify · eval_libero<br/>benchmark · serve"]
-    end
-    F["float scheme<br/>traced from the live module"] -.-> B
-```
+<p align="center">
+  <img src="docs/assets/foldquant-pipeline.svg" alt="FoldQuant build path: the fold is composed offline into the weights, the ONNX crosses to the target, and engines are rebuilt per device" width="100%">
+</p>
 
 At inference each quantized linear site is **one plugin call**:
 
-```mermaid
-flowchart LR
-    X["activation row x<br/>(bf16)"] --> Q["rotate + per-row quantize<br/>INT4 / INT8"]
-    Q --> M["tensor-core GEMM<br/>with folded weights"]
-    M --> D["dequantize<br/>(+ residual, + bias)"]
-    D --> Y["output row<br/>(bf16)"]
-```
+<p align="center">
+  <img src="docs/assets/foldquant-plugin.svg" alt="One quantized linear site is a single fused plugin call: rotate and per-row quantize, tensor-core GEMM against folded weights, dequantize" width="100%">
+</p>
 
 The same plugin serves the GR00T DiT, the Evo-1 action head and the SmolVLA / π₀.₅ experts through their own emitters; the LLM backbones use the INT8 per-row path (`w8a8_sr`) or the INT4 path (`w4a4_srg`) with the same weight contract.
 
