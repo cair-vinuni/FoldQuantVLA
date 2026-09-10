@@ -351,17 +351,19 @@ the sampler's.
 | GR00T N1.6 | `w8a8` | 32 | 0.99996 | 0.99998 | 0.99948 | 0.049 |
 | GR00T N1.6 | `w4a4` | 32 | 0.97411 | 0.99876 | 0.46067 | 1.000 |
 | GR00T N1.6 | `w4a4_cascade` | 32 | 0.97437 | 0.99874 | 0.46649 | 1.000 |
+| GR00T N1.5 | `float` | 32 | 0.99991 | 0.99999 | 0.99726 | 0.230 |
 | GR00T N1.5 | `w8a8` | 32 | 0.99996 | 0.99999 | 0.99944 | 0.146 |
 | GR00T N1.5 | `w4a4` | 32 | 0.99585 | 0.99885 | 0.96967 | 0.848 |
 | GR00T N1.5 | `w4a4_cascade` | 32 | 0.99598 | 0.99865 | 0.97245 | 0.927 |
+| π₀.₅ | `float` | 32 | 1.00000 | 1.00000 | 1.00000 | 0.004 |
 | π₀.₅ | `w8a8` | 32 | 1.00000 | 1.00000 | 0.99999 | 0.009 |
 | π₀.₅ | `w4a4` | 32 | 0.99450 | 0.99942 | 0.84749 | 1.998 |
 | π₀.₅ | `w4a4_cascade` | 32 | 0.99449 | 0.99945 | 0.84704 | 2.005 |
-| SmolVLA | `float` | 32 | 0.99867 | 0.99996 | 0.98232 | 1.517 |
+| SmolVLA | `float` | 32 | 0.99809 | 0.99999 | 0.97048 | 1.967 |
 | SmolVLA | `w8a8` | 32 | 0.99097 | 0.99987 | 0.93192 | 2.009 |
 | SmolVLA | `w4a4` | 32 | 0.86210 | 0.92967 | 0.30339 | 2.069 |
 | SmolVLA | `w4a4_cascade` | 32 | 0.89828 | 0.98717 | 0.43551 | 2.076 |
-| Evo-1 | `float` | 32 | 0.99905 | 0.99994 | 0.98547 | 1.010 |
+| Evo-1 | `float` | 32 | 0.99906 | 0.99996 | 0.98556 | 1.010 |
 | Evo-1 | `w8a8` | 32 | 0.99749 | 0.99991 | 0.95569 | 1.005 |
 | Evo-1 | `w4a4` | 32 | 0.96357 | 0.96881 | 0.89392 | 1.036 |
 | Evo-1 | `w4a4_cascade` | 32 | 0.96335 | 0.97243 | 0.89841 | 1.032 |
@@ -371,15 +373,20 @@ families where W4A4 breaks it is a minority of observations that carry the
 deficit. Worst \|Δ\| is per family's action scale — 1.000 is a saturated 0/1
 gripper on GR00T, ~2.0 is a saturated channel where actions run [-1, 1].
 
-**Read the float row before reading the quantized ones.** It is the same
-graph compiled with nothing quantized, so whatever it already costs is not
-quantization. On two families that matters more than the quantized rows do:
-Evo-1's float engine carries a worst \|Δ\| of 1.010 against the bf16 policy,
-and its W4A4 arm carries 1.036 — the four-bit step adds 0.026 to a saturation
-that is already there. SmolVLA's float engine is at 1.517 with a minimum
-cosine of 0.98232, so its arms are read against an engine that is itself not
-exact. Where a family has no float row, its quantized numbers cannot be
-decomposed this way and should not be presented as if they could.
+**Read the float row before reading the quantized ones.** It is the same graph
+compiled with nothing quantized, so whatever it already costs is not
+quantization. Every family has one now, and on two of them it carries most of
+what looks like four-bit damage: Evo-1's float engine is at a worst \|Δ\| of
+1.010 where its W4A4 arm is at 1.036, and SmolVLA's is at 1.967.
+
+That row is only a control if it is built the way the quantized arms are. It
+was not, at first: a traced float graph was compiled weakly typed, so TensorRT
+chose a precision per layer and ran some of them in fp32 — *more* exact than
+the bf16 reference the arm is scored against. π₀.₅'s float engine then read
+0.98256 mean against an INT8 engine's 1.00000, which is not a thing a float
+engine can honestly do. Built STRONGLY_TYPED, honouring the ONNX's own bf16
+dtypes, the same engine reads 1.00000. The lesson generalises past this bug:
+a control that differs from the arm in two ways measures neither.
 
 ### Latency — all families
 

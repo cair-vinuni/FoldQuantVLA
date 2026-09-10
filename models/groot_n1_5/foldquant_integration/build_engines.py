@@ -130,7 +130,13 @@ def build(args: BuildConfig) -> Path:
         profiles = profiles_from_onnx(src, ranges)
         # A traced float graph mixes fp32 masks with bf16 activations by nature; build it
         # weakly typed with no plugins, like upstream's float DiT, and let TensorRT insert casts.
-        is_float = manifest.get("schemes", {}).get(name) == "float"
+        # A traced float graph carries no plugin nodes, but it is still built STRONGLY_TYPED:
+        # a weakly-typed network picks a precision per layer, and the layers TensorRT then
+        # runs in fp32 are *more* exact than the bf16 reference the arm is scored against —
+        # which showed up as the float engine drifting further from PyTorch than the INT8 one.
+        # Strongly typed honours the ONNX's own bf16 dtypes, so this arm differs from the
+        # quantized arms in the precision of the projections and in nothing else.
+        is_float = manifest.get("schemes", {}).get(name) == "float"  # traced float graph: no plugins
         t0 = time.time()
         logger.info("%s: building %s from %s (%s)", name, engine_name, src.name, "float" if is_float else "foldquant")
         build_engine(
@@ -138,7 +144,7 @@ def build(args: BuildConfig) -> Path:
             engine_dir / engine_name,
             profiles=profiles,
             plugin_libs=() if is_float else plugin_libs,
-            strongly_typed=not is_float,
+            strongly_typed=True,
             int8=not is_float,
             workspace_mb=args.workspace_mb,
         )

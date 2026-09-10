@@ -58,8 +58,8 @@ This repository is the paper's artifact. It has two parts:
 |---|---|---|---|---|---|
 | GR00T N1.7 | NVIDIA Isaac GR00T, `n1.7-release` (`23ace64f`) | [`models/groot_n1_7`](models/groot_n1_7/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | bf16 only |
 | GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
-| GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | W8A8 · W4A4 · cascade | yes | _pending_ |
-| π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | W8A8 · W4A4 · cascade | yes | _pending_ |
+| GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
+| π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
 | SmolVLA | LeRobot, `v0.6.1` (`7e241bd6`) | [`models/smolvla`](models/smolvla/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
 | Evo-1 | MINT-SJTU Evo-1, `main` (`5fd14b01`) | [`models/evo_1`](models/evo_1/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
 
@@ -72,10 +72,10 @@ success-rate cell in [`results/README.md`](results/README.md) reads _Pending_
 until they land. Jetson AGX Orin latency is pending for the same reason —
 the board is not this machine.
 
-The float arm is still missing from N1.5 and π₀.₅ only because it has not been
-built yet: `--llm-scheme float` traces the module through the deployed forward
-and emits an unquantized engine of the same scope, so those releases shipping
-no TensorRT path of their own no longer prevents it.
+All six families now have a float arm. `--llm-scheme float` traces the module
+through the deployed forward and emits an unquantized engine of the same
+scope, so a release shipping no TensorRT path of its own is no longer a
+reason to lack one.
 
 ## Schemes
 
