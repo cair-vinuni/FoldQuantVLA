@@ -181,6 +181,13 @@ export/engines with the upstream pipeline → `export_foldquant` → `build_engi
 harnesses, held-out drift, LIBERO success rate, latency on RTX 4070 Ti SUPER
 and Jetson AGX Orin) and holds the measured numbers per family and arm.
 
+[`docs/REPRODUCING.md`](docs/REPRODUCING.md) says what can be checked and at
+what cost. `python scripts/check_records.py` needs only a clone and asserts the
+invariants the records have to satisfy; `scripts/smoke_family.sh` runs one
+family's export → build → verify chain on eight observations; reproducing a
+published number needs the checkpoint and dataset that number's record names,
+which every record now carries.
+
 ## Deploying on a real robot
 
 [`docs/real_robot/`](docs/real_robot/README.md) covers serving a FoldQuant arm

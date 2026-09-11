@@ -18,6 +18,11 @@ foldquant/kernels/prebuilt/*.so
 /checkpoints/
 /weights/
 /data/
+# scratch from scripts/smoke_family.sh
+/.smoke/
+.smoke_export/
+.smoke_float/
+
 # export / engine directories, at the root or under a models/<family>/ tree
 exports/
 *.onnx

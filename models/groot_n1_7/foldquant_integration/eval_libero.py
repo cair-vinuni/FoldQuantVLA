@@ -134,9 +134,17 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     )
 
     if args.engine_dir:
-        manifest = json.loads((Path(args.engine_dir) / MANIFEST_NAME).read_text())
-        summary["schemes"] = manifest["schemes"]
-        load_plugins(manifest["plugin_libs"])
+        # The float arm comes off upstream's pipeline and carries no FoldQuant manifest —
+        # it has no plugin nodes to load libraries for. Reading it unconditionally made
+        # eval_libero refuse the one arm that separates TensorRT from quantization.
+        manifest_path = Path(args.engine_dir) / MANIFEST_NAME
+        if manifest_path.is_file():
+            manifest = json.loads(manifest_path.read_text())
+            summary["schemes"] = manifest["schemes"]
+            load_plugins(manifest["plugin_libs"])
+        else:
+            summary["schemes"] = {}
+            logger.info("%s has no FoldQuant manifest — serving it as a float arm", args.engine_dir)
 
     from gr00t.data.embodiment_tags import EmbodimentTag
     from gr00t.eval.rollout_policy import (
