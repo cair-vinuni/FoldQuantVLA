@@ -60,23 +60,28 @@ This repository is the paper's artifact. It has two parts:
   are used **unchanged**; the integration only emits the FoldQuant graphs for
   the modules it quantizes and slots them into the upstream TensorRT pipeline.
 
-| family | upstream | integration | drift (cosine) | latency | LIBERO SR |
-|---|---|---|---|---|---|
-| GR00T N1.7 | NVIDIA Isaac GR00T, `n1.7-release` (`23ace64f`) | [`models/groot_n1_7`](models/groot_n1_7/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | bf16 only |
-| GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
-| GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
-| π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
-| SmolVLA | LeRobot, `v0.6.1` (`7e241bd6`) | [`models/smolvla`](models/smolvla/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
-| Evo-1 | MINT-SJTU Evo-1, `main` (`5fd14b01`) | [`models/evo_1`](models/evo_1/foldquant_integration/README.md) | float · W8A8 · W4A4 · cascade | yes | _pending_ |
+| family | upstream | integration | support |
+|---|---|---|---|
+| GR00T N1.7 | NVIDIA Isaac GR00T, `n1.7-release` (`23ace64f`) | [`models/groot_n1_7`](models/groot_n1_7/foldquant_integration/README.md) | full — float · W8A8 · W4A4 · cascade |
+| GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | full — float · W8A8 · W4A4 · cascade |
+| GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | full — float · W8A8 · W4A4 · cascade |
+| π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | full — float · W8A8 · W4A4 · cascade |
+| SmolVLA | LeRobot, `v0.6.1` (`7e241bd6`) | [`models/smolvla`](models/smolvla/foldquant_integration/README.md) | full — float · W8A8 · W4A4 · cascade |
+| Evo-1 | MINT-SJTU Evo-1, `main` (`5fd14b01`) | [`models/evo_1`](models/evo_1/foldquant_integration/README.md) | full — float · W8A8 · W4A4 · cascade |
 
-Every family's integration is complete — export, engine build, drift, LIBERO
-rollout, latency and a policy server all exist and run. The last three columns
-say what has been **measured and committed**, which is a different claim.
-Held-out drift and desktop latency are in `results/` for all six. **LIBERO
-success rate is not**: those sweeps run on the evaluation cluster, and every
-success-rate cell in [`results/README.md`](results/README.md) reads _Pending_
-until they land. Jetson AGX Orin latency is pending for the same reason —
-the board is not this machine.
+**Full** means the whole chain is implemented and runs for every scheme
+listed: export, engine build, held-out drift, latency benchmark, LIBERO
+rollout and a policy server. All six are there. π₀.₅ and Evo-1 are full on the
+same terms, with one difference that is upstream's design and not a gap: their
+rollout drives an upstream client from a second environment against a running
+server, where the other four run it in process.
+
+What has been **measured and committed** is a narrower claim, and it belongs in
+[`results/`](results/README.md) rather than in this table. Held-out drift and
+desktop latency are recorded there for all six. **LIBERO success rate is not**:
+those sweeps run on the evaluation cluster, and every success-rate cell reads
+_Pending_ until they land. Jetson AGX Orin latency is pending for the same
+reason — the board is not this machine.
 
 All six families now have a float arm. `--llm-scheme float` traces the module
 through the deployed forward and emits an unquantized engine of the same
