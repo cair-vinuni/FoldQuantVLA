@@ -95,13 +95,22 @@ in a fixed order: `s` SmoothQuant scale, then `r` (learned dense block
 rotation) or `h` (fixed Sylvester butterfly, applied as an FWHT), then `g`
 GPTQ rounding. `w8a8` alone is the dynamic per-row baseline and folds nothing.
 
-`float` is the unquantized engine of a module — the floor of every ladder and the compiled
-control the latency table divides by. It is traced, not emitted: `foldquant/float_export.py`
-captures the module's real call and exports it under the runtime's binding names, so
-`build_engines` compiles it (weakly typed, no plugins) and `install_engines` serves it like
-any other arm. `none` keeps the module in PyTorch instead. On GR00T N1.7 the FoldQuant graphs
-share upstream's full-pipeline I/O contract, so `float` there takes upstream's own export
+`float` is the unquantized engine of a module — the floor of every ladder and
+the compiled control the latency table divides by. It is traced, not emitted:
+`foldquant/float_export.py` captures the module's real call and exports it
+under the runtime's binding names, so `build_engines` compiles it and
+`install_engines` serves it like any other arm. `none` keeps the module in
+PyTorch instead. On GR00T N1.7 the FoldQuant graphs share upstream's
+full-pipeline I/O contract, so `float` there takes upstream's own export
 (`build_engines --float-onnx-dir`).
+
+The float engine is built **strongly typed**, like every quantized arm, and
+with no plugins. That is not a detail: a weakly-typed network picks a precision
+per layer, and the layers TensorRT then chooses to run in fp32 are *more* exact
+than the bf16 reference the arm is scored against — which once made a float
+engine drift further from PyTorch than its own INT8 engine did. Honouring the
+ONNX's own dtypes keeps float a control that differs from the quantized arms in
+the precision of the projections and in nothing else.
 
 | target | schemes | plugin library |
 |---|---|---|
@@ -174,11 +183,20 @@ harnesses, held-out drift, LIBERO success rate, latency on RTX 4070 Ti SUPER
 and Jetson AGX Orin) and holds the measured numbers per family and arm.
 
 [`docs/REPRODUCING.md`](docs/REPRODUCING.md) says what can be checked and at
-what cost. `python scripts/check_records.py` needs only a clone and asserts the
-invariants the records have to satisfy; `scripts/smoke_family.sh` runs one
-family's export → build → verify chain on eight observations; reproducing a
-published number needs the checkpoint and dataset that number's record names,
-which every record now carries.
+what cost, from a clone upwards:
+
+- `python scripts/check_records.py` — no GPU, no checkpoint: asserts the
+  invariants every record has to satisfy.
+- `scripts/smoke_family.sh` — one family's export → build → verify chain on
+  eight observations.
+- `scripts/smoke_serve.sh` — each family's policy server starts and binds,
+  over bf16 or over a built arm.
+- `scripts/smoke_eval.sh` — one LIBERO suite at one episode per task, through
+  the same `eval_libero` the sweeps use.
+
+A smoke pass means the chain runs, not that a published number reproduces.
+Reproducing a number needs the checkpoint and dataset that number's record
+names, which every record now carries.
 
 ## Deploying on a real robot
 
