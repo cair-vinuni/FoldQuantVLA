@@ -32,7 +32,7 @@ nodes between the plugin and its neighbours.
 - **One fold, offline.** SmoothQuant scale, block rotation and GPTQ rounding are composed into a single consistent transform `T_v = D^o R D^i` and folded into the weights before export. Every fold is in the weights; the runtime only quantizes rows.
 - **Six VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7, π₀.₅, SmolVLA and Evo-1 — upstream code, evaluation harness and policy server used unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in the precision of the projections.
 - **Action-referenced calibration.** Presets are selected on decoded actions of the assembled pipeline (fidelity, then closed-loop success), with a floating-point engine of the same scope as the control every latency claim is measured against.
-- **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, Jetson AGX Orin and a real ALOHA / UR10e (see [`docs/`](docs)).
+- **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, a Jetson AGX Orin and a real robot, driven by the family's own upstream client (see [`docs/`](docs)).
 
 ## How it works
 
@@ -138,8 +138,7 @@ models/evo_1/         upstream Evo-1 (InternVL3 tower + flow-matching head) + fo
 third_party/          CUTLASS (submodule), vendored TensorRT public headers
 tests/                unit tests for the algorithm, emitters, kernel locator / build
 results/              evaluation protocol and measured results
-docs/real_robot/      deploying a quantized arm to ALOHA / UR10e hardware
-docs/deploy/          export on a workstation, build and serve on Jetson AGX Orin
+docs/deploy/          export on a workstation, build and test on Jetson AGX Orin
 ```
 
 ## Install
@@ -198,25 +197,22 @@ A smoke pass means the chain runs, not that a published number reproduces.
 Reproducing a number needs the checkpoint and dataset that number's record
 names, which every record now carries.
 
-## Deploying on a real robot
+## Deploying
 
-[`docs/real_robot/`](docs/real_robot/README.md) covers serving a FoldQuant arm
-to real hardware: the engines are installed into the **upstream release's own
-policy server**, so an unmodified upstream client drives a quantized policy by
-changing a host and a port. Per-robot guides for
-[ALOHA](docs/real_robot/aloha.md) — where two families ship a client already —
-and [UR10e](docs/real_robot/ur10e.md), which needs a fine-tune and ships a
-reference client here.
+Engines install into the **upstream release's own policy server**, so an
+unmodified upstream client drives a quantized policy by changing a host and a
+port. Each family's own repository documents its client and its real-robot
+examples; nothing here replaces them.
 
-The rule that governs all of it: quantization changes the arithmetic, not the
+One rule governs all of it: quantization changes the arithmetic, not the
 policy. An engine built from a LIBERO checkpoint emits LIBERO actions on any
 robot, so a real deployment starts from a checkpoint fine-tuned for that
 embodiment.
 
 [`docs/deploy/jetson.md`](docs/deploy/jetson.md) covers the edge target the
-paper measures: what has to be built on the board itself (plugin library and
-engines, because neither is portable across `(SM, TensorRT)`) versus what
-crosses from a workstation as ONNX.
+paper measures: what has to be built on the board itself — the plugin library
+and the engines, because neither is portable across `(SM, TensorRT)` — versus
+what crosses from a workstation as ONNX.
 
 ## License
 
