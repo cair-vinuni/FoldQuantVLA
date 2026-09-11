@@ -34,6 +34,19 @@ mkdir -p "$OUT"
 FAMILIES=("$@")
 [ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 pi05 smolvla evo_1)
 
+# A policy server or a training job on the same card will fail this in a way that
+# looks like a defect: TensorRT reports "execute_async_v3() failed" with no mention
+# of memory, and known-good engines fail it exactly as a fresh build does. Say so
+# up front rather than let the report blame the code.
+busy_mib=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1)
+busy_n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
+if [ "${busy_n:-0}" -gt 0 ]; then
+  echo "warning: ${busy_n} process(es) already on the GPU using ${busy_mib} MiB."
+  echo "         The larger families need the card to themselves; a failure below may be"
+  echo "         contention, not a defect. Set SMOKE_ALLOW_BUSY_GPU=1 to run anyway."
+  [ "${SMOKE_ALLOW_BUSY_GPU:-0}" = 1 ] || exit 2
+fi
+
 pass=0; fail=0; skip=0
 note () { printf '  %-9s %s\n' "$1" "$2"; }
 
@@ -63,16 +76,21 @@ run_family () {
   local float_args=()
   case "$fam" in
     groot_n1_7|groot_n1_6)
+      # Only N1.7 accepts --float-engine-dir; N1.6 takes the ONNX directory alone and
+      # builds the untouched components from it. Passing both to N1.6 is rejected.
+      local reuse=0
+      [ "$fam" = groot_n1_7 ] && reuse=1
       if [ -d "$dir/exports/float/onnx" ]; then
         float_args=(--float-onnx-dir exports/float/onnx)
-        [ -d "$dir/exports/float/engines" ] && float_args+=(--float-engine-dir exports/float/engines)
+        [ "$reuse" = 1 ] && [ -d "$dir/exports/float/engines" ] && float_args+=(--float-engine-dir exports/float/engines)
         note ok "float pipeline found — reusing exports/float"
       else
         note ..   "building the float pipeline first (needed for the untouched modules)"
         ( cd "$dir" && "$venv" scripts/deployment/build_trt_pipeline.py \
             "${ckpt[@]}" "${data[@]}" "${extra[@]}" --output-dir .smoke_float --steps export,build ) >>"$log" 2>&1 \
           || { note FAIL "float pipeline — see $log"; fail=$((fail+1)); return; }
-        float_args=(--float-onnx-dir .smoke_float/onnx --float-engine-dir .smoke_float/engines)
+        float_args=(--float-onnx-dir .smoke_float/onnx)
+        [ "$reuse" = 1 ] && float_args+=(--float-engine-dir .smoke_float/engines)
       fi
       ;;
   esac

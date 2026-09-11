@@ -65,6 +65,13 @@ A smoke pass means the chain runs and emits a record. It does **not** mean the
 paper's numbers reproduce — 8 observations is far below the 128 a GPTQ arm
 needs, and the docstring in `export_foldquant` says what happens below that.
 
+**Give it the GPU.** The script refuses to start when another process is on the
+card, because contention fails in a way that looks like a defect: TensorRT
+reports `execute_async_v3() failed` with no mention of memory, and engines
+known to be good fail it exactly as a fresh build does. That was diagnosed here
+by running a verified arm under the same conditions and watching it fail too.
+`SMOKE_ALLOW_BUSY_GPU=1` overrides the check if you want it anyway.
+
 ## 3. Reproduce a number
 
 Every drift record names what it takes. Read it first:
