@@ -90,6 +90,61 @@ agree with its own bf16 policy to the digits above. SmolVLA and Evo-1 sit lower
 because eight observations is far too few for their four-bit action modules —
 the same effect the full protocol avoids with 128.
 
+## 2b. The other two halves: serving, and the rollout
+
+`smoke_family.sh` covers export → build → verify. Two things a reviewer will
+ask about sit outside it, and each has its own script.
+
+**The server.** `scripts/smoke_serve.sh` starts each family's `serve.py` on a
+spare port, waits for the socket to bind, and kills it. That is the half a
+robot depends on — the policy assembled, the engines installed if asked, the
+port open — and it needs no simulator:
+
+```bash
+scripts/smoke_serve.sh                                  # bf16 policies
+ENGINE_GROOT_N1_7=exports/w8a8/engines scripts/smoke_serve.sh groot_n1_7
+```
+
+All six bind on this desktop, N1.7 both as bf16 and over its W8A8 engines.
+Readiness is decided by the socket, not by the log: each family announces
+itself in its own words and matching those cost a false failure here.
+
+**The rollout.** `scripts/smoke_eval.sh` runs one LIBERO suite at one episode
+per task — ten episodes, two to nine minutes a family — through the same
+`eval_libero` the sweeps use:
+
+```bash
+export N17_MODEL=<checkpoint>
+scripts/smoke_eval.sh groot_n1_7
+```
+
+| family | rollout |
+|---|---|
+| `groot_n1_7` | 10/10 episodes, 10 tasks |
+| `groot_n1_6` | 9/10 episodes, 10 tasks |
+| `groot_n1_5` | 10/10 episodes, 10 tasks |
+| `smolvla` | 80% over 10 episodes, 10 tasks |
+
+**Ten episodes ranks nothing.** The question is whether the driver reaches the
+family's upstream loop and writes a summary, not what the arm scores; the
+published sweeps are 800 episodes. π₀.₅ and Evo-1 are skipped with that
+reason: their rollout drives an upstream client from a second environment
+against a running server, which is two processes and a different check.
+
+The N1.5 release pins no LIBERO checkout — it is the operator's to supply — so
+the script borrows a sibling's pinned copy and says so. `FOLDQUANT_LIBERO_DIR`
+overrides.
+
+This check earned its place twice on the day it was written. It found that
+SmolVLA's `eval_libero` read `aggregated` / `per_task_infos` from upstream's
+evaluator, which returns `overall` / `per_task`: every field came back `None`,
+ten rollouts ran and their results were discarded, and the summary recorded
+`nan%`. No published number depended on it — `results/smolvla/` carries drift
+and latency, not success rate — but a reviewer running the obvious command
+would have hit it first. It also caught the check's own first draft printing
+`ok 0/0` for that empty rollout, which is why an empty rollout is now a
+failure: in a reproducibility harness a false pass is worse than no check.
+
 ## 3. Reproduce a number
 
 Every drift record names what it takes. Read it first:
@@ -120,8 +175,8 @@ Two things follow from that, both learned the hard way:
 
 - **LIBERO success rate** for most arms. Those sweeps run on an evaluation
   cluster; `results/README.md` carries the one arm measured on this desktop
-  and marks the rest pending. `eval_libero` drives each family's own upstream
-  rollout loop and runs, which `scripts/smoke_family.sh` does not check —
-  a 40-episode spot check is about 7 minutes per arm.
+  and marks the rest pending. That `eval_libero` runs at all is checked by
+  `scripts/smoke_eval.sh` above, on ten episodes — enough to show the driver
+  works, nowhere near enough to rank an arm.
 - **Jetson AGX Orin latency.** See [`deploy/jetson.md`](deploy/jetson.md) for
   the procedure; the numbers are the paper's, not this repository's.

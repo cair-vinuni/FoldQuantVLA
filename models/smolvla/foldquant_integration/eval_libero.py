@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -113,14 +114,26 @@ def run_suite(deployed, suite: str, args: EvalConfig, output: Path) -> dict[str,
         for group in envs.values():
             for env in group.values():
                 env.close()
-    aggregated = info.get("aggregated", info)
+    # ``eval_policy_all`` returns {"per_task", "per_group", "overall"}; the
+    # suite-wide numbers are under "overall" and its "n_episodes" counts the
+    # episodes that actually ran, which is what a caller should trust over the
+    # requested count.
+    overall = info["overall"]
+
+    def _num(key: str) -> float | None:
+        # Upstream returns NaN for an empty accumulator. NaN is not valid JSON and
+        # reads as a score; None says "did not run", which is the honest record.
+        value = overall.get(key)
+        return None if value is None or math.isnan(value) else float(value)
+
     return {
-        "pc_success": aggregated.get("pc_success"),
-        "avg_sum_reward": aggregated.get("avg_sum_reward"),
-        "avg_max_reward": aggregated.get("avg_max_reward"),
-        "n_episodes": args.n_episodes,
+        "pc_success": _num("pc_success"),
+        "avg_sum_reward": _num("avg_sum_reward"),
+        "avg_max_reward": _num("avg_max_reward"),
+        "n_episodes": overall.get("n_episodes", 0),
+        "n_episodes_requested": args.n_episodes,
         "seconds": round(time.time() - t0, 1),
-        "per_task": info.get("per_task_infos", []),
+        "per_task": info.get("per_task", []),
     }
 
 
@@ -152,7 +165,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
             logger.info("%s: starting (%d episodes per task)", suite, args.n_episodes)
             summary["suites"][suite] = run_suite(deployed, suite, args, output)
             _summary_path(output).write_text(json.dumps(summary, indent=2))
-            logger.info("%s: %.1f%% success", suite, summary["suites"][suite]["pc_success"] or float("nan"))
+            rate = summary["suites"][suite]["pc_success"]
+            logger.info("%s: %s success", suite, "n/a" if rate is None else f"{rate:.1f}%")
     finally:
         if installed is not None:
             installed.remove()
