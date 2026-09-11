@@ -72,6 +72,24 @@ known to be good fail it exactly as a fresh build does. That was diagnosed here
 by running a verified arm under the same conditions and watching it fail too.
 `SMOKE_ALLOW_BUSY_GPU=1` overrides the check if you want it anyway.
 
+All six pass on one RTX 4070 Ti SUPER, about 45 minutes for the set:
+
+| family | action cos mean | min | worst \|Δ\| |
+|---|---|---|---|
+| `groot_n1_7` | 0.99980 | 0.99945 | 0.0366 |
+| `groot_n1_6` | 0.99989 | 0.99982 | 0.0293 |
+| `groot_n1_5` | 0.99921 | 0.99535 | 0.3616 |
+| `pi05` | 0.99990 | 0.99981 | 0.0328 |
+| `smolvla` | 0.97474 | 0.90662 | 2.0143 |
+| `evo_1` | 0.98962 | 0.97052 | 1.0474 |
+
+Those are the default schemes on eight calibration observations, so they are
+not the arms in `results/` and should not be compared with them. What they show
+is that each family's export, engine build and verify run on this machine and
+agree with its own bf16 policy to the digits above. SmolVLA and Evo-1 sit lower
+because eight observations is far too few for their four-bit action modules —
+the same effect the full protocol avoids with 128.
+
 ## 3. Reproduce a number
 
 Every drift record names what it takes. Read it first:
