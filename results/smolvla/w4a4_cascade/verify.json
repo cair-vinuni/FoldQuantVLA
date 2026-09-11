@@ -12,20 +12,23 @@
   "components_requested": null,
   "split_from": null,
   "num_samples": 32,
+  "dataset_path": "libero",
+  "seed": 42,
+  "episodes": "0-149",
   "held_out": true,
   "samples": [
     {
       "episode": 121,
       "step": 197,
-      "kv_stack_cos": 0.9413404506510048,
-      "kv_stack_position_cos_min": 0.33158753994552176,
-      "action_cos": 0.5159288812387834,
-      "action_max_abs": 2.075596570968628,
+      "kv_stack_cos": 0.9841801660238033,
+      "kv_stack_position_cos_min": 0.8897488116407082,
+      "action_cos": 0.899364546114304,
+      "action_max_abs": 1.9949939250946045,
       "action_worst": {
-        "max_abs": 2.075596570968628,
+        "max_abs": 1.9949939250946045,
         "channel": 6,
         "label": null,
-        "step": 41
+        "step": 21
       }
     },
     {
@@ -465,16 +468,16 @@
   ],
   "pytorch_repeat_action_cos_min": 0.9999999999999996,
   "kv_stack": {
-    "cos_mean": 0.9850733470465038,
+    "cos_mean": 0.9864120881519038,
     "cos_median": 0.9868112445350877,
-    "cos_min": 0.9413404506510048,
-    "position_cos_min": 0.33158753994552176
+    "cos_min": 0.9829249272727598,
+    "position_cos_min": 0.6929647609110687
   },
   "actions": {
-    "cos_mean": 0.8982783359494362,
+    "cos_mean": 0.9102607004767962,
     "cos_median": 0.9871658099944128,
     "cos_min": 0.435511304481203,
-    "max_abs": 2.075596570968628,
-    "max_abs_mean": 0.8515803867485374
+    "max_abs": 2.0738751888275146,
+    "max_abs_mean": 0.8490615540649742
   }
 }

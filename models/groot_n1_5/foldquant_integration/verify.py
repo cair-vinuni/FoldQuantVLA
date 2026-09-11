@@ -213,6 +213,14 @@ def main(args: VerifyConfig) -> dict[str, Any]:
         "split_from": public_path(args.split_from),
         "denoising_steps": int(policy.denoising_steps),
         "num_samples": len(samples),
+        # What a reader needs to re-run this and land on the same observations. Without
+        # them a drift figure cannot be reproduced: the held-out plan is seeded, but it is
+        # drawn from whatever episodes the dataset offers, so the same seed over a
+        # different slice gives a different set. Two families were measured under an
+        # episode restriction that nothing recorded, and re-running them without it
+        # shared 0-1 of 32 samples with the committed record.
+        "dataset_path": public_path(args.dataset_path),
+        "seed": args.seed,
         "held_out": bool(excluded),
         "samples": [
             {

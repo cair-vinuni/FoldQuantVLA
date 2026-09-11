@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 495" fill="none">
+<title>Consistent folding at the activation site</title>
+<desc>Offline calibration fixes transform T at each activation site, bakes its inverse into every consuming weight, then rounds and packs. Online the transform and quantization run in one fused prologue feeding all consuming projections. Vision and decoding remain floating point while language and expert projections use INT8 or INT4. The denoising loop reuses one engine.</desc>
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path fill="none" d="m0 0 6 3-6 3" stroke="#78877E" stroke-width="1.4"/></marker></defs>
+<rect x="1" y="1" width="1038" height="493" rx="20" fill="#fff" stroke="#DAE3DC"/>
+<path fill="none" d="M32 158H1008M470 190V456" stroke="#DAE3DC" stroke-dasharray="5 5"/>
+<g font-family="sans-serif" fill="#17201C">
+ <text x="38" y="45" font-size="15" font-weight="700">The policy path</text>
+ <text x="38" y="72" font-size="13" fill="#627067">Only projection GEMMs</text><text x="38" y="92" font-size="13" fill="#627067">change precision.</text>
+ <g font-size="16" text-anchor="middle">
+ <rect x="255" y="52" width="125" height="67" rx="10" fill="#F2F5F2" stroke="#DBE2DC"/><text x="317" y="78">Vision</text><text x="317" y="101" font-size="12" fill="#627067">Floating point</text>
+ <rect x="410" y="52" width="145" height="67" rx="10" fill="#FFF0ED" stroke="#E8A6A8"/><text x="482" y="78">Language</text><text x="482" y="101" font-size="12" fill="#B9141A">INT8 / INT4</text>
+ <rect x="585" y="52" width="145" height="67" rx="10" fill="#FFF0ED" stroke="#E8A6A8"/><text x="657" y="78">Action expert</text><text x="657" y="101" font-size="12" fill="#B9141A">INT8 / INT4</text>
+ <rect x="760" y="52" width="125" height="67" rx="10" fill="#F2F5F2" stroke="#DBE2DC"/><text x="822" y="78">Decode</text><text x="822" y="101" font-size="12" fill="#627067">Floating point</text>
+ <text x="954" y="90" font-size="16">Actions</text>
+ </g>
+ <g stroke="#78877E" marker-end="url(#a)"><path fill="none" d="M380 84h25M555 84h25M730 84h25M885 84h28"/><path fill="none" d="M715 50V26H604v24"/></g>
+ <text x="657" y="17" font-size="11" text-anchor="middle" fill="#627067">Denoising loop · one engine</text>
+ <text x="39" y="202" font-size="20" font-weight="700">Fixed offline</text><text x="514" y="202" font-size="20" font-weight="700">Fused online</text>
+ <text x="39" y="231" font-size="14" fill="#627067">One shared basis for every consumer.</text><text x="514" y="231" font-size="14" fill="#627067">Apply the transform to each new activation.</text>
+ <rect x="40" y="263" width="170" height="71" rx="10" fill="#F8FAF7" stroke="#DAE3DC"/><text x="125" y="291" text-anchor="middle" font-size="15" font-weight="600">Calibrate with vision</text><text x="125" y="313" text-anchor="middle" font-size="13" fill="#627067">Fix scales + rotation</text>
+ <rect x="254" y="263" width="176" height="71" rx="10" fill="#FFF0ED" stroke="#E8A6A8"/><text x="342" y="291" text-anchor="middle" font-size="16" font-weight="600">Shared transform T</text><text x="342" y="313" text-anchor="middle" font-size="13" fill="#B9141A">One per activation site</text>
+ <path fill="none" d="M212 299h35M342 336v28" stroke="#78877E" marker-end="url(#a)"/>
+ <rect x="40" y="374" width="390" height="62" rx="10" fill="#F8FAF7" stroke="#DAE3DC"/><text x="235" y="399" text-anchor="middle" font-size="16" font-weight="600">Bake WᵢT⁻¹ · round once · pack</text><text x="235" y="421" text-anchor="middle" font-size="13" fill="#627067">Absorb diagonal factors into learned gains where valid</text>
+ <rect x="515" y="263" width="477" height="71" rx="10" fill="#FFF0ED" stroke="#E8A6A8"/><text x="753" y="291" text-anchor="middle" font-size="16" font-weight="600">Activation x → Tx → dynamic quantization</text><text x="753" y="314" text-anchor="middle" font-size="13" fill="#B9141A">One fused prologue; no separate rotation operator</text>
+ <path fill="none" d="M754 336v20M594 374v-18h318v18M754 356v18" stroke="#78877E"/>
+ <g font-size="14" text-anchor="middle"><rect x="515" y="374" width="149" height="62" rx="10" fill="#F8FAF7" stroke="#DAE3DC"/><text x="590" y="410">Projection W₁</text><rect x="679" y="374" width="149" height="62" rx="10" fill="#F8FAF7" stroke="#DAE3DC"/><text x="754" y="410">Projection W₂</text><rect x="843" y="374" width="149" height="62" rx="10" fill="#F8FAF7" stroke="#DAE3DC"/><text x="918" y="410">Projection W₃</text></g>
+ <text x="754" y="465" text-anchor="middle" fill="#627067" font-size="13">Integer GEMM · INT32 accumulation · floating-point output</text>
+</g></svg>

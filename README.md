@@ -1,12 +1,17 @@
-# FoldQuantVLA
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/foldquantvla-wordmark-dark.svg">
+    <img src="docs/assets/foldquantvla-wordmark.svg" alt="FoldQuantVLA" height="56">
+  </picture>
+</p>
 
 <p align="center">
-  <img alt="Native INT4 / INT8" src="https://img.shields.io/badge/precision-W4A4%20%7C%20W8A8%20native-1f6feb">
-  <img alt="Runtime" src="https://img.shields.io/badge/runtime-TensorRT%2010%20%2F%2011-76b900">
-  <img alt="Targets" src="https://img.shields.io/badge/GPU-sm__87%20Orin%20%7C%20sm__89%20Ada%20%7C%20sm__90%20Hopper-555">
-  <img alt="Families" src="https://img.shields.io/badge/VLA%20families-GR00T%20N1.5%2FN1.6%2FN1.7%20%7C%20%CF%80%E2%82%80.%E2%82%85%20%7C%20SmolVLA%20%7C%20Evo--1-8250df">
-  <img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11-3776ab">
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-lightgrey"></a>
+  <img alt="Native INT4 / INT8" src="https://img.shields.io/badge/precision-W4A4%20%7C%20W8A8%20native-B9141A">
+  <img alt="Runtime" src="https://img.shields.io/badge/runtime-TensorRT%2010%20%2F%2011-17201C">
+  <img alt="Targets" src="https://img.shields.io/badge/GPU-sm__87%20Orin%20%7C%20sm__89%20Ada%20%7C%20sm__90%20Hopper-627067">
+  <img alt="Families" src="https://img.shields.io/badge/VLA%20families-GR00T%20N1.5%2FN1.6%2FN1.7%20%7C%20%CF%80%E2%82%80.%E2%82%85%20%7C%20SmolVLA%20%7C%20Evo--1-78877E">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11-DAE3DC">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F2F5F2"></a>
 </p>
 
 **FoldQuantVLA: Native Low-Bit Quantization for Vision-Language-Action
@@ -30,6 +35,20 @@ nodes between the plugin and its neighbours.
 - **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, Jetson AGX Orin and a real ALOHA / UR10e (see [`docs/`](docs)).
 
 ## How it works
+
+Only the projection GEMMs change precision. The vision encoder and the decoder
+stay floating point; the language backbone and the action expert run INT8 or
+INT4, and the action expert's denoising loop reuses one engine for every step.
+
+<p align="center">
+  <picture>
+    <source media="(max-width: 700px)" srcset="docs/assets/foldquantvla-method-mobile.svg">
+    <img src="docs/assets/foldquantvla-method.svg" alt="FoldQuantVLA method: only the projections of the language backbone and action expert change precision; one shared transform per activation site is fixed offline and applied as a fused prologue online" width="100%">
+  </picture>
+</p>
+
+The build path that produces those engines has two halves, and only the ONNX
+crosses between them — an engine is compiled for one `(SM, TensorRT)` pair:
 
 <p align="center">
   <img src="docs/assets/foldquant-pipeline.svg" alt="FoldQuant build path: the fold is composed offline into the weights, the ONNX crosses to the target, and engines are rebuilt per device" width="100%">

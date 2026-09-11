@@ -13,6 +13,8 @@
   "cascade": false,
   "split_from": "exports/w4a4/engines",
   "num_samples": 32,
+  "dataset_path": "libero_4suites_calib",
+  "seed": 42,
   "held_out": true,
   "samples": [
     {

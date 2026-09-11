@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 745" fill="none">
+<title>Consistent folding, from calibration to execution</title>
+<desc>Only language and expert projections change precision. Offline calibration fixes the shared transform and folds its inverse into all weights. Online transforms and quantization are fused in one prologue that feeds the consuming projections.</desc>
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="m0 0 6 3-6 3" stroke="#78877E" stroke-width="1.2"/></marker></defs>
+<rect x="1" y="1" width="398" height="743" rx="16" fill="#fff" stroke="#DAE3DC"/>
+<g font-family="sans-serif" fill="#17201C">
+<text x="24" y="36" font-size="18" font-weight="700">The policy path</text><text x="24" y="61" font-size="13" fill="#627067">Only projection GEMMs change precision.</text>
+<g text-anchor="middle"><rect x="24" y="85" width="160" height="54" rx="8" fill="#F2F5F2" stroke="#DAE3DC"/><text x="104" y="107" font-size="14">Vision</text><text x="104" y="126" font-size="11" fill="#627067">Floating point</text><rect x="216" y="85" width="160" height="54" rx="8" fill="#FFF0ED" stroke="#E8A6A8"/><text x="296" y="107" font-size="14">Language</text><text x="296" y="126" font-size="11" fill="#B9141A">INT8 / INT4</text>
+<rect x="216" y="174" width="160" height="54" rx="8" fill="#FFF0ED" stroke="#E8A6A8"/><text x="296" y="196" font-size="14">Action expert</text><text x="296" y="215" font-size="11" fill="#B9141A">INT8 / INT4</text><rect x="24" y="174" width="160" height="54" rx="8" fill="#F2F5F2" stroke="#DAE3DC"/><text x="104" y="196" font-size="14">Decode → actions</text><text x="104" y="215" font-size="11" fill="#627067">Floating point</text></g>
+<g fill="none" stroke="#78877E" marker-end="url(#a)"><path d="M185 112h25M296 141v26M214 201h-23"/></g><text x="200" y="254" text-anchor="middle" font-size="11" fill="#627067">The denoising loop reuses one expert engine.</text>
+<path d="M24 278H376" fill="none" stroke="#DAE3DC"/>
+<text x="24" y="313" font-size="18" font-weight="700">Fixed offline</text><text x="24" y="338" font-size="13" fill="#627067">One shared basis for every consumer.</text>
+<rect x="24" y="358" width="352" height="53" rx="8" fill="#FFF0ED" stroke="#E8A6A8"/><text x="200" y="381" font-size="14" font-weight="600" text-anchor="middle">Calibrate scales + rotation → T</text><text x="200" y="400" font-size="11" fill="#B9141A" text-anchor="middle">One transform per activation site</text>
+<path d="M200 413v21" fill="none" stroke="#78877E" marker-end="url(#a)"/>
+<rect x="24" y="443" width="352" height="54" rx="8" fill="#F2F5F2" stroke="#DAE3DC"/><text x="200" y="466" text-anchor="middle" font-size="14" font-weight="600">Bake WᵢT⁻¹ · round once · pack</text><text x="200" y="486" text-anchor="middle" font-size="11" fill="#627067">Absorb scales into learned gains where valid</text>
+<path d="M24 523H376" fill="none" stroke="#DAE3DC" stroke-dasharray="4 5"/>
+<text x="24" y="558" font-size="18" font-weight="700">Fused online</text><text x="24" y="583" font-size="13" fill="#627067">Apply T to each new activation.</text>
+<rect x="24" y="603" width="352" height="53" rx="8" fill="#FFF0ED" stroke="#E8A6A8"/><text x="200" y="626" font-size="14" font-weight="600" text-anchor="middle">x → Tx → dynamic quantization</text><text x="200" y="645" font-size="11" fill="#B9141A" text-anchor="middle">One fused prologue</text>
+<path d="M200 658v12M80 688v-18h240v18M200 670v18" fill="none" stroke="#78877E"/>
+<g text-anchor="middle" font-size="13"><rect x="24" y="688" width="112" height="34" rx="6" fill="#F2F5F2" stroke="#DAE3DC"/><text x="80" y="710">GEMM W₁</text><rect x="144" y="688" width="112" height="34" rx="6" fill="#F2F5F2" stroke="#DAE3DC"/><text x="200" y="710">GEMM W₂</text><rect x="264" y="688" width="112" height="34" rx="6" fill="#F2F5F2" stroke="#DAE3DC"/><text x="320" y="710">GEMM W₃</text></g>
+</g></svg>

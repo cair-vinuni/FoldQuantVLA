@@ -12,146 +12,331 @@
   "components_requested": null,
   "split_from": null,
   "num_samples": 32,
+  "dataset_path": "libero",
+  "seed": 42,
+  "episodes": "0-149",
   "held_out": true,
   "samples": [
     {
-      "episode": 78,
-      "step": 7,
-      "kv_stack_cos": 0.9877874777840421,
-      "kv_stack_position_cos_min": 0.852725336738552,
-      "action_cos": 0.9870560686222105,
-      "action_max_abs": 0.25766468048095703,
+      "episode": 69,
+      "step": 119,
+      "kv_stack_cos": 0.9877384848240645,
+      "kv_stack_position_cos_min": 0.8779325980417446,
+      "action_cos": 0.9983269146180013,
+      "action_max_abs": 0.08511948585510254,
       "action_worst": {
-        "max_abs": 0.25766468048095703,
-        "channel": 0,
+        "max_abs": 0.08511948585510254,
+        "channel": 2,
         "label": null,
-        "step": 22
+        "step": 12
       }
     },
     {
-      "episode": 148,
-      "step": 59,
-      "kv_stack_cos": 0.9880741029887323,
-      "kv_stack_position_cos_min": 0.898491726814667,
-      "action_cos": 0.4046218874353684,
-      "action_max_abs": 2.0272915363311768,
+      "episode": 21,
+      "step": 200,
+      "kv_stack_cos": 0.9845590914558255,
+      "kv_stack_position_cos_min": 0.7972418343390835,
+      "action_cos": 0.9645590942836746,
+      "action_max_abs": 1.971196174621582,
       "action_worst": {
-        "max_abs": 2.0272915363311768,
+        "max_abs": 1.971196174621582,
         "channel": 6,
         "label": null,
-        "step": 35
-      }
-    },
-    {
-      "episode": 95,
-      "step": 53,
-      "kv_stack_cos": 0.9876171445547977,
-      "kv_stack_position_cos_min": 0.8357496624123391,
-      "action_cos": 0.9291037320242531,
-      "action_max_abs": 1.9819245338439941,
-      "action_worst": {
-        "max_abs": 1.9819245338439941,
-        "channel": 6,
-        "label": null,
-        "step": 45
-      }
-    },
-    {
-      "episode": 128,
-      "step": 48,
-      "kv_stack_cos": 0.9882951539926967,
-      "kv_stack_position_cos_min": 0.8638355925065189,
-      "action_cos": 0.9231204011121101,
-      "action_max_abs": 1.9854278564453125,
-      "action_worst": {
-        "max_abs": 1.9854278564453125,
-        "channel": 6,
-        "label": null,
-        "step": 6
-      }
-    },
-    {
-      "episode": 101,
-      "step": 9,
-      "kv_stack_cos": 0.9887406368883664,
-      "kv_stack_position_cos_min": 0.8919839878777263,
-      "action_cos": 0.991446101001515,
-      "action_max_abs": 0.180131733417511,
-      "action_worst": {
-        "max_abs": 0.180131733417511,
-        "channel": 0,
-        "label": null,
-        "step": 11
+        "step": 21
       }
     },
     {
       "episode": 120,
-      "step": 138,
-      "kv_stack_cos": 0.9862013867112752,
-      "kv_stack_position_cos_min": 0.8611069126967272,
-      "action_cos": 0.665197714825111,
-      "action_max_abs": 2.0565404891967773,
+      "step": 208,
+      "kv_stack_cos": 0.9856444638261259,
+      "kv_stack_position_cos_min": 0.7858169843490194,
+      "action_cos": 0.9854035227984097,
+      "action_max_abs": 0.3919318914413452,
       "action_worst": {
-        "max_abs": 2.0565404891967773,
+        "max_abs": 0.3919318914413452,
         "channel": 6,
         "label": null,
-        "step": 32
+        "step": 24
       }
     },
     {
-      "episode": 63,
-      "step": 88,
-      "kv_stack_cos": 0.9879899590962408,
-      "kv_stack_position_cos_min": 0.8989942575684214,
-      "action_cos": 0.7298719539104359,
-      "action_max_abs": 2.0146758556365967,
+      "episode": 104,
+      "step": 44,
+      "kv_stack_cos": 0.9861007302663216,
+      "kv_stack_position_cos_min": 0.7936729513472331,
+      "action_cos": 0.9706100676129525,
+      "action_max_abs": 0.5286464691162109,
       "action_worst": {
-        "max_abs": 2.0146758556365967,
+        "max_abs": 0.5286464691162109,
+        "channel": 2,
+        "label": null,
+        "step": 10
+      }
+    },
+    {
+      "episode": 101,
+      "step": 216,
+      "kv_stack_cos": 0.9861492121695034,
+      "kv_stack_position_cos_min": 0.8311537313423217,
+      "action_cos": 0.8967919481480607,
+      "action_max_abs": 2.032055377960205,
+      "action_worst": {
+        "max_abs": 2.032055377960205,
+        "channel": 6,
+        "label": null,
+        "step": 25
+      }
+    },
+    {
+      "episode": 131,
+      "step": 79,
+      "kv_stack_cos": 0.9879226105597998,
+      "kv_stack_position_cos_min": 0.8533180314750335,
+      "action_cos": 0.9973085418744093,
+      "action_max_abs": 0.15816855430603027,
+      "action_worst": {
+        "max_abs": 0.15816855430603027,
+        "channel": 0,
+        "label": null,
+        "step": 23
+      }
+    },
+    {
+      "episode": 61,
+      "step": 170,
+      "kv_stack_cos": 0.9867873333764905,
+      "kv_stack_position_cos_min": 0.871984176859257,
+      "action_cos": 0.9236690666459509,
+      "action_max_abs": 1.9921377897262573,
+      "action_worst": {
+        "max_abs": 1.9921377897262573,
+        "channel": 6,
+        "label": null,
+        "step": 17
+      }
+    },
+    {
+      "episode": 125,
+      "step": 70,
+      "kv_stack_cos": 0.9833430146429257,
+      "kv_stack_position_cos_min": 0.8473194136733275,
+      "action_cos": 0.8919031021386371,
+      "action_max_abs": 2.056147575378418,
+      "action_worst": {
+        "max_abs": 2.056147575378418,
+        "channel": 6,
+        "label": null,
+        "step": 17
+      }
+    },
+    {
+      "episode": 62,
+      "step": 30,
+      "kv_stack_cos": 0.9858636813011765,
+      "kv_stack_position_cos_min": 0.9119332426482502,
+      "action_cos": 0.8666494296492242,
+      "action_max_abs": 2.042010545730591,
+      "action_worst": {
+        "max_abs": 2.042010545730591,
         "channel": 6,
         "label": null,
         "step": 26
       }
     },
     {
-      "episode": 62,
-      "step": 7,
-      "kv_stack_cos": 0.9853181310046435,
-      "kv_stack_position_cos_min": 0.8548911886095882,
-      "action_cos": 0.9574658979858126,
-      "action_max_abs": 1.9501442909240723,
+      "episode": 7,
+      "step": 67,
+      "kv_stack_cos": 0.9870422061607309,
+      "kv_stack_position_cos_min": 0.7512992093402227,
+      "action_cos": 0.9946671721731033,
+      "action_max_abs": 0.2833217978477478,
       "action_worst": {
-        "max_abs": 1.9501442909240723,
-        "channel": 6,
+        "max_abs": 0.2833217978477478,
+        "channel": 2,
         "label": null,
-        "step": 32
+        "step": 1
       }
     },
     {
-      "episode": 73,
-      "step": 248,
-      "kv_stack_cos": 0.9881369462632338,
-      "kv_stack_position_cos_min": 0.8495367909137457,
-      "action_cos": 0.9556635604266291,
-      "action_max_abs": 0.46173083782196045,
+      "episode": 76,
+      "step": 11,
+      "kv_stack_cos": 0.9880604466506213,
+      "kv_stack_position_cos_min": 0.8898250864160282,
+      "action_cos": 0.9691793898435308,
+      "action_max_abs": 1.9994940757751465,
       "action_worst": {
-        "max_abs": 0.46173083782196045,
+        "max_abs": 1.9994940757751465,
+        "channel": 6,
+        "label": null,
+        "step": 34
+      }
+    },
+    {
+      "episode": 29,
+      "step": 55,
+      "kv_stack_cos": 0.9877355241927274,
+      "kv_stack_position_cos_min": 0.8601785295661353,
+      "action_cos": 0.9717349565588758,
+      "action_max_abs": 2.015745162963867,
+      "action_worst": {
+        "max_abs": 2.015745162963867,
+        "channel": 6,
+        "label": null,
+        "step": 13
+      }
+    },
+    {
+      "episode": 115,
+      "step": 116,
+      "kv_stack_cos": 0.9885069664293794,
+      "kv_stack_position_cos_min": 0.8634153578739234,
+      "action_cos": 0.9817592955471962,
+      "action_max_abs": 0.3834651708602905,
+      "action_worst": {
+        "max_abs": 0.3834651708602905,
         "channel": 1,
+        "label": null,
+        "step": 9
+      }
+    },
+    {
+      "episode": 96,
+      "step": 7,
+      "kv_stack_cos": 0.9879183760703639,
+      "kv_stack_position_cos_min": 0.8734134719544292,
+      "action_cos": 0.9613472411270575,
+      "action_max_abs": 1.9949545860290527,
+      "action_worst": {
+        "max_abs": 1.9949545860290527,
+        "channel": 6,
+        "label": null,
+        "step": 48
+      }
+    },
+    {
+      "episode": 95,
+      "step": 50,
+      "kv_stack_cos": 0.9866091320738964,
+      "kv_stack_position_cos_min": 0.8130291170373248,
+      "action_cos": 0.6840407927855884,
+      "action_max_abs": 2.0254569053649902,
+      "action_worst": {
+        "max_abs": 2.0254569053649902,
+        "channel": 6,
+        "label": null,
+        "step": 4
+      }
+    },
+    {
+      "episode": 63,
+      "step": 55,
+      "kv_stack_cos": 0.9882092156444301,
+      "kv_stack_position_cos_min": 0.8805128043312973,
+      "action_cos": 0.9775598896392573,
+      "action_max_abs": 0.5344555974006653,
+      "action_worst": {
+        "max_abs": 0.5344555974006653,
+        "channel": 2,
+        "label": null,
+        "step": 7
+      }
+    },
+    {
+      "episode": 148,
+      "step": 55,
+      "kv_stack_cos": 0.9866570169394107,
+      "kv_stack_position_cos_min": 0.85260507484532,
+      "action_cos": 0.5539411615055835,
+      "action_max_abs": 2.038606643676758,
+      "action_worst": {
+        "max_abs": 2.038606643676758,
+        "channel": 6,
         "label": null,
         "step": 22
       }
     },
     {
-      "episode": 45,
-      "step": 180,
-      "kv_stack_cos": 0.9856799251419158,
-      "kv_stack_position_cos_min": 0.7482382426078965,
-      "action_cos": 0.8228555241267008,
-      "action_max_abs": 2.0038557052612305,
+      "episode": 86,
+      "step": 14,
+      "kv_stack_cos": 0.9878045802322161,
+      "kv_stack_position_cos_min": 0.8289328835217793,
+      "action_cos": 0.9930806886052821,
+      "action_max_abs": 0.20857927203178406,
       "action_worst": {
-        "max_abs": 2.0038557052612305,
+        "max_abs": 0.20857927203178406,
+        "channel": 0,
+        "label": null,
+        "step": 47
+      }
+    },
+    {
+      "episode": 49,
+      "step": 181,
+      "kv_stack_cos": 0.9880253325293264,
+      "kv_stack_position_cos_min": 0.9060482467837498,
+      "action_cos": 0.898279899200567,
+      "action_max_abs": 2.022250175476074,
+      "action_worst": {
+        "max_abs": 2.022250175476074,
         "channel": 6,
         "label": null,
-        "step": 16
+        "step": 3
+      }
+    },
+    {
+      "episode": 121,
+      "step": 104,
+      "kv_stack_cos": 0.9827177137951753,
+      "kv_stack_position_cos_min": 0.8429817745295913,
+      "action_cos": 0.4803111000674504,
+      "action_max_abs": 2.0517935752868652,
+      "action_worst": {
+        "max_abs": 2.0517935752868652,
+        "channel": 6,
+        "label": null,
+        "step": 33
+      }
+    },
+    {
+      "episode": 77,
+      "step": 9,
+      "kv_stack_cos": 0.9888984854970814,
+      "kv_stack_position_cos_min": 0.9143381178350869,
+      "action_cos": 0.9923328831206721,
+      "action_max_abs": 0.21658995747566223,
+      "action_worst": {
+        "max_abs": 0.21658995747566223,
+        "channel": 1,
+        "label": null,
+        "step": 13
+      }
+    },
+    {
+      "episode": 32,
+      "step": 126,
+      "kv_stack_cos": 0.9863772373557524,
+      "kv_stack_position_cos_min": 0.8465809123427523,
+      "action_cos": 0.9532950147123592,
+      "action_max_abs": 0.710651159286499,
+      "action_worst": {
+        "max_abs": 0.710651159286499,
+        "channel": 1,
+        "label": null,
+        "step": 49
+      }
+    },
+    {
+      "episode": 56,
+      "step": 209,
+      "kv_stack_cos": 0.9879831051736045,
+      "kv_stack_position_cos_min": 0.8976399740275199,
+      "action_cos": 0.8940466430272286,
+      "action_max_abs": 2.0362906455993652,
+      "action_worst": {
+        "max_abs": 2.0362906455993652,
+        "channel": 6,
+        "label": null,
+        "step": 7
       }
     },
     {
@@ -159,322 +344,140 @@
       "step": 69,
       "kv_stack_cos": 0.9848865853515791,
       "kv_stack_position_cos_min": 0.84076795843642,
-      "action_cos": 0.8244625222528459,
-      "action_max_abs": 2.0407490730285645,
+      "action_cos": 0.883401073084276,
+      "action_max_abs": 1.9598761796951294,
       "action_worst": {
-        "max_abs": 2.0407490730285645,
+        "max_abs": 1.9598761796951294,
         "channel": 6,
         "label": null,
-        "step": 28
-      }
-    },
-    {
-      "episode": 21,
-      "step": 78,
-      "kv_stack_cos": 0.9846145473035244,
-      "kv_stack_position_cos_min": 0.8515630146309785,
-      "action_cos": 0.9277631017965506,
-      "action_max_abs": 1.998358964920044,
-      "action_worst": {
-        "max_abs": 1.998358964920044,
-        "channel": 6,
-        "label": null,
-        "step": 45
-      }
-    },
-    {
-      "episode": 76,
-      "step": 229,
-      "kv_stack_cos": 0.9878887971670438,
-      "kv_stack_position_cos_min": 0.8950480203612721,
-      "action_cos": 0.9302284595219659,
-      "action_max_abs": 2.0161945819854736,
-      "action_worst": {
-        "max_abs": 2.0161945819854736,
-        "channel": 6,
-        "label": null,
-        "step": 29
-      }
-    },
-    {
-      "episode": 69,
-      "step": 221,
-      "kv_stack_cos": 0.9864484468629924,
-      "kv_stack_position_cos_min": 0.7737904935761317,
-      "action_cos": 0.9816810384024234,
-      "action_max_abs": 1.4986040592193604,
-      "action_worst": {
-        "max_abs": 1.4986040592193604,
-        "channel": 6,
-        "label": null,
-        "step": 42
-      }
-    },
-    {
-      "episode": 121,
-      "step": 252,
-      "kv_stack_cos": 0.9844441650260075,
-      "kv_stack_position_cos_min": 0.9074910912039834,
-      "action_cos": 0.7663413774198014,
-      "action_max_abs": 2.0691490173339844,
-      "action_worst": {
-        "max_abs": 2.0691490173339844,
-        "channel": 6,
-        "label": null,
-        "step": 27
-      }
-    },
-    {
-      "episode": 7,
-      "step": 70,
-      "kv_stack_cos": 0.9881942150450209,
-      "kv_stack_position_cos_min": 0.9071849612242139,
-      "action_cos": 0.9502027768943357,
-      "action_max_abs": 1.988107681274414,
-      "action_worst": {
-        "max_abs": 1.988107681274414,
-        "channel": 6,
-        "label": null,
-        "step": 48
-      }
-    },
-    {
-      "episode": 86,
-      "step": 94,
-      "kv_stack_cos": 0.9886259955720097,
-      "kv_stack_position_cos_min": 0.8434630006680585,
-      "action_cos": 0.8822444704943588,
-      "action_max_abs": 1.9705829620361328,
-      "action_worst": {
-        "max_abs": 1.9705829620361328,
-        "channel": 6,
-        "label": null,
-        "step": 7
-      }
-    },
-    {
-      "episode": 127,
-      "step": 74,
-      "kv_stack_cos": 0.9855862983761174,
-      "kv_stack_position_cos_min": 0.8186361775180153,
-      "action_cos": 0.9578736333659466,
-      "action_max_abs": 0.3599269390106201,
-      "action_worst": {
-        "max_abs": 0.3599269390106201,
-        "channel": 2,
-        "label": null,
-        "step": 32
-      }
-    },
-    {
-      "episode": 163,
-      "step": 135,
-      "kv_stack_cos": 0.9875881025732752,
-      "kv_stack_position_cos_min": 0.8794473559649247,
-      "action_cos": 0.8595543943060172,
-      "action_max_abs": 1.9752603769302368,
-      "action_worst": {
-        "max_abs": 1.9752603769302368,
-        "channel": 6,
-        "label": null,
-        "step": 31
-      }
-    },
-    {
-      "episode": 158,
-      "step": 37,
-      "kv_stack_cos": 0.9858912208312637,
-      "kv_stack_position_cos_min": 0.8262621638581109,
-      "action_cos": 0.9362554275753441,
-      "action_max_abs": 1.9988982677459717,
-      "action_worst": {
-        "max_abs": 1.9988982677459717,
-        "channel": 6,
-        "label": null,
-        "step": 26
-      }
-    },
-    {
-      "episode": 61,
-      "step": 4,
-      "kv_stack_cos": 0.9862960919644244,
-      "kv_stack_position_cos_min": 0.8552621572460466,
-      "action_cos": 0.6916845000098154,
-      "action_max_abs": 2.034464120864868,
-      "action_worst": {
-        "max_abs": 2.034464120864868,
-        "channel": 6,
-        "label": null,
-        "step": 40
-      }
-    },
-    {
-      "episode": 29,
-      "step": 266,
-      "kv_stack_cos": 0.98583133430221,
-      "kv_stack_position_cos_min": 0.7128918450058807,
-      "action_cos": 0.8003474142579411,
-      "action_max_abs": 1.9992475509643555,
-      "action_worst": {
-        "max_abs": 1.9992475509643555,
-        "channel": 6,
-        "label": null,
-        "step": 10
-      }
-    },
-    {
-      "episode": 125,
-      "step": 218,
-      "kv_stack_cos": 0.9814980942891138,
-      "kv_stack_position_cos_min": 0.8054497824178831,
-      "action_cos": 0.3033870016583321,
-      "action_max_abs": 2.0361135005950928,
-      "action_worst": {
-        "max_abs": 2.0361135005950928,
-        "channel": 6,
-        "label": null,
-        "step": 35
-      }
-    },
-    {
-      "episode": 96,
-      "step": 49,
-      "kv_stack_cos": 0.9869943728275141,
-      "kv_stack_position_cos_min": 0.8643261757776628,
-      "action_cos": 0.9973856741029861,
-      "action_max_abs": 0.15066972374916077,
-      "action_worst": {
-        "max_abs": 0.15066972374916077,
-        "channel": 2,
-        "label": null,
-        "step": 5
-      }
-    },
-    {
-      "episode": 169,
-      "step": 47,
-      "kv_stack_cos": 0.9855710533128594,
-      "kv_stack_position_cos_min": 0.8295995929962943,
-      "action_cos": 0.6467834372678025,
-      "action_max_abs": 2.0526371002197266,
-      "action_worst": {
-        "max_abs": 2.0526371002197266,
-        "channel": 6,
-        "label": null,
-        "step": 43
+        "step": 21
       }
     },
     {
       "episode": 26,
-      "step": 229,
-      "kv_stack_cos": 0.9874794493053995,
-      "kv_stack_position_cos_min": 0.8742996982194786,
-      "action_cos": 0.9395617002588569,
-      "action_max_abs": 2.015934467315674,
+      "step": 88,
+      "kv_stack_cos": 0.9884093955213407,
+      "kv_stack_position_cos_min": 0.8843116822641408,
+      "action_cos": 0.7592799068032442,
+      "action_max_abs": 1.9631667137145996,
       "action_worst": {
-        "max_abs": 2.015934467315674,
+        "max_abs": 1.9631667137145996,
         "channel": 6,
         "label": null,
-        "step": 1
+        "step": 38
       }
     },
     {
-      "episode": 49,
-      "step": 186,
-      "kv_stack_cos": 0.9881979119687063,
-      "kv_stack_position_cos_min": 0.8927598750771784,
-      "action_cos": 0.9981222158920147,
-      "action_max_abs": 0.0890648141503334,
+      "episode": 73,
+      "step": 370,
+      "kv_stack_cos": 0.9887684389127015,
+      "kv_stack_position_cos_min": 0.8855333427859916,
+      "action_cos": 0.9927723952368608,
+      "action_max_abs": 0.23163658380508423,
       "action_worst": {
-        "max_abs": 0.0890648141503334,
+        "max_abs": 0.23163658380508423,
+        "channel": 1,
+        "label": null,
+        "step": 19
+      }
+    },
+    {
+      "episode": 46,
+      "step": 310,
+      "kv_stack_cos": 0.9889880913723219,
+      "kv_stack_position_cos_min": 0.8569884379220192,
+      "action_cos": 0.98120697454861,
+      "action_max_abs": 0.3020157217979431,
+      "action_worst": {
+        "max_abs": 0.3020157217979431,
+        "channel": 1,
+        "label": null,
+        "step": 0
+      }
+    },
+    {
+      "episode": 33,
+      "step": 223,
+      "kv_stack_cos": 0.9846860629328362,
+      "kv_stack_position_cos_min": 0.8861574020713603,
+      "action_cos": 0.955678555448786,
+      "action_max_abs": 2.0252513885498047,
+      "action_worst": {
+        "max_abs": 2.0252513885498047,
+        "channel": 6,
+        "label": null,
+        "step": 14
+      }
+    },
+    {
+      "episode": 127,
+      "step": 49,
+      "kv_stack_cos": 0.9853098917130488,
+      "kv_stack_position_cos_min": 0.8496066369054205,
+      "action_cos": 0.9945001717145996,
+      "action_max_abs": 0.20525643229484558,
+      "action_worst": {
+        "max_abs": 0.20525643229484558,
+        "channel": 1,
+        "label": null,
+        "step": 16
+      }
+    },
+    {
+      "episode": 128,
+      "step": 57,
+      "kv_stack_cos": 0.9883087144251799,
+      "kv_stack_position_cos_min": 0.8626220814352524,
+      "action_cos": 0.9952531412742436,
+      "action_max_abs": 0.19585084915161133,
+      "action_worst": {
+        "max_abs": 0.19585084915161133,
         "channel": 0,
         "label": null,
-        "step": 39
+        "step": 15
       }
     },
     {
-      "episode": 131,
-      "step": 132,
-      "kv_stack_cos": 0.9868636067744724,
-      "kv_stack_position_cos_min": 0.8694516560310797,
-      "action_cos": 0.9420088307186603,
-      "action_max_abs": 1.9590535163879395,
+      "episode": 45,
+      "step": 105,
+      "kv_stack_cos": 0.9860669366036882,
+      "kv_stack_position_cos_min": 0.8327444058801086,
+      "action_cos": 0.9677964930077011,
+      "action_max_abs": 0.44727009534835815,
       "action_worst": {
-        "max_abs": 1.9590535163879395,
-        "channel": 6,
+        "max_abs": 0.44727009534835815,
+        "channel": 1,
         "label": null,
-        "step": 40
+        "step": 33
       }
     },
     {
-      "episode": 56,
-      "step": 263,
-      "kv_stack_cos": 0.9877714034657246,
-      "kv_stack_position_cos_min": 0.8956595073828784,
-      "action_cos": 0.9076972279737376,
-      "action_max_abs": 2.020193576812744,
+      "episode": 78,
+      "step": 151,
+      "kv_stack_cos": 0.987513548164657,
+      "kv_stack_position_cos_min": 0.8546222431305938,
+      "action_cos": 0.9944457092132413,
+      "action_max_abs": 0.1989651918411255,
       "action_worst": {
-        "max_abs": 2.020193576812744,
-        "channel": 6,
+        "max_abs": 0.1989651918411255,
+        "channel": 1,
         "label": null,
-        "step": 30
-      }
-    },
-    {
-      "episode": 115,
-      "step": 20,
-      "kv_stack_cos": 0.987299234200467,
-      "kv_stack_position_cos_min": 0.8394219477280159,
-      "action_cos": 0.9961990956911645,
-      "action_max_abs": 0.10757201910018921,
-      "action_worst": {
-        "max_abs": 0.10757201910018921,
-        "channel": 0,
-        "label": null,
-        "step": 1
-      }
-    },
-    {
-      "episode": 104,
-      "step": 73,
-      "kv_stack_cos": 0.9868479487758464,
-      "kv_stack_position_cos_min": 0.8749516112846691,
-      "action_cos": 0.9930952237252938,
-      "action_max_abs": 0.2287977635860443,
-      "action_worst": {
-        "max_abs": 0.2287977635860443,
-        "channel": 2,
-        "label": null,
-        "step": 5
-      }
-    },
-    {
-      "episode": 77,
-      "step": 217,
-      "kv_stack_cos": 0.9884802190989231,
-      "kv_stack_position_cos_min": 0.8748019205150744,
-      "action_cos": 0.9880302031653723,
-      "action_max_abs": 0.4500095546245575,
-      "action_worst": {
-        "max_abs": 0.4500095546245575,
-        "channel": 2,
-        "label": null,
-        "step": 27
+        "step": 17
       }
     }
   ],
-  "pytorch_repeat_action_cos_min": 0.9999999999999996,
+  "pytorch_repeat_action_cos_min": 0.9999999999999998,
   "kv_stack": {
-    "cos_mean": 0.9867856237131387,
-    "cos_median": 0.9871468035139905,
-    "cos_min": 0.9814980942891138,
-    "position_cos_min": 0.7128918450058807
+    "cos_mean": 0.9868622383176344,
+    "cos_median": 0.987277877162694,
+    "cos_min": 0.9827177137951753,
+    "position_cos_min": 0.7512992093402227
   },
   "actions": {
-    "cos_mean": 0.8621035177569285,
-    "cos_median": 0.9296660957731095,
-    "cos_min": 0.3033870016583321,
-    "max_abs": 2.0691490173339844,
-    "max_abs_mean": 1.4993430359754711
+    "cos_mean": 0.9164103823754572,
+    "cos_median": 0.968487941425616,
+    "cos_min": 0.4803111000674504,
+    "max_abs": 2.056147575378418,
+    "max_abs_mean": 1.1658861795440316
   }
 }

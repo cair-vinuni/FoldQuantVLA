@@ -139,10 +139,16 @@ observation sets, not arms.
 
 A count of "flips" is only readable against the family's action scale, and the
 scales differ: a saturated channel is |Δ| ≈ 2 where actions run [-1, 1], and
-the same absolute error means something else where they do not. So the columns
-that travel between families are the **median worst-|Δ|** and the worst
-channel — both recorded per observation as `action_worst` — rather than a
-count above a fixed threshold.
+the same absolute error means something else where they do not. So the column
+that travels between families is the **median worst-|Δ|**, recorded per
+observation as `action_worst`, rather than a count above a fixed threshold.
+
+The worst channel's *name* travels less far than that. GR00T returns a named
+action dict, so its records carry `gripper`, `x`, `y`, `z`; π₀.₅, SmolVLA and
+Evo-1 return an unnamed vector, so `action_worst.label` is null for all three
+and only the index and the magnitude are available. That is a property of what
+those policies emit, not a gap in the records, and it is why the channel name
+appears in this file only where a GR00T family is under discussion.
 
 For the same reason the tables report the **median** action cosine beside the
 mean and the min. These distributions have tails — a handful of observations
@@ -371,13 +377,13 @@ the sampler's.
 | π₀.₅ | `w4a4` | 32 | 0.99450 | 0.99942 | 0.84749 | 1.998 |
 | π₀.₅ | `w4a4_cascade` | 32 | 0.99449 | 0.99945 | 0.84704 | 2.005 |
 | SmolVLA | `float` | 32 | 0.99809 | 0.99999 | 0.97048 | 1.967 |
-| SmolVLA | `w8a8` | 32 | 0.99097 | 0.99987 | 0.93192 | 2.009 |
-| SmolVLA | `w4a4` | 32 | 0.86210 | 0.92967 | 0.30339 | 2.069 |
-| SmolVLA | `w4a4_cascade` | 32 | 0.89828 | 0.98717 | 0.43551 | 2.076 |
-| Evo-1 | `float` | 32 | 0.99906 | 0.99996 | 0.98556 | 1.010 |
-| Evo-1 | `w8a8` | 32 | 0.99749 | 0.99991 | 0.95569 | 1.005 |
-| Evo-1 | `w4a4` | 32 | 0.96357 | 0.96881 | 0.89392 | 1.036 |
-| Evo-1 | `w4a4_cascade` | 32 | 0.96335 | 0.97243 | 0.89841 | 1.032 |
+| SmolVLA | `w8a8` | 32 | 0.99548 | 0.99993 | 0.94164 | 1.967 |
+| SmolVLA | `w4a4` | 32 | 0.91641 | 0.96849 | 0.48031 | 2.056 |
+| SmolVLA | `w4a4_cascade` | 32 | 0.91026 | 0.98717 | 0.43551 | 2.074 |
+| Evo-1 | `float` | 32 | 0.99605 | 0.99995 | 0.90655 | 1.012 |
+| Evo-1 | `w8a8` | 32 | 0.99450 | 0.99985 | 0.90700 | 1.012 |
+| Evo-1 | `w4a4` | 32 | 0.95708 | 0.96891 | 0.76064 | 1.051 |
+| Evo-1 | `w4a4_cascade` | 32 | 0.95833 | 0.97464 | 0.75616 | 1.047 |
 
 Read the median beside the mean: these distributions have tails, and on the
 families where W4A4 breaks it is a minority of observations that carry the

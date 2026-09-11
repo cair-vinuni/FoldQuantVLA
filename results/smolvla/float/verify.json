@@ -12,6 +12,9 @@
   "components_requested": null,
   "split_from": "exports/w4a4/engines",
   "num_samples": 32,
+  "dataset_path": "libero",
+  "seed": 42,
+  "episodes": "0-149",
   "held_out": true,
   "samples": [
     {
