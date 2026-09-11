@@ -110,6 +110,7 @@ Every family's client is upstream's:
 | GR00T | `gr00t.policy.server_client.PolicyClient` | `gr00t/eval/real_robot/SO100/eval_so100.py` |
 | π₀.₅ | `openpi_client.websocket_client_policy.WebsocketClientPolicy` | `examples/aloha_real/main.py` |
 | Evo-1 | plain `websockets` + JSON | `scripts/Evo1_client_aloha.py`, `scripts/Evo1_client_xarm6.py` |
+| SmolVLA | `lerobot.async_inference.robot_client` | none — upstream's client is the robot host itself, configured per robot |
 
 Per-robot guides:
 
