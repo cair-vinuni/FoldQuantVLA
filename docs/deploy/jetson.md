@@ -82,6 +82,12 @@ The checkpoint is needed on the Orin too, even though the engines hold the
 quantized weights: `serve` builds the upstream policy for everything FoldQuant
 does not replace, and for the processor.
 
+**And the dataset**, if you intend to run step 5 — which you should. `verify`
+scores the engines against the bf16 policy on real observations, so it opens
+`$DS` on the Orin and reads the episodes the manifest held out. Serving alone
+does not need it; verifying does, and arriving at the board with the checkpoint
+but no dataset is the usual way to discover that.
+
 ## 3. Build the plugin library, on the Orin
 
 ```bash
