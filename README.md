@@ -47,20 +47,7 @@ INT4, and the action expert's denoising loop reuses one engine for every step.
   </picture>
 </p>
 
-The build path that produces those engines has two halves, and only the ONNX
-crosses between them — an engine is compiled for one `(SM, TensorRT)` pair:
-
-<p align="center">
-  <img src="docs/assets/foldquant-pipeline.svg" alt="FoldQuant build path: the fold is composed offline into the weights, the ONNX crosses to the target, and engines are rebuilt per device" width="100%">
-</p>
-
-At inference each quantized linear site is **one plugin call**:
-
-<p align="center">
-  <img src="docs/assets/foldquant-plugin.svg" alt="One quantized linear site is a single fused plugin call: rotate and per-row quantize, tensor-core GEMM against folded weights, dequantize" width="100%">
-</p>
-
-The same plugin serves the GR00T DiT, the Evo-1 action head and the SmolVLA / π₀.₅ experts through their own emitters; the LLM backbones use the INT8 per-row path (`w8a8_sr`) or the INT4 path (`w4a4_srg`) with the same weight contract.
+One plugin serves the GR00T DiT, the Evo-1 action head and the SmolVLA / π₀.₅ experts through their own emitters; the LLM backbones use the INT8 per-row path (`w8a8_sr`) or the INT4 path (`w4a4_srg`) with the same weight contract.
 
 This repository is the paper's artifact. It has two parts:
 
