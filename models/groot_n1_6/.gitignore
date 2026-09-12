@@ -167,3 +167,8 @@ offline_open_loop_eval_plots/
 # Generic model/data folders
 /models
 /data
+
+# SimplerEnv checkout, its venv, and local checkpoints (not part of the release)
+/external_dependencies/SimplerEnv/
+/gr00t/eval/sim/SimplerEnv/simpler_uv/
+/checkpoints/

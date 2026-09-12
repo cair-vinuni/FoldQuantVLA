@@ -17,12 +17,14 @@ rm -rf "$UV_ENV"
 mkdir -p "$UV_ENV"
 uv venv "$UV_ENV/.venv" --python 3.10
 source "$UV_ENV/.venv/bin/activate"
-uv pip install setuptools>=80.9.0
+# SAPIEN imports pkg_resources, which setuptools removed in 81; unquoted, the
+# original `>=80.9.0` was also a shell redirection rather than a version spec.
+uv pip install "setuptools>=80.9.0,<81"
 
 # Core deps (match cluster’s pyproject pattern)
 uv pip install \
   gymnasium==0.29.1 \
-  json-numpy>=2.1.1 \
+  "json-numpy>=2.1.1" \
   numpy=="$SIMPLER_NUMPY" \
   opencv-python-headless==4.10.0.84 \
   ray==2.48.0

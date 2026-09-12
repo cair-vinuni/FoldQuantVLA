@@ -222,6 +222,22 @@ gr00t/eval/sim/SimplerEnv/simpler_uv/.venv/bin/python gr00t/eval/rollout_policy.
     --n_episodes 200 --n_envs 5 --n_action_steps 4 --max_episode_steps 300
 ```
 
+[`eval_simpler.sh`](eval_simpler.sh) wraps the two: one invocation per arm starts
+the server, sweeps the seven Bridge tasks with upstream's client and writes one
+log per task plus `summary.tsv` under `exports/simpler/<ARM>/`:
+
+```bash
+ARM=bf16 bash foldquant_integration/eval_simpler.sh                       # reference
+ARM=w4a4 ENGINE_DIR=exports/bridge_w4a4/engines bash foldquant_integration/eval_simpler.sh
+# N_EPISODES, N_ENVS, TASKS, MODEL_PATH, EMBODIMENT, PORT override the defaults.
+```
+
+Setup notes: `setup_SimplerEnv.sh` expects the SimplerEnv checkout at
+`external_dependencies/SimplerEnv` (upstream pins it as a submodule; this release
+does not, so clone it there first) and pins `setuptools<81`, which SAPIEN needs
+for `pkg_resources`. SAPIEN renders through Vulkan, so the host needs a GPU
+visible to Vulkan: MIG instances expose compute only and cannot run it.
+
 The release ships no standalone client script; `PolicyClient` is the class its
 real-robot evaluators construct (`gr00t/eval/real_robot/SO100`).
 
@@ -237,6 +253,7 @@ real-robot evaluators construct (`gr00t/eval/real_robot/SO100`).
 | `verify.py` | held-out PyTorch-vs-engine drift report |
 | `serve.py` | upstream's ZMQ `PolicyServer` with the engines installed |
 | `eval_libero.py` | LIBERO sweep over suites × tasks, per-task `summary.json` |
+| `eval_simpler.sh` | SimplerEnv Bridge sweep for one arm: server + upstream client over seven tasks, `summary.tsv` |
 | `benchmark.py` | upstream timing loop over the PyTorch arm and engine directories |
 | `_upstream.py` | paths, component table |
 
