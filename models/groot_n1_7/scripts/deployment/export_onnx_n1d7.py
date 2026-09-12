@@ -123,6 +123,41 @@ def _consolidate_external_data(onnx_path: str) -> None:
     logger.info(f"  Consolidated and cleaned up {len(scattered)} files.")
 
 
+def _strip_default_scatternd_reduction(onnx_path: str) -> None:
+    """Drop ``reduction="none"`` attributes from ScatterND nodes, in place.
+
+    ``reduction="none"`` is the ONNX default, so removing it is a semantic
+    no-op. The TensorRT 10.3 ONNX parser shipped with JetPack 6.x rejects the
+    attribute's mere presence (``importScatterND``: ``Assertion failed:
+    !attrs.count("reduction")``), which makes ``llm_bf16.onnx`` unparsable on a
+    Jetson; TensorRT 10.15 accepts it. The nodes come from
+    ``Qwen3VLTextRotaryEmbedding`` via ``aten.slice_scatter``.
+
+    A non-default ``reduction`` is left in place so it still fails loudly
+    rather than silently changing what the graph computes.
+    """
+    import onnx
+
+    # load_external_data=False keeps initializers as external references, so the
+    # sidecar written by _consolidate_external_data stays valid on save.
+    model = onnx.load(onnx_path, load_external_data=False)
+    stripped = 0
+    for node in model.graph.node:
+        if node.op_type != "ScatterND":
+            continue
+        for i, attr in enumerate(node.attribute):
+            if attr.name == "reduction" and attr.s == b"none":
+                del node.attribute[i]
+                stripped += 1
+                break
+    if stripped:
+        onnx.save(model, onnx_path)
+        logger.info(
+            f"  Stripped default reduction='none' from {stripped} ScatterND node(s) "
+            "(TensorRT 10.3 parser compatibility)."
+        )
+
+
 def verify_onnx_export(onnx_path: str) -> None:
     """Load and check the exported ONNX model for validity."""
     import onnx
@@ -856,6 +891,7 @@ def export_llm_to_onnx(policy, captured_llm, output_dir, use_bf16=True, batch_si
 
     logger.info("  LLM exported successfully!")
     _consolidate_external_data(output_path)
+    _strip_default_scatternd_reduction(output_path)
     verify_onnx_export(output_path)
     return output_path
 
