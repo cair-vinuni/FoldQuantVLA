@@ -263,7 +263,9 @@ def main(args: ExportConfig) -> Path:
     dataset = calibration.load_dataset(args.dataset_path)
     logger.info("policy + dataset (%d episodes) in %.0fs", len(dataset.meta.episodes), time.time() - t0)
 
-    samples, observations = calibration.sample_observations(dataset, args.num_calib, seed=args.seed)
+    samples, observations = calibration.sample_observations(
+        dataset, args.num_calib, seed=args.seed, keys=calibration.resolve_keys(dataset, args.config)
+    )
     loop = calibration.make_forward_loop(policy, observations, seed=args.seed)
     llm = llm_module(policy)
 

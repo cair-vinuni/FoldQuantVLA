@@ -277,7 +277,9 @@ def main(args: BenchmarkConfig) -> dict[str, Any]:
     compile_mode = _config.get_config(args.config).model.pytorch_compile_mode
     dataset = calibration.load_dataset(args.dataset_path)
     episode_ids, _lengths, _starts = calibration.episode_table(dataset)
-    observation = calibration.build_observations(dataset, [calibration.SampleId(episode_ids[0], 0)])[0]
+    observation = calibration.build_observations(
+        dataset, [calibration.SampleId(episode_ids[0], 0)], calibration.resolve_keys(dataset, args.config)
+    )[0]
     model = model_of(policy)
     num_steps = int(policy._sample_kwargs.get("num_steps", 10))  # noqa: SLF001
     device = torch.cuda.get_device_name(0)

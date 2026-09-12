@@ -121,7 +121,12 @@ def main(args: VerifyConfig) -> dict[str, Any]:
     policy = calibration.load_policy(args.checkpoint_dir, config_name=args.config, device=args.device, compile=False)
     dataset = calibration.load_dataset(args.dataset_path)
     samples, observations = calibration.sample_observations(
-        dataset, args.num_samples, seed=args.seed, exclude_episodes=excluded, heldout=True
+        dataset,
+        args.num_samples,
+        seed=args.seed,
+        exclude_episodes=excluded,
+        heldout=True,
+        keys=calibration.resolve_keys(dataset, args.config),
     )
     logger.info(
         "%d %s observations from %d episodes (calibration used %d episodes) in %.0fs",

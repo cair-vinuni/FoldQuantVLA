@@ -29,11 +29,13 @@ from typing import Any
 import numpy as np
 import torch
 
-from ._upstream import LIBERO_TRAIN_CONFIG
+from ._upstream import LIBERO_TRAIN_CONFIG, load_plugin
 
 logger = logging.getLogger(__name__)
 
-#: The LeRobot feature each client observation key is read from.
+#: The LeRobot feature each client observation key is read from, when the train
+#: config does not say. These are LIBERO's column names; :func:`dataset_keys`
+#: prefers the checkpoint's own answer and falls back to these.
 IMAGE_KEY = "observation.images.image"
 WRIST_KEY = "observation.images.wrist_image"
 STATE_KEY = "observation.state"
@@ -47,6 +49,61 @@ class SampleId:
 
     episode: int
     step: int
+
+
+def dataset_keys(dataset, train_config=None) -> dict[str, str]:
+    """Which dataset column feeds each client observation key.
+
+    The defaults above are the LIBERO columns. They are tried first and kept
+    whenever the dataset actually has them; only a key the dataset does not
+    carry is looked up in the train config's repack transform, which maps the
+    wire keys a client sends onto the columns that config was trained against.
+
+    Deriving from the config *alone* would be wrong: ``pi05_libero`` repacks
+    from ``image`` / ``wrist_image`` / ``state``, the column names of the
+    ``physical-intelligence/libero`` release, while the LeRobot conversion this
+    integration calibrates on stores ``observation.images.image`` and friends.
+    The dataset is the authority on its own columns; the config is the fallback
+    for a dataset that names them differently.
+    """
+    keys = {"observation/image": IMAGE_KEY, "observation/wrist_image": WRIST_KEY, "observation/state": STATE_KEY}
+    have = set(getattr(dataset, "features", None) or dataset.meta.info.get("features", {}))
+    missing = [k for k, column in keys.items() if column not in have]
+    if not missing:
+        return keys
+    from_config: dict[str, str] = {}
+    if train_config is not None:
+        try:
+            data = train_config.data.create(train_config.assets_dirs, train_config.model)
+            for group in data.repack_transforms.inputs:
+                structure = getattr(group, "structure", None)
+                if isinstance(structure, dict):
+                    from_config.update({k: v for k, v in structure.items() if isinstance(v, str)})
+        except Exception:  # a config that cannot be instantiated here is simply no help
+            logger.debug("could not read the repack transform", exc_info=True)
+    for k in missing:
+        column = from_config.get(k)
+        if column is None or column not in have:
+            raise KeyError(
+                f"the dataset has no column for {k}: tried {keys[k]!r}"
+                + (f" and {column!r} from the train config" if column else " and the train config named none")
+                + f". Columns present: {sorted(have)}"
+            )
+        keys[k] = column
+    logger.info("dataset columns: %s", keys)
+    return keys
+
+
+def resolve_keys(dataset, config_name: str = LIBERO_TRAIN_CONFIG) -> dict[str, str]:
+    """:func:`dataset_keys` for a config name, without building the policy."""
+    from openpi.training import config as _config
+
+    load_plugin()
+    try:
+        train_config = _config.get_config(config_name)
+    except Exception:
+        train_config = None
+    return dataset_keys(dataset, train_config)
 
 
 def load_policy(
@@ -74,6 +131,9 @@ def load_policy(
             f"{checkpoint} holds no model.safetensors — FoldQuant integrates the PyTorch model; convert the "
             "JAX checkpoint first (examples/convert_jax_model_to_pytorch.py)"
         )
+    plugin = load_plugin()
+    if plugin:
+        logger.info("loaded config plugin %s", plugin)
     train_config = _config.get_config(config_name)
     if not compile:
         model_config = dataclasses.replace(train_config.model, pytorch_compile_mode=None)
@@ -84,18 +144,25 @@ def load_policy(
     return policy
 
 
-def load_dataset(dataset_path: str):
+def load_dataset(dataset_path: str, video_backend: str | None = None):
     """A local LeRobot dataset through the ``lerobot`` package upstream pins.
 
     The directory is passed as ``root``; ``repo_id`` is only a label here (no
     hub access happens when every file is present locally).
+
+    *video_backend* selects the decoder; ``None`` takes lerobot's default. The
+    default (torchcodec, where available) can land on a neighbouring frame and
+    then fail lerobot's 1e-4 s timestamp check on datasets whose videos are
+    otherwise exact -- ``"pyav"`` decodes those. Loosening the tolerance instead
+    would accept the wrong frame silently, which is the one outcome calibration
+    cannot afford.
     """
     from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
     root = Path(dataset_path).expanduser().resolve()
     if not (root / "meta" / "info.json").is_file():
         raise FileNotFoundError(f"{root} is not a LeRobot dataset (no meta/info.json)")
-    return LeRobotDataset(repo_id=root.name, root=root)
+    return LeRobotDataset(repo_id=root.name, root=root, video_backend=video_backend)
 
 
 def episode_table(dataset) -> tuple[list[int], list[int], list[int]]:
@@ -169,17 +236,24 @@ def prompt_of(dataset, item: dict[str, Any]) -> str:
     return str(tasks[task_index])
 
 
-def client_observation(dataset, item: dict[str, Any]) -> dict[str, Any]:
-    """One dataset item in the wire format of ``examples/libero/main.py``."""
+def client_observation(dataset, item: dict[str, Any], keys: dict[str, str] | None = None) -> dict[str, Any]:
+    """One dataset item in the wire format of ``examples/libero/main.py``.
+
+    *keys* comes from :func:`dataset_keys`; omitted, LIBERO's columns are read.
+    """
+    k = keys or {"observation/image": IMAGE_KEY, "observation/wrist_image": WRIST_KEY,
+                 "observation/state": STATE_KEY}
     return {
-        "observation/image": _client_frame(item[IMAGE_KEY]),
-        "observation/wrist_image": _client_frame(item[WRIST_KEY]),
-        "observation/state": np.asarray(item[STATE_KEY], dtype=np.float32),
+        "observation/image": _client_frame(item[k["observation/image"]]),
+        "observation/wrist_image": _client_frame(item[k["observation/wrist_image"]]),
+        "observation/state": np.asarray(item[k["observation/state"]], dtype=np.float32),
         "prompt": prompt_of(dataset, item),
     }
 
 
-def build_observations(dataset, samples: Sequence[SampleId]) -> list[dict[str, Any]]:
+def build_observations(
+    dataset, samples: Sequence[SampleId], keys: dict[str, str] | None = None
+) -> list[dict[str, Any]]:
     """The client-format observation per sample.
 
     Items are read in dataset order to keep each episode's video decoder warm;
@@ -194,7 +268,7 @@ def build_observations(dataset, samples: Sequence[SampleId]) -> list[dict[str, A
             raise KeyError(f"episode {s.episode} is not in the dataset")
         if not 0 <= s.step < length_of[s.episode]:
             raise IndexError(f"step {s.step} outside episode {s.episode} (length {length_of[s.episode]})")
-        observations[s] = client_observation(dataset, dataset[start_of[s.episode] + s.step])
+        observations[s] = client_observation(dataset, dataset[start_of[s.episode] + s.step], keys)
     logger.info("built %d observations from %d episodes", len(samples), len({s.episode for s in samples}))
     return [observations[s] for s in samples]
 
@@ -206,11 +280,12 @@ def sample_observations(
     seed: int,
     exclude_episodes: Sequence[int] = (),
     heldout: bool = False,
+    keys: dict[str, str] | None = None,
 ) -> tuple[list[SampleId], list[dict[str, Any]]]:
     """:func:`plan_samples` + :func:`build_observations`."""
     ids, lengths, _starts = episode_table(dataset)
     samples = plan_samples(ids, lengths, num_samples, seed=seed, exclude_episodes=exclude_episodes, heldout=heldout)
-    return samples, build_observations(dataset, samples)
+    return samples, build_observations(dataset, samples, keys)
 
 
 def action_noise(policy, seed: int) -> np.ndarray:

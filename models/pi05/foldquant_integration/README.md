@@ -166,6 +166,68 @@ policy sees exactly what the websocket server hands it.
 Plugin graphs are emitted at batch 1; the upstream client sends one
 observation per request.
 
+## A checkpoint the release has never heard of
+
+Every tool takes `--config`, and upstream resolves that name from a list of its
+own `TrainConfig` entries. A checkpoint fine-tuned elsewhere carries a config
+that is not in that list, and editing upstream's file to add one is not an
+option here — the tree under `src/openpi` is used unchanged.
+
+`FOLDQUANT_PI05_PLUGIN` names a Python file imported before any config is
+resolved. Upstream keeps its configs in a module-level dict, so the plugin
+registers the entry itself:
+
+```python
+# my_plugin.py  -- its directory goes on sys.path first, so siblings import
+from openpi.training import config as _config
+from openpi.training.config import DataConfig, TrainConfig
+import my_policy                      # the checkpoint's own transforms
+
+_config._CONFIGS_DICT.setdefault("pi05_mine", TrainConfig(name="pi05_mine", ...))
+```
+
+```bash
+export FOLDQUANT_PI05_PLUGIN=/path/to/my_plugin.py
+python -m foldquant_integration.export_foldquant \
+    --checkpoint-dir <ckpt> --config pi05_mine --dataset-path <lerobot dataset> \
+    --llm-scheme w8a8_sr --expert-scheme w8a8_sh --output-dir exports/mine
+```
+
+An import error in the plugin is raised, not swallowed: a plugin that fails to
+load would otherwise surface as "config not found", which points at the wrong
+thing.
+
+### Dataset columns
+
+Calibration reads two camera streams and a state vector out of the LeRobot
+dataset. The defaults are LIBERO's column names
+(`observation.images.image`, `observation.images.wrist_image`,
+`observation.state`); a dataset that has them is read with them, and only a
+column the dataset does **not** carry is looked up in the train config's repack
+transform.
+
+That order matters. Deriving the names from the config alone is wrong:
+`pi05_libero` repacks from `image` / `wrist_image` / `state`, the columns of the
+`physical-intelligence/libero` release, while the LeRobot conversion calibrated
+on here stores `observation.images.image`. The dataset is the authority on its
+own columns; the config is the fallback for a dataset that names them
+differently. If neither answers, the error lists the columns that are present.
+
+### Video timestamps
+
+`load_dataset` takes a `video_backend`. LeRobot fetches frames **by timestamp**
+and checks the result to 1e-4 s, so a dataset whose `.mp4` files carry a
+non-zero container `start_time` either raises or — worse — returns a
+neighbouring frame. An index-based loader would not notice, which is how such a
+dataset can look fine elsewhere. The fix belongs in the dataset, losslessly:
+
+```bash
+ffmpeg -nostdin -fflags +genpts -i in.mp4 -c copy -reset_timestamps 1 out.mp4
+```
+
+Raising the tolerance instead would accept the wrong frame silently, which is
+the one outcome calibration cannot afford.
+
 ## Smoke check
 
 `w8a8_sr` LLM + `w4a4_sh` expert, 16 calibration observations, 8 held-out
