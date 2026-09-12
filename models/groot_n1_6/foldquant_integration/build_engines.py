@@ -66,6 +66,13 @@ class BuildConfig:
     metadata: Optional[str] = None
     """``export_metadata.json`` to take the captured shapes from (default: the one in ``--onnx-dir``)."""
 
+    max_batch: int = 1
+    """Upper bound of the batch profile. 1 pins it, which is what a robot client and
+    the drift protocol need. Upstream's simulation clients vectorise the environment
+    (``rollout_policy.py --n_envs``) and send that many observations at once, so an
+    engine serving them has to be built with ``--max-batch`` at least as large: a
+    batch outside the compiled profile is refused at inference, not adapted to."""
+
     llm_max_seq_len: Optional[int] = None
     """Upper bound of the LLM sequence profile (default: ``max(2 * captured, captured + 64)``, capped at 4096)."""
 
@@ -95,9 +102,10 @@ def dim_ranges(metadata: Dict[str, Any], args: BuildConfig) -> Dict[str, Any]:
         )
     if vl_max < vl_opt:
         raise ValueError(f"--vl-max-seq-len {vl_max} is below the captured {vl_opt}")
+    batch = 1 if args.max_batch <= 1 else (1, 1, int(args.max_batch))
     return {
-        "batch": 1,
-        "batch_size": 1,
+        "batch": batch,
+        "batch_size": batch,
         "seq_len": (1, llm_opt, llm_max),
         "vl_seq_len": (1, vl_opt, vl_max),
         "sa_seq_len": int(metadata["sa_seq_len"]),

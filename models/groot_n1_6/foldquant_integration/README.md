@@ -232,6 +232,26 @@ ARM=w4a4 ENGINE_DIR=exports/bridge_w4a4/engines bash foldquant_integration/eval_
 # N_EPISODES, N_ENVS, TASKS, MODEL_PATH, EMBODIMENT, PORT override the defaults.
 ```
 
+**Build the engines for the batch the client sends.** `rollout_policy.py`
+vectorises the environment (`--n_envs 5` above) and sends that many observations
+at once, while `build_engines` pins the batch profile to 1 by default — what a
+robot client and the drift protocol need. A batch outside the compiled profile
+is refused at inference, not adapted to:
+
+```
+TensorRTEngine: input 'inputs_embeds' axis 0 = 5 is outside the compiled
+profile bounds [1, 1]. Shape profiles are fixed at compile time
+```
+
+The ONNX carries a dynamic batch axis, so this costs a rebuild and no
+re-export:
+
+```bash
+python -m foldquant_integration.build_engines \
+    --onnx-dir exports/bridge_w4a4/onnx --engine-dir exports/bridge_w4a4/engines_b5 \
+    --max-batch 5
+```
+
 Setup notes: `setup_SimplerEnv.sh` expects the SimplerEnv checkout at
 `external_dependencies/SimplerEnv` (upstream pins it as a submodule; this release
 does not, so clone it there first) and pins `setuptools<81`, which SAPIEN needs
