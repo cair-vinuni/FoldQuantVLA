@@ -178,6 +178,20 @@ def build(args: BuildConfig) -> Dict[str, str]:
     }
     (engine_dir / "foldquant_engines.json").write_text(json.dumps(record, indent=2))
     shutil.copy2(onnx_dir / MANIFEST_NAME, engine_dir / MANIFEST_NAME)
+
+    # A component with no ONNX and no float engine leaves a hole in the directory.
+    # Reporting "complete" here is what lets the run continue: the record is
+    # written, the caller exits 0, and trt_model_forward.setup_tensorrt_engines
+    # then keeps that module in PyTorch with only a print — while verify.py and
+    # serve.py still name the scheme from the export manifest. N1.5 and N1.6
+    # raise FileNotFoundError in the equivalent position.
+    missing = sorted(n for n, st in status.items() if st == "missing")
+    if missing:
+        raise FileNotFoundError(
+            f"{engine_dir} is missing {', '.join(missing)}: no ONNX in {onnx_dir} and no "
+            "engine in --float-engine-dir. Pass --float-onnx-dir (or --float-engine-dir) "
+            "covering the components this export does not quantize."
+        )
     logger.info("engine directory complete: %s", engine_dir)
     return status
 
