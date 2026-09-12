@@ -1,0 +1,52 @@
+# Orin platform pyproject.toml — Jetson Orin (aarch64, JetPack 6.2, CUDA 12.6, Python 3.10)
+#
+# The family's own pyproject.toml is upstream openpi's and resolves torch from
+# PyPI, whose aarch64 wheels are built for sm_90 and do not run on an Orin's
+# sm_87. Route torch and friends to the jetson-jp6-cu126 index instead, the way
+# models/groot_n1_7/scripts/deployment/orin/pyproject.toml does.
+#
+# torch 2.7.1, which upstream pins, is not published on that index; 2.10.0 is
+# the version the GR00T families are verified against here.
+#
+# TensorRT is NOT a dependency: JetPack ships it as a system package that no
+# index carries. install_deps.sh makes it importable with a .pth file.
+
+[build-system]
+requires = ["setuptools>=67", "wheel", "pip"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openpi-orin"
+version = "0.1.0"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    "einops>=0.8.0",
+    "numpy>=1.22.4,<2.0.0",
+    "numpydantic>=1.6.6",
+    "pillow>=11.0.0",
+    "sentencepiece>=0.2.0",
+    "transformers==4.53.2",
+    "tqdm-loggable>=0.2",
+    "typing-extensions>=4.12.2",
+    "tyro>=0.9.5",
+    "onnx>=1.17.0",
+    "filelock>=3.16.1",
+]
+
+[tool.uv]
+override-dependencies = ["torch==2.10.0", "torchvision==0.25.0"]
+
+[[tool.uv.index]]
+name = "jetson-jp6-cu126"
+url = "https://pypi.jetson-ai-lab.io/jp6/cu126/+simple"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "jetson-jp6-cu126" }]
+torchvision = [{ index = "jetson-jp6-cu126" }]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

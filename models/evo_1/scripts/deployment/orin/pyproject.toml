@@ -1,0 +1,60 @@
+# Orin platform pyproject.toml — Jetson Orin (aarch64, JetPack 6.2, CUDA 12.6, Python 3.10)
+#
+# Evo-1 ships no pyproject.toml at all; Evo_1/requirements.txt pins
+# torch==2.5.1, which the jetson-jp6-cu126 index does not publish (it carries
+# 2.8.0, 2.9.1, 2.10.0, 2.11.0). Generic PyPI aarch64 wheels are built for
+# sm_90 and do not run on an Orin's sm_87, so the pin has to move.
+#
+# torch 2.10.0 rather than 2.8.0: flash-attn 2.8.3, the version that index
+# publishes prebuilt, is ABI-bound to it — against 2.8.0 it fails on an
+# undefined c10::cuda symbol, and upstream's guard in
+# Evo_1/model/internvl3_embedder.py catches only ModuleNotFoundError, so a
+# wrong-ABI wheel crashes the loader instead of falling back.
+#
+# transformers is deliberately held at 4.39.0: the ONNX exporter monkeypatches
+# Qwen2Attention through `rotary_emb` and `num_heads`, both removed around 4.48.
+#
+# The README's `MAX_JOBS=64 uv pip install -v flash-attn --no-build-isolation`
+# is not needed here — that index has it prebuilt for cp310/aarch64. Nor is
+# tensorrt-cu12==10.15.1.29, which has no aarch64 wheel; JetPack's system
+# TensorRT is made importable by install_deps.sh with a .pth file.
+
+[build-system]
+requires = ["setuptools>=67", "wheel", "pip"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evo1-orin"
+version = "0.1.0"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    "flash-attn==2.8.3",
+    "transformers==4.39.0",
+    "accelerate",
+    "einops",
+    "numpy>=1.22.4,<2.0.0",
+    "opencv-python-headless",
+    "pillow",
+    "pyarrow",
+    "pyzmq",
+    "sentencepiece",
+    "timm",
+    "tqdm",
+    "onnx>=1.17.0",
+]
+
+[[tool.uv.index]]
+name = "jetson-jp6-cu126"
+url = "https://pypi.jetson-ai-lab.io/jp6/cu126/+simple"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "jetson-jp6-cu126" }]
+torchvision = [{ index = "jetson-jp6-cu126" }]
+flash-attn = [{ index = "jetson-jp6-cu126" }]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
