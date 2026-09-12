@@ -109,10 +109,20 @@ Drop `--engine-dir` for the bf16 reference arm. The wire protocol is upstream's
 — a robot client points at the Orin by changing a host and a port; each
 family's own repository documents its client.
 
-`FOLDQUANT_TRT_CUDA_GRAPH=1` enables CUDA-graph replay. It pays most for
-engines called many times per chunk (Evo-1's head runs 50×, π₀.₅'s expert 10×),
-and launch overhead is relatively larger on an Orin than on x86, so it is worth
-measuring there even where it did not pay on a workstation.
+`FOLDQUANT_TRT_CUDA_GRAPH=1` enables CUDA-graph replay — **but not on this
+family.** The flag is read by `foldquant.runtime.engine.TensorRTEngine`, and
+GR00T N1.7 is the one integration that does not use it: the release ships its
+own seven-component pipeline swap, so `serve`, `verify` and `benchmark` all go
+through upstream's `trt_model_forward` / `trt_torch.Engine`, which enqueues
+directly. Setting the variable here is inert — no graph is captured and the
+latency is unchanged (measured on a served SO101 W8A8 arm: 43.5 ms median round
+trip either way).
+
+The other five families do route through the runtime, and there the flag pays
+most for engines called many times per chunk — Evo-1's head runs 50×, π₀.₅'s
+expert 10×. Launch overhead is relatively larger on an Orin than on x86, so it
+is worth measuring there even where it did not pay on a workstation
+(`results/FLOAT_ARMS.md` has the x86 numbers).
 
 Absolute latency will be higher than a workstation's — the ordering between
 arms should hold, the magnitudes will not. Measure, do not extrapolate.
