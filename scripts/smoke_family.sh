@@ -39,7 +39,26 @@ FAMILIES=("$@")
 # of memory, and known-good engines fail it exactly as a fresh build does. Say so
 # up front rather than let the report blame the code.
 busy_mib=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1)
-busy_n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
+# nvidia-smi answers "[N/A]" for both of these on Tegra (L4T): the iGPU exposes
+# neither per-process accounting nor a separate memory pool. Taking that string
+# as a PID made `grep -c .` return 1, so this guard fired on every Jetson even
+# with an idle card -- on the one platform docs/deploy/jetson.md targets.
+# Filter the placeholders, and fall back to the device node CUDA actually opens
+# there (/dev/nvgpu; /dev/nvidia* only catches the display stack).
+busy_pids=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null \
+            | grep -oE '^[0-9]+$' || true)
+if [ -z "$busy_pids" ] && [ -d /dev/nvgpu ]; then
+  # The desktop stack holds the same device node, so keep only processes that
+  # actually mapped the CUDA driver -- otherwise gnome-shell trips this guard.
+  for pid in $(fuser /dev/nvgpu/*/* 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$'); do
+    [ "$pid" = "$$" ] && continue
+    grep -qE 'libcuda\.so|libcudart' "/proc/$pid/maps" 2>/dev/null \
+      && busy_pids="${busy_pids}${pid}\n"
+  done
+  busy_pids=$(printf '%b' "$busy_pids")
+fi
+case "$busy_mib" in ''|*N/A*|*Supported*) busy_mib="an unknown amount of" ;; esac
+busy_n=$(printf '%s\n' "$busy_pids" | grep -c . || true)
 if [ "${busy_n:-0}" -gt 0 ]; then
   echo "warning: ${busy_n} process(es) already on the GPU using ${busy_mib} MiB."
   echo "         The larger families need the card to themselves; a failure below may be"
