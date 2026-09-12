@@ -48,7 +48,7 @@ from foldquant.runtime.plugins import load_plugins
 import tyro
 
 from . import calibration
-from ._upstream import MANIFEST_NAME, ensure_deployment_on_path
+from ._upstream import MANIFEST_NAME, PIPELINE_COMPONENTS, ensure_deployment_on_path
 
 
 logger = logging.getLogger("foldquant.groot_n1_7.serve")
@@ -83,6 +83,15 @@ def _load_manifest(engine_dir: Path) -> Optional[Dict[str, Any]]:
     return json.loads(path.read_text()) if path.is_file() else None
 
 
+
+#: Engine files each ``--mode`` of ``trt_model_forward.setup_tensorrt_engines``
+#: needs on disk. A mode absent from this table is not checked.
+_MODE_ENGINES = {
+    "n17_full_pipeline": tuple(engine for _, _, engine in PIPELINE_COMPONENTS),
+    "vit_llm_only": ("vit_bf16.engine", "llm_bf16.engine"),
+    "dit_only": ("dit_bf16.engine",),
+}
+
 def main(args: ServeConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     policy = calibration.load_policy(args.model_path, args.embodiment_tag, args.device)
@@ -95,8 +104,26 @@ def main(args: ServeConfig) -> None:
         ensure_deployment_on_path()
         from trt_model_forward import setup_tensorrt_engines
 
+        # setup_tensorrt_engines keeps a module in PyTorch when its .engine is
+        # absent, announcing it with a print and nothing else. Serving would then
+        # log the scheme from the manifest while a robot talks to a policy that is
+        # partly, or entirely, bf16 PyTorch. Check the files the mode needs before
+        # the server binds, and say which engines are actually in use — this is what
+        # runtime.install_engines does for N1.5 and N1.6.
+        expected = _MODE_ENGINES.get(args.mode)
+        if expected is not None:
+            absent = [e for e in expected if not (engine_dir / e).is_file()]
+            if absent:
+                raise FileNotFoundError(
+                    f"{engine_dir} has no {', '.join(absent)}; mode {args.mode!r} needs "
+                    f"{', '.join(expected)}. Serving would silently fall back to PyTorch "
+                    f"for the missing module(s) while still reporting the export's scheme."
+                )
         setup_tensorrt_engines(policy, str(engine_dir), mode=args.mode)
-        logger.info("serving %s in mode %s", engine_dir, args.mode)
+        present = sorted(p.name for p in engine_dir.glob("*.engine"))
+        logger.info(
+            "serving %s in mode %s with engines: %s", engine_dir, args.mode, ", ".join(present)
+        )
     else:
         logger.info("serving the bf16 PyTorch policy")
     logger.info(
