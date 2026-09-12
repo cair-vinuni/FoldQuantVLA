@@ -204,6 +204,24 @@ print(client.get_action(observation))
 
 Omit `--engine-dir` to serve the bf16 PyTorch policy — the reference arm, same
 process and same protocol, which is what makes the two comparable on hardware.
+
+The same server drives upstream's simulation clients. For SimplerEnv (set up once
+with `gr00t/eval/sim/SimplerEnv/setup_SimplerEnv.sh`, see `examples/SimplerEnv/`),
+add `--use-sim-policy-wrapper` and point upstream's client at the port:
+
+```bash
+# terminal 1 — a FoldQuant arm of the Bridge checkpoint
+python -m foldquant_integration.serve --model-path nvidia/GR00T-N1.6-bridge \
+    --embodiment-tag OXE_WIDOWX --engine-dir exports/bridge_w4a4/engines \
+    --use-sim-policy-wrapper --port 5555
+
+# terminal 2 — upstream's SimplerEnv client, unchanged
+gr00t/eval/sim/SimplerEnv/simpler_uv/.venv/bin/python gr00t/eval/rollout_policy.py \
+    --policy_client_host 127.0.0.1 --policy_client_port 5555 \
+    --env_name simpler_env_widowx/widowx_spoon_on_towel \
+    --n_episodes 200 --n_envs 5 --n_action_steps 4 --max_episode_steps 300
+```
+
 The release ships no standalone client script; `PolicyClient` is the class its
 real-robot evaluators construct (`gr00t/eval/real_robot/SO100`).
 

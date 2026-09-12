@@ -25,6 +25,9 @@ robot loop points at this server by changing a host and a port and nothing
 else.
 
 Omit ``--engine-dir`` to serve the bf16 PyTorch policy (the reference arm).
+Pass ``--use-sim-policy-wrapper`` for upstream's simulation clients
+(``gr00t/eval/rollout_policy.py`` against SimplerEnv or RoboCasa), which send
+flat ``video.*`` / ``state.*`` observations.
 
 The N1.5 release exposes this as ``scripts/inference_service.py`` around a
 ``RobotInferenceServer``; this release renamed both, so the entry point here is
@@ -63,6 +66,11 @@ class ServeConfig:
     port: int = 5555
     device: str = "cuda"
 
+    use_sim_policy_wrapper: bool = False
+    """Wrap the policy in upstream's ``Gr00tSimPolicyWrapper`` (flat ``video.*`` /
+    ``state.*`` observations), as ``run_gr00t_server.py --use-sim-policy-wrapper``
+    does for the SimplerEnv and RoboCasa clients."""
+
 
 def main(args: ServeConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -80,7 +88,14 @@ def main(args: ServeConfig) -> None:
 
     from gr00t.policy.server_client import PolicyServer
 
-    server = PolicyServer(policy=policy, host=args.host, port=args.port)
+    served = policy
+    if args.use_sim_policy_wrapper:
+        from gr00t.policy.gr00t_policy import Gr00tSimPolicyWrapper
+
+        served = Gr00tSimPolicyWrapper(policy)
+        logger.info("sim policy wrapper on")
+
+    server = PolicyServer(policy=served, host=args.host, port=args.port)
     try:
         server.run()
     except KeyboardInterrupt:
