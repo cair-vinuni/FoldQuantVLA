@@ -243,14 +243,29 @@ TensorRTEngine: input 'inputs_embeds' axis 0 = 5 is outside the compiled
 profile bounds [1, 1]. Shape profiles are fixed at compile time
 ```
 
-The ONNX carries a dynamic batch axis, so this costs a rebuild and no
-re-export:
+`--max-batch` widens it for the **LLM**, whose graph carries a symbolic batch
+axis, at the cost of a rebuild and no re-export:
 
 ```bash
 python -m foldquant_integration.build_engines \
     --onnx-dir exports/bridge_w4a4/onnx --engine-dir exports/bridge_w4a4/engines_b5 \
     --max-batch 5
 ```
+
+The **DiT** is a different matter: its graph pins batch to a literal 1, on
+purpose — `dit_common.py` spells only `sa_seq_len` and `vl_seq_len` as symbolic
+so upstream's `export_metadata.json` shape hints apply to a FoldQuant DiT graph
+unchanged. No rebuild can widen a static dimension, so a vectorised client hits
+the same refusal one engine later, on `sa_embs`. Until the DiT is exported with
+a dynamic batch axis, sweep a quantized arm with `N_ENVS=1`:
+
+```bash
+ARM=w4a4 ENGINE_DIR=exports/bridge_w4a4/engines N_ENVS=1 \
+    bash foldquant_integration/eval_simpler.sh
+```
+
+Compare arms at the same `N_ENVS`: the bf16 policy accepts any batch, so it is
+the one that has to be held to the engine's terms, not the other way round.
 
 Setup notes: `setup_SimplerEnv.sh` expects the SimplerEnv checkout at
 `external_dependencies/SimplerEnv` (upstream pins it as a submodule; this release
