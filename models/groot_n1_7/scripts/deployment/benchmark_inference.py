@@ -373,6 +373,22 @@ class BenchmarkConfig:
     """Benchmark on full trajectory instead of single data point. This cycles through all steps in an episode for more realistic benchmarking."""
 
 
+
+#: Engine files each TRT mode of ``trt_model_forward.setup_tensorrt_engines``
+#: needs on disk, mirroring foldquant_integration._upstream.PIPELINE_COMPONENTS.
+_MODE_ENGINES = {
+    "n17_full_pipeline": (
+        "vit_bf16.engine",
+        "llm_bf16.engine",
+        "vl_self_attention.engine",
+        "state_encoder.engine",
+        "action_encoder.engine",
+        "dit_bf16.engine",
+        "action_decoder.engine",
+    ),
+    "vit_llm_only": ("vit_bf16.engine", "llm_bf16.engine"),
+}
+
 def main(args: BenchmarkConfig | None = None):
     if args is None:
         args = tyro.cli(BenchmarkConfig)
@@ -601,6 +617,20 @@ def main(args: BenchmarkConfig | None = None):
         if args.trt_mode in ("n17_full_pipeline", "vit_llm_only"):
             from trt_model_forward import setup_tensorrt_engines
 
+            # setup_tensorrt_engines leaves a module in PyTorch when its .engine is
+            # absent, with only a print. The row would still be labelled
+            # "TensorRT (<mode>)" and its latency compared against eager as if the
+            # whole pipeline were compiled. Refuse rather than publish that number.
+            needed = _MODE_ENGINES[args.trt_mode]
+            absent = [
+                e for e in needed if not os.path.isfile(os.path.join(args.trt_engine_path, e))
+            ]
+            if absent:
+                raise FileNotFoundError(
+                    f"{args.trt_engine_path} has no {', '.join(absent)}; mode "
+                    f"{args.trt_mode!r} needs {', '.join(needed)}. Those modules would run "
+                    f"in PyTorch and the result would still be reported as TensorRT."
+                )
             setup_tensorrt_engines(policy_trt, args.trt_engine_path, mode=args.trt_mode)
         else:
             from standalone_inference_script import replace_dit_with_tensorrt
