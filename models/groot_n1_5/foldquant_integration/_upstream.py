@@ -51,6 +51,38 @@ def ensure_upstream_on_path() -> None:
         sys.path.insert(0, root)
 
 
+def _seed_libero_config(benchmark_root: Path) -> None:
+    """Write LIBERO's default config if none exists yet (idempotent).
+
+    ``libero.libero`` asks on stdin, at import time, whether to use a custom
+    dataset folder whenever ``$LIBERO_CONFIG_PATH/config.yaml`` (default
+    ``~/.libero``) is missing. Under a redirected or closed stdin -- a script,
+    a log file, a CI job -- that is an ``EOFError`` on a fresh machine, or a
+    prompt nobody sees while the run appears to hang. Answer it the way
+    upstream's ``setup_libero.sh`` does: the default paths of this checkout.
+    An existing config is left untouched.
+    """
+    config_dir = Path(os.environ.get("LIBERO_CONFIG_PATH", os.path.expanduser("~/.libero")))
+    config_file = config_dir / "config.yaml"
+    if config_file.exists():
+        return
+    import yaml
+
+    root = str(benchmark_root)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    with open(config_file, "w") as f:
+        yaml.dump(
+            {
+                "benchmark_root": root,
+                "bddl_files": os.path.join(root, "./bddl_files"),
+                "init_states": os.path.join(root, "./init_files"),
+                "datasets": os.path.join(root, "../datasets"),
+                "assets": os.path.join(root, "./assets"),
+            },
+            f,
+        )
+
+
 #: Where a LIBERO checkout may be named, for the families whose release pins
 #: none. The N1.5 release ships ``examples/Libero`` — the client loop — but not
 #: the benchmark itself, so the checkout is the operator's to supply.
@@ -71,7 +103,12 @@ def ensure_libero_on_path() -> None:
     """
     import importlib.util
 
-    if importlib.util.find_spec("libero") is not None:
+    spec = importlib.util.find_spec("libero")
+    if spec is not None:
+        for loc in spec.submodule_search_locations or ():
+            if (Path(loc) / "libero").is_dir():
+                _seed_libero_config(Path(loc) / "libero")
+                break
         return
     named = os.environ.get(LIBERO_DIR_ENV)
     if not named:
@@ -86,3 +123,4 @@ def ensure_libero_on_path() -> None:
         raise RuntimeError(f"{LIBERO_DIR_ENV}={root} does not look like a LIBERO checkout (no libero/ inside)")
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
+    _seed_libero_config(root / "libero" / "libero")
