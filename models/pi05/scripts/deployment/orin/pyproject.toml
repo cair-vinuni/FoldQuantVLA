@@ -36,6 +36,11 @@ requires-python = ">=3.10,<3.11"
 dependencies = [
     "torch==2.10.0",
     "torchvision==0.25.0",
+    # The Jetson torch wheel declares no triton, but the reference arm is served
+    # under torch.compile(mode="max-autotune") (Pi0Config.pytorch_compile_mode),
+    # which fails on the first inference with TritonMissing without it. 3.6.0 is
+    # the release torch 2.10 is built against.
+    "triton==3.6.0",
     # openpi's JAX stack, CPU build
     "jax==0.5.3",
     "flax==0.10.2",
@@ -108,6 +113,7 @@ explicit = true
 [tool.uv.sources]
 torch = [{ index = "jetson-jp6-cu126" }]
 torchvision = [{ index = "jetson-jp6-cu126" }]
+triton = [{ index = "jetson-jp6-cu126" }]
 lerobot = { git = "https://github.com/huggingface/lerobot", rev = "0cf864870cf29f4738d3ade893e6fd13fbd7cdb5" }
 
 [tool.ruff]

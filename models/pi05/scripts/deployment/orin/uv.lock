@@ -1500,6 +1500,7 @@ dependencies = [
     { name = "tqdm-loggable" },
     { name = "transformers" },
     { name = "treescope" },
+    { name = "triton" },
     { name = "typing-extensions" },
     { name = "tyro" },
     { name = "wandb" },
@@ -1542,6 +1543,7 @@ requires-dist = [
     { name = "tqdm-loggable", specifier = ">=0.2" },
     { name = "transformers", specifier = "==4.53.2" },
     { name = "treescope", specifier = ">=0.1.7" },
+    { name = "triton", specifier = "==3.6.0", index = "https://pypi.jetson-ai-lab.io/jp6/cu126/+simple" },
     { name = "typing-extensions", specifier = ">=4.12.2" },
     { name = "tyro", specifier = ">=0.9.5" },
     { name = "wandb", specifier = ">=0.19.1" },
@@ -2533,6 +2535,14 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f0/2a/d13d3c38862632742d2fe2f7ae307c431db06538fd05ca03020d207b5dcc/treescope-0.1.10.tar.gz", hash = "sha256:20f74656f34ab2d8716715013e8163a0da79bdc2554c16d5023172c50d27ea95", size = 138870, upload-time = "2025-08-08T05:43:48.048Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/2b/36e984399089c026a6499ac8f7401d38487cf0183839a4aa78140d373771/treescope-0.1.10-py3-none-any.whl", hash = "sha256:dde52f5314f4c29d22157a6fe4d3bd103f9cae02791c9e672eefa32c9aa1da51", size = 182255, upload-time = "2025-08-08T05:43:46.673Z" },
+]
+
+[[package]]
+name = "triton"
+version = "3.6.0"
+source = { registry = "https://pypi.jetson-ai-lab.io/jp6/cu126/+simple" }
+wheels = [
+    { url = "https://pypi.jetson-ai-lab.io/jp6/cu126/+f/e68/f6e7348753f16/triton-3.6.0-cp310-cp310-linux_aarch64.whl", hash = "sha256:e68f6e7348753f168980f2d717fa28d37b47dad1a8892bb7078cf551fee27a98" },
 ]
 
 [[package]]
