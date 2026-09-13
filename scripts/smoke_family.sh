@@ -21,6 +21,8 @@
 #   N17_VIDEO_BACKEND N16_VIDEO_BACKEND N15_VIDEO_BACKEND
 #                                   optional; e.g. "decord" where torchcodec does not load
 #   LIBERO_DATA                     LeRobot dataset for SmolVLA / Evo-1
+#   EVO1_CALIB_EPISODES             optional; calibrate Evo-1 on these episodes only
+#                                   (e.g. "0-2"), leaving the rest held out for verify
 #
 # Each family runs in its OWN virtualenv, from its OWN directory: the
 # integrations are pinned to their upstream's environment and share nothing
@@ -84,14 +86,21 @@ run_family () {
   [ -x "$venv" ] || { note SKIP "no .venv — see models/$fam/foldquant_integration/README.md"; skip=$((skip+1)); return; }
 
   # per-family arguments; an unset path means skip, never a wrong-path failure
-  local ckpt=() data=() extra=()
+  local ckpt=() data=() extra=() xextra=()
   case "$fam" in
     groot_n1_7) ckpt=(--model-path "${N17_MODEL:-}") ; data=(--dataset-path "${GROOT_DATA:-}")  ; extra=(--embodiment-tag "${N17_TAG:-libero_panda}") ;;
     groot_n1_6) ckpt=(--model-path "${N16_MODEL:-}") ; data=(--dataset-path "${GROOT_DATA:-}")  ; extra=(--embodiment-tag "${N16_TAG:-libero_panda}") ;;
     groot_n1_5) ckpt=(--model-path "${N15_MODEL:-}") ; data=(--dataset-path "${GROOT_DATA:-}")  ; extra=(--embodiment-tag "${N15_TAG:-new_embodiment}") ;;
     pi05)       ckpt=(--checkpoint-dir "${PI05_CKPT:-}") ; data=(--dataset-path "${GROOT_DATA:-}") ;;
     smolvla)    ckpt=() ; data=(--dataset-path "${LIBERO_DATA:-}") ; extra=(--episodes "${SMOLVLA_EPISODES:-0-15}") ;;
-    evo_1)      ckpt=(--checkpoint-dir "${EVO1_CKPT:-}") ; data=(--dataset-path "${LIBERO_DATA:-}") ;;
+    evo_1)      ckpt=(--checkpoint-dir "${EVO1_CKPT:-}") ; data=(--dataset-path "${LIBERO_DATA:-}")
+                # verify samples held-out observations from episodes the calibration
+                # never touched. A small calibration set spread over every episode
+                # leaves none, and verify raises "no episodes left to sample from
+                # after exclusions". Restricting only the export keeps the rest for
+                # verify, which is a real held-out split rather than the fit-only
+                # --allow-calibration-episodes.
+                [ -n "${EVO1_CALIB_EPISODES:-}" ] && xextra=(--episodes "$EVO1_CALIB_EPISODES") ;;
   esac
   # The GR00T integrations default to video_backend="torchcodec". Where torchcodec
   # does not load -- N1.5 on a Jetson, whose Orin wheels are built against a
@@ -152,7 +161,7 @@ run_family () {
   local exp="$dir/.smoke_export"
   rm -rf "$exp"
   ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.export_foldquant \
-      "${ckpt[@]}" "${data[@]}" "${extra[@]}" --num-calib "$CALIB" --seed 0 \
+      "${ckpt[@]}" "${data[@]}" "${extra[@]}" "${xextra[@]}" --num-calib "$CALIB" --seed 0 \
       --output-dir .smoke_export ) >>"$log" 2>&1 \
     || { note FAIL "export — see $log"; fail=$((fail+1)); return; }
   note ok "export"
