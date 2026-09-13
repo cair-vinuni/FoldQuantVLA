@@ -18,6 +18,8 @@
 #   N17_MODEL N16_MODEL N15_MODEL   GR00T checkpoints
 #   PI05_CKPT EVO1_CKPT             openpi / Evo-1 checkpoints
 #   GROOT_DATA                      LeRobot dataset for the GR00T + pi05 families
+#   N17_VIDEO_BACKEND N16_VIDEO_BACKEND N15_VIDEO_BACKEND
+#                                   optional; e.g. "decord" where torchcodec does not load
 #   LIBERO_DATA                     LeRobot dataset for SmolVLA / Evo-1
 #
 # Each family runs in its OWN virtualenv, from its OWN directory: the
@@ -91,6 +93,19 @@ run_family () {
     smolvla)    ckpt=() ; data=(--dataset-path "${LIBERO_DATA:-}") ; extra=(--episodes "${SMOLVLA_EPISODES:-0-15}") ;;
     evo_1)      ckpt=(--checkpoint-dir "${EVO1_CKPT:-}") ; data=(--dataset-path "${LIBERO_DATA:-}") ;;
   esac
+  # The GR00T integrations default to video_backend="torchcodec". Where torchcodec
+  # does not load -- N1.5 on a Jetson, whose Orin wheels are built against a
+  # different torch and FFmpeg -- export fails with "torchcodec is not available"
+  # before a frame is read. Let the caller pick per family, in the same N1x_*
+  # convention as the embodiment tags; unset keeps each family's own default.
+  local backend=""
+  case "$fam" in
+    groot_n1_7) backend="${N17_VIDEO_BACKEND:-}" ;;
+    groot_n1_6) backend="${N16_VIDEO_BACKEND:-}" ;;
+    groot_n1_5) backend="${N15_VIDEO_BACKEND:-}" ;;
+  esac
+  [ -n "$backend" ] && extra+=(--video-backend "$backend")
+
   for a in "${ckpt[@]}" "${data[@]}"; do
     [ -z "$a" ] && { note SKIP "a required path is unset (see the header of this script)"; skip=$((skip+1)); return; }
   done
