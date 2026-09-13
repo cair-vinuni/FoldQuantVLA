@@ -49,6 +49,21 @@ echo "Linking JetPack system packages (TensorRT) into the venv..."
 echo "/usr/lib/python${PYTHON_VERSION}/dist-packages" \
     > "$SITE_PKGS/jetpack-system-packages.pth"
 
+# openpi's PyTorch model needs patched transformers modules copied over the
+# installed package (see models/pi05/README.md, "Apply the transformers library
+# patches"); pi0_pytorch.py refuses to load without them. The README's plain
+# `cp -r` writes through uv's hardlinks and so edits the shared uv cache as well,
+# which then leaks into every other environment that installs transformers.
+# --remove-destination replaces each file with a fresh inode, leaving the cache
+# untouched.
+TRANSFORMERS_DIR="$SITE_PKGS/transformers"
+PATCH_SRC="$REPO_ROOT/src/openpi/models_pytorch/transformers_replace"
+echo "Applying openpi's transformers patches into $TRANSFORMERS_DIR..."
+( cd "$PATCH_SRC" && find . -name '*.py' -not -path '*/__pycache__/*' ) | while read -r f; do
+    mkdir -p "$TRANSFORMERS_DIR/$(dirname "$f")"
+    cp --remove-destination "$PATCH_SRC/$f" "$TRANSFORMERS_DIR/$f"
+done
+
 echo
 echo "Done. Use it with:"
 echo "  export PYTHONPATH=\$(cd "$REPO_ROOT/../.." && pwd):$REPO_ROOT"

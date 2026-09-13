@@ -5,10 +5,24 @@
 # sm_87. Route torch and friends to the jetson-jp6-cu126 index instead, the way
 # models/groot_n1_7/scripts/deployment/orin/pyproject.toml does.
 #
-# torch 2.7.1, which upstream pins, is not published on that index; 2.10.0 is
-# the version the GR00T families are verified against here.
+# The FoldQuant export path needs openpi's JAX stack even though it runs the
+# PyTorch model: openpi/policies/policy_config.py imports jax.numpy at module
+# scope, and it pulls in openpi.training.config and .checkpoints, which import
+# flax and orbax. JAX is taken as the CPU build — upstream's `jax[cuda12]`
+# drags in CUDA wheels that collide with JetPack's own CUDA 12.6 libraries, and
+# nothing on this path runs JAX on the device.
 #
-# TensorRT is NOT a dependency: JetPack ships it as a system package that no
+# torch 2.7.1, which upstream pins, is not published on the Jetson index;
+# 2.10.0 is the version the GR00T families are verified against here.
+#
+# openpi and openpi-client are not installed: they are loaded from src/ and
+# packages/openpi-client/src with PYTHONPATH, as scripts/smoke_family.sh does.
+# Their runtime dependencies are listed below instead.
+#
+# Deliberately omitted: gym-aloha (simulation only; pulls MuJoCo) and dlimp
+# (RLDS data loading, not on the LeRobot calibration path).
+#
+# TensorRT is not a dependency: JetPack ships it as a system package that no
 # index carries. install_deps.sh makes it importable with a .pth file.
 
 [build-system]
@@ -22,21 +36,69 @@ requires-python = ">=3.10,<3.11"
 dependencies = [
     "torch==2.10.0",
     "torchvision==0.25.0",
+    # openpi's JAX stack, CPU build
+    "jax==0.5.3",
+    "flax==0.10.2",
+    "orbax-checkpoint==0.11.13",
+    "chex==0.1.90",
+    "equinox>=0.11.8",
+    "augmax>=0.3.4",
+    "ml_collections==1.0.0",
+    "jaxtyping==0.2.36",
+    "treescope>=0.1.7",
+    "beartype==0.19.0",
+    # the rest of openpi's declared runtime
+    "dm-tree>=0.1.8",
     "einops>=0.8.0",
+    "flatbuffers>=24.3.25",
+    "imageio>=2.36.1",
     "numpy>=1.22.4,<2.0.0",
     "numpydantic>=1.6.6",
-    "pillow>=11.0.0",
+    "opencv-python>=4.10.0.84",
     "sentencepiece>=0.2.0",
-    "transformers==4.53.2",
     "tqdm-loggable>=0.2",
     "typing-extensions>=4.12.2",
     "tyro>=0.9.5",
-    "onnx>=1.17.0",
+    "wandb>=0.19.1",
     "filelock>=3.16.1",
+    "transformers==4.53.2",
+    "rich>=14.0.0",
+    "polars>=1.30.0",
+    # openpi-client's runtime
+    "msgpack>=1.0.5",
+    "websockets>=11.0",
+    # the calibration path reads LeRobot datasets via lerobot.common.*, a layout
+    # later releases removed, so the upstream rev is pinned
+    "lerobot",
+    # lerobot at the pinned rev declares only `datasets>=2.19.0`, with no ceiling.
+    # A fresh resolve takes datasets 5.x, where `dataset["col"]` returns a lazy
+    # Column; lerobot_dataset.py then fails on
+    #   torch.stack(self.hf_dataset["timestamp"])
+    #   TypeError: stack(): argument 'tensors' must be tuple of Tensors, not Column
+    # Upstream only works because its uv.lock holds datasets at 3.6.0. Hold the
+    # whole group at those locked versions, since they move together.
+    "datasets==3.6.0",
+    "pyarrow==20.0.0",
+    "fsspec[gcs]==2025.3.0",
+    "huggingface-hub==0.32.3",
+    "pillow==11.2.1",
+    # the foldquant package's own requirements
+    "onnx>=1.17.0",
+    "onnx-graphsurgeon>=0.5",
 ]
 
 [tool.uv]
-override-dependencies = ["torch==2.10.0", "torchvision==0.25.0"]
+override-dependencies = [
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    # Upstream overrides ml-dtypes to 0.4.1. Nothing on this path needs that
+    # ceiling -- jax 0.5.3 asks for >=0.4.0, tensorstore 0.1.74 for >=0.3.1,
+    # orbax-checkpoint sets none -- but the onnx the foldquant package needs
+    # references ml_dtypes.float4_e2m1fn, which 0.4.1 does not have, so the pin
+    # makes `import onnx` raise AttributeError.
+    "ml-dtypes>=0.5.0",
+    "tensorstore==0.1.74",
+]
 
 [[tool.uv.index]]
 name = "jetson-jp6-cu126"
@@ -46,6 +108,7 @@ explicit = true
 [tool.uv.sources]
 torch = [{ index = "jetson-jp6-cu126" }]
 torchvision = [{ index = "jetson-jp6-cu126" }]
+lerobot = { git = "https://github.com/huggingface/lerobot", rev = "0cf864870cf29f4738d3ade893e6fd13fbd7cdb5" }
 
 [tool.ruff]
 line-length = 120
