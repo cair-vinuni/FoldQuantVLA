@@ -111,9 +111,23 @@ run_family () {
         note ok "float pipeline found — reusing exports/float"
       else
         note ..   "building the float pipeline first (needed for the untouched modules)"
-        ( cd "$dir" && PYTHONPATH="$pp" "$venv" scripts/deployment/build_trt_pipeline.py \
-            "${ckpt[@]}" "${data[@]}" "${extra[@]}" --output-dir .smoke_float --steps export,build ) >>"$log" 2>&1 \
-          || { note FAIL "float pipeline — see $log"; fail=$((fail+1)); return; }
+        if [ "$fam" = groot_n1_7 ]; then
+          ( cd "$dir" && PYTHONPATH="$pp" "$venv" scripts/deployment/build_trt_pipeline.py \
+              "${ckpt[@]}" "${data[@]}" "${extra[@]}" --output-dir .smoke_float --steps export,build ) >>"$log" 2>&1 \
+            || { note FAIL "float pipeline — see $log"; fail=$((fail+1)); return; }
+        else
+          # N1.6 ships no build_trt_pipeline.py: its float arm is the DiT alone, from
+          # export_onnx_n1d6.py, which takes argparse underscore flags and writes the
+          # ONNX directory directly (build_engines builds the engine from it).
+          # GR00T_ONNX_EXPORTER_MODE=legacy is required, not optional -- the default
+          # dynamo exporter specialises vl_seq_len and hands back a reference that
+          # runs and is wrong; see foldquant_integration/README.md.
+          ( cd "$dir" && PYTHONPATH="$pp" GR00T_ONNX_EXPORTER_MODE=legacy \
+              "$venv" scripts/deployment/export_onnx_n1d6.py \
+              --model_path "${N16_MODEL:-}" --dataset_path "${GROOT_DATA:-}" \
+              --embodiment_tag "${N16_TAG:-libero_panda}" --output_dir .smoke_float/onnx ) >>"$log" 2>&1 \
+            || { note FAIL "float DiT export — see $log"; fail=$((fail+1)); return; }
+        fi
         float_args=(--float-onnx-dir .smoke_float/onnx)
         [ "$reuse" = 1 ] && float_args+=(--float-engine-dir .smoke_float/engines)
       fi
