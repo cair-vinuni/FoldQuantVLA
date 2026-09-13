@@ -50,6 +50,7 @@ from .dit_common import (
     DIT_OUTPUT_NAME as _DIT_OUTPUT_NAME,
 )
 from .dit_common import (
+    DIT_BATCH_DIM as _DIT_BATCH_DIM,
     DIT_SA_SEQ_DIM as _DIT_SA_SEQ_DIM,
 )
 from .dit_common import (
@@ -177,15 +178,15 @@ def _build_v2_dynamic_graph(
     # Batch is pinned to 1 - the fused attention plugins' cuBLAS strided-batched
     # addressing is only correct at B == 1.
     x_name, e_name, ts_name, im_name, bam_name = _DIT_INPUT_NAMES
-    x_t = oh.make_tensor_value_info(x_name, onnx.TensorProto.BFLOAT16, [1, _DIT_SA_SEQ_DIM, dim])
-    e_t = oh.make_tensor_value_info(e_name, onnx.TensorProto.BFLOAT16, [1, _DIT_VL_SEQ_DIM, kv_dim])
-    ts_t = oh.make_tensor_value_info(ts_name, onnx.TensorProto.INT64, [1])
+    x_t = oh.make_tensor_value_info(x_name, onnx.TensorProto.BFLOAT16, [_DIT_BATCH_DIM, _DIT_SA_SEQ_DIM, dim])
+    e_t = oh.make_tensor_value_info(e_name, onnx.TensorProto.BFLOAT16, [_DIT_BATCH_DIM, _DIT_VL_SEQ_DIM, kv_dim])
+    ts_t = oh.make_tensor_value_info(ts_name, onnx.TensorProto.INT64, [_DIT_BATCH_DIM])
     # The two boolean masks are the upstream export's; the DiT's own
     # ``attention_mask``/``encoder_attention_mask`` kwargs are not graph inputs -
     # see dit_common.emit_mask_routing()'s docstring for why that is correct here.
-    im_t = oh.make_tensor_value_info(im_name, onnx.TensorProto.BOOL, [1, _DIT_VL_SEQ_DIM])
-    bam_t = oh.make_tensor_value_info(bam_name, onnx.TensorProto.BOOL, [1, _DIT_VL_SEQ_DIM])
-    y_t = oh.make_tensor_value_info(_DIT_OUTPUT_NAME, onnx.TensorProto.BFLOAT16, [1, _DIT_SA_SEQ_DIM, output_dim])
+    im_t = oh.make_tensor_value_info(im_name, onnx.TensorProto.BOOL, [_DIT_BATCH_DIM, _DIT_VL_SEQ_DIM])
+    bam_t = oh.make_tensor_value_info(bam_name, onnx.TensorProto.BOOL, [_DIT_BATCH_DIM, _DIT_VL_SEQ_DIM])
+    y_t = oh.make_tensor_value_info(_DIT_OUTPUT_NAME, onnx.TensorProto.BFLOAT16, [_DIT_BATCH_DIM, _DIT_SA_SEQ_DIM, output_dim])
 
     _emit_timestep_encoding(w, nodes, inits)
     _emit_mask_routing(nodes, inits)

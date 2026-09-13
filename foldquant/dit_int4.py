@@ -49,6 +49,7 @@ from .dit_common import (
     ATTEND_ALL_MASK,
     DIT_INPUT_NAMES,
     DIT_OUTPUT_NAME,
+    DIT_BATCH_DIM,
     DIT_SA_SEQ_DIM,
     DIT_VL_SEQ_DIM,
     EPS,
@@ -180,15 +181,15 @@ def _build_w4a4_graph(
     # profile min=opt=max=1 and lets TensorRT reject B > 1 up front; the plugins
     # carry a matching runtime guard in enqueue().
     x_name, e_name, ts_name, im_name, bam_name = DIT_INPUT_NAMES
-    x_t = oh.make_tensor_value_info(x_name, onnx.TensorProto.BFLOAT16, [1, DIT_SA_SEQ_DIM, dim])
-    e_t = oh.make_tensor_value_info(e_name, onnx.TensorProto.BFLOAT16, [1, DIT_VL_SEQ_DIM, kv_dim])
-    ts_t = oh.make_tensor_value_info(ts_name, onnx.TensorProto.INT64, [1])
+    x_t = oh.make_tensor_value_info(x_name, onnx.TensorProto.BFLOAT16, [DIT_BATCH_DIM, DIT_SA_SEQ_DIM, dim])
+    e_t = oh.make_tensor_value_info(e_name, onnx.TensorProto.BFLOAT16, [DIT_BATCH_DIM, DIT_VL_SEQ_DIM, kv_dim])
+    ts_t = oh.make_tensor_value_info(ts_name, onnx.TensorProto.INT64, [DIT_BATCH_DIM])
     # The two boolean masks are the upstream export's; the DiT's own
     # ``attention_mask``/``encoder_attention_mask`` kwargs are not graph inputs -
     # see dit_common.emit_mask_routing()'s docstring for why that is correct here.
-    im_t = oh.make_tensor_value_info(im_name, onnx.TensorProto.BOOL, [1, DIT_VL_SEQ_DIM])
-    bam_t = oh.make_tensor_value_info(bam_name, onnx.TensorProto.BOOL, [1, DIT_VL_SEQ_DIM])
-    y_t = oh.make_tensor_value_info(DIT_OUTPUT_NAME, onnx.TensorProto.BFLOAT16, [1, DIT_SA_SEQ_DIM, output_dim])
+    im_t = oh.make_tensor_value_info(im_name, onnx.TensorProto.BOOL, [DIT_BATCH_DIM, DIT_VL_SEQ_DIM])
+    bam_t = oh.make_tensor_value_info(bam_name, onnx.TensorProto.BOOL, [DIT_BATCH_DIM, DIT_VL_SEQ_DIM])
+    y_t = oh.make_tensor_value_info(DIT_OUTPUT_NAME, onnx.TensorProto.BFLOAT16, [DIT_BATCH_DIM, DIT_SA_SEQ_DIM, output_dim])
 
     emit_timestep_encoding(w, nodes, inits)
     emit_mask_routing(nodes, inits)

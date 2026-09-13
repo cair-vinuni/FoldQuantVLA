@@ -51,6 +51,12 @@ DIT_OUTPUT_NAME = "output"
 #: to a FoldQuant DiT graph unchanged.
 DIT_SA_SEQ_DIM = "sa_seq_len"
 DIT_VL_SEQ_DIM = "vl_seq_len"
+#: Batch is symbolic too, so one graph serves both a robot client (batch 1) and
+#: upstream's vectorised simulation clients, which send one observation per
+#: environment. The plugins already derive their sample count from the runtime
+#: tensor shape rather than assuming 1; only the graph's declared I/O pinned it.
+#: ``build_engines --max-batch`` decides the profile, and defaults to 1.
+DIT_BATCH_DIM = "batch"
 
 
 # ---------------------------------------------------------------------------
