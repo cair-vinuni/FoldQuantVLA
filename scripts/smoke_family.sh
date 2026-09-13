@@ -72,6 +72,12 @@ note () { printf '  %-9s %s\n' "$1" "$2"; }
 run_family () {
   local fam="$1" venv="$R/models/$fam/.venv/bin/python"
   local log="$OUT/$fam.log" dir="$R/models/$fam"
+  # The repo root carries the `foldquant` package and the family directory carries
+  # `gr00t` and `foldquant_integration`. `-m` puts the family directory on sys.path
+  # but not the root, and a script run by path gets neither -- so both imports fail
+  # for anyone whose venv was built without `uv pip install -e .`, which the
+  # per-family install_deps.sh does but a hand-built environment need not.
+  local pp="$R:$dir${PYTHONPATH:+:$PYTHONPATH}"
   echo "═══ $fam"
   [ -x "$venv" ] || { note SKIP "no .venv — see models/$fam/foldquant_integration/README.md"; skip=$((skip+1)); return; }
 
@@ -105,7 +111,7 @@ run_family () {
         note ok "float pipeline found — reusing exports/float"
       else
         note ..   "building the float pipeline first (needed for the untouched modules)"
-        ( cd "$dir" && "$venv" scripts/deployment/build_trt_pipeline.py \
+        ( cd "$dir" && PYTHONPATH="$pp" "$venv" scripts/deployment/build_trt_pipeline.py \
             "${ckpt[@]}" "${data[@]}" "${extra[@]}" --output-dir .smoke_float --steps export,build ) >>"$log" 2>&1 \
           || { note FAIL "float pipeline — see $log"; fail=$((fail+1)); return; }
         float_args=(--float-onnx-dir .smoke_float/onnx)
@@ -116,19 +122,19 @@ run_family () {
 
   local exp="$dir/.smoke_export"
   rm -rf "$exp"
-  ( cd "$dir" && "$venv" -m foldquant_integration.export_foldquant \
+  ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.export_foldquant \
       "${ckpt[@]}" "${data[@]}" "${extra[@]}" --num-calib "$CALIB" --seed 0 \
       --output-dir .smoke_export ) >>"$log" 2>&1 \
     || { note FAIL "export — see $log"; fail=$((fail+1)); return; }
   note ok "export"
 
-  ( cd "$dir" && "$venv" -m foldquant_integration.build_engines \
+  ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.build_engines \
       --onnx-dir .smoke_export/onnx --engine-dir .smoke_export/engines \
       "${float_args[@]}" ) >>"$log" 2>&1 \
     || { note FAIL "build_engines — see $log"; fail=$((fail+1)); return; }
   note ok "build_engines"
 
-  ( cd "$dir" && "$venv" -m foldquant_integration.verify \
+  ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.verify \
       "${ckpt[@]}" "${data[@]}" "${extra[@]}" --engine-dir .smoke_export/engines \
       --num-samples "$SAMPLES" --seed 42 --output "$OUT/$fam.verify.json" ) >>"$log" 2>&1 \
     || { note FAIL "verify — see $log"; fail=$((fail+1)); return; }
