@@ -80,6 +80,7 @@ busy() {
 }
 
 base_pythonpath="${PYTHONPATH:-}"
+fails=0
 for fam in "${FAMILIES[@]}"; do
   venv="$REPO/models/$fam/.venv/bin/python"
   out="$REPO/results/$fam"
@@ -102,7 +103,8 @@ for fam in "${FAMILIES[@]}"; do
       "$venv" -m foldquant_integration.benchmark \
         --model-path "$N17_MODEL" \
         --trt-engine-path "$d" --trt-mode n17_full_pipeline \
-        2>&1 | tee "$out/$arm/benchmark.log" || echo "  FAIL: $fam/$arm (see results/$fam/$arm/benchmark.log)"
+        2>&1 | tee "$out/$arm/benchmark.log" \
+        || { echo "  FAIL: $fam/$arm (see results/$fam/$arm/benchmark.log)"; fails=$((fails+1)); }
     done
     cd "$REPO"; continue
   fi
@@ -124,9 +126,15 @@ for fam in "${FAMILIES[@]}"; do
   "$venv" -m foldquant_integration.benchmark "$@" "${ARMS[@]}" \
       --num-iterations "$ITERS" --warmup "$WARMUP" \
       --output "$out/benchmark.json" 2>&1 | tee "$out/benchmark.log" \
-      || echo "  FAIL: $fam (see results/$fam/benchmark.log)"
+      || { echo "  FAIL: $fam (see results/$fam/benchmark.log)"; fails=$((fails+1)); }
   cd "$REPO"
 done
 
 echo
 echo "done — results under $REPO/results/"
+# A family that fails prints FAIL and the loop moves on; the exit status is what
+# tells a caller (or CI) that the run was not clean.
+if [ "$fails" -gt 0 ]; then
+  echo "$fails benchmark run(s) failed"
+  exit 1
+fi
