@@ -81,7 +81,15 @@ run_family () {
   # but not the root, and a script run by path gets neither -- so both imports fail
   # for anyone whose venv was built without `uv pip install -e .`, which the
   # per-family install_deps.sh does but a hand-built environment need not.
-  local pp="$R:$dir${PYTHONPATH:+:$PYTHONPATH}"
+  local pp="$R:$dir"
+  # Two families use a src/ layout -- pi05 (src/openpi) and smolvla
+  # (src/lerobot) -- and pi05 vendors its client as packages/*/src. Those
+  # directories, not the family directory, are what their imports resolve from.
+  local src
+  for src in "$dir/src" "$dir"/packages/*/src; do
+    [ -d "$src" ] && pp="$pp:$src"
+  done
+  pp="$pp${PYTHONPATH:+:$PYTHONPATH}"
   echo "═══ $fam"
   [ -x "$venv" ] || { note SKIP "no .venv — see models/$fam/foldquant_integration/README.md"; skip=$((skip+1)); return; }
 
