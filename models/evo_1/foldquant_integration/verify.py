@@ -209,10 +209,11 @@ def main(args: VerifyConfig) -> dict[str, Any]:
         },
     }
     logger.info(
-        "fused_tokens cos mean %.5f min %.5f position-min %.4f | actions cos mean %.5f min %.5f max_abs %.4f",
+        "fused_tokens cos mean %.5f min %.5f position-min %.4f | actions cos median %.5f (mean %.5f min %.5f) max_abs %.4f",
         report["fused_tokens"]["cos_mean"],
         report["fused_tokens"]["cos_min"],
         report["fused_tokens"]["position_cos_min"],
+        report["actions"]["cos_median"],
         report["actions"]["cos_mean"],
         report["actions"]["cos_min"],
         report["actions"]["max_abs"],

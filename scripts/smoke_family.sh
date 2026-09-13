@@ -118,7 +118,7 @@ run_family () {
 import json, sys
 d = json.load(open(sys.argv[1]))
 a = d["actions"]
-print(f"  ok        verify    action cos mean {a['cos_mean']:.5f} min {a['cos_min']:.5f} "
+print(f"  ok        verify    action cos median {a['cos_median']:.5f} "
       f"worst |d| {a['max_abs']:.4f}  ({d['num_samples']} held-out)")
 PY
   pass=$((pass+1))

@@ -120,7 +120,7 @@ step)` used.
 
 Held-out observations from episodes the calibration never saw; per observation
 the flow-matching noise is seeded identically for the PyTorch and the engine
-pass. Reported: cosine (mean / min) of the LLM output the action head consumes
+pass. Reported: cosine (median, with mean and min kept in the record) of the LLM output the action head consumes
 and of the decoded action chunk, plus action max-abs error. The PyTorch
 repeatability under the same seeds is reported alongside so the drift is read
 against the sampler's own floor.
@@ -150,10 +150,34 @@ and only the index and the magnitude are available. That is a property of what
 those policies emit, not a gap in the records, and it is why the channel name
 appears in this file only where a GR00T family is under discussion.
 
-For the same reason the tables report the **median** action cosine beside the
-mean and the min. These distributions have tails — a handful of observations
-carry nearly all of the mean's deficit, while the median sits with the bulk —
-so a mean alone reads as a uniform degradation, which is not what the arm does.
+### The drift figure is the median
+
+The tables report the **median** action cosine and nothing else. The mean and
+the minimum stay in every `verify.json`, and they are not the number to read.
+
+A VLA action space is clipped. A chunk is often railed on every channel at
+once, and a cosine between two railed vectors compares their signs: it returns
+1.000 whatever the arm did. A chunk with two channels railed and the rest near
+zero is the opposite — a small absolute error on a near-zero channel rotates
+the vector far, and the cosine falls to near nothing while the arm's behaviour
+barely changes. The distribution is bimodal, and a mean averages across the two
+modes, so it moves with how often the policy was railed rather than with how
+faithful the engine was.
+
+Measured, on a GR00T N1.6 Bridge W4A4 arm over 32 held-out observations: 20
+observations have `|action| ≈ 2.830` (norm² = 8.01, `max|action|` exactly
+1.0000 — eight channels at the rail) and every one of them scores above 0.998.
+Six have `|action| ≈ 1.416` (norm² = 2.01 — two channels at the rail) and they
+carry almost the whole deficit, down to 0.022. Mean 0.842, median 0.9985. The
+same arm's SimplerEnv success rate, 200 episodes over seven tasks, is 0.612
+against bf16's 0.622.
+
+The median is not a predictor of success rate — on that checkpoint the arm with
+the best median has the lowest success rate, and the ordering is close to
+reversed. What it does is agree with the success rate on the question the drift
+table is asking: is the typical action the same action? The mean, on the same
+records, says an arm is broken that the closed-loop measurement shows is not.
+
 Per-observation drift is in each arm's `verify.json`, so a tail can be examined
 rather than inferred.
 

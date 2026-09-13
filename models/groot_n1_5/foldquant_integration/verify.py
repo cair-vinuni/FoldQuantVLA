@@ -250,10 +250,11 @@ def main(args: VerifyConfig) -> dict[str, Any]:
         },
     }
     logger.info(
-        "backbone_features cos mean %.5f min %.5f token-min %.4f | actions cos mean %.5f min %.5f max_abs %.4f",
+        "backbone_features cos mean %.5f min %.5f token-min %.4f | actions cos median %.5f (mean %.5f min %.5f) max_abs %.4f",
         report["backbone_features"]["cos_mean"],
         report["backbone_features"]["cos_min"],
         report["backbone_features"]["token_cos_min"],
+        report["actions"]["cos_median"],
         report["actions"]["cos_mean"],
         report["actions"]["cos_min"],
         report["actions"]["max_abs"],

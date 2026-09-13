@@ -74,21 +74,32 @@ by running a verified arm under the same conditions and watching it fail too.
 
 All six pass on one RTX 4070 Ti SUPER, about 45 minutes for the set:
 
-| family | action cos mean | min | worst \|Δ\| |
-|---|---|---|---|
-| `groot_n1_7` | 0.99980 | 0.99945 | 0.0366 |
-| `groot_n1_6` | 0.99989 | 0.99982 | 0.0293 |
-| `groot_n1_5` | 0.99921 | 0.99535 | 0.3616 |
-| `pi05` | 0.99990 | 0.99981 | 0.0328 |
-| `smolvla` | 0.97474 | 0.90662 | 2.0143 |
-| `evo_1` | 0.98962 | 0.97052 | 1.0474 |
+| family | action cos (median) | worst \|Δ\| |
+|---|---|---|
+| `groot_n1_7` | 0.99983 | 0.0366 |
+| `groot_n1_6` | 0.99989 | 0.0293 |
+| `groot_n1_5` | 0.99984 | 0.3616 |
+| `pi05` | 0.99991 | 0.0328 |
+| `smolvla` | 0.99869 | 2.0143 |
+| `evo_1` | 0.99696 | 1.0474 |
 
 Those are the default schemes on eight calibration observations, so they are
 not the arms in `results/` and should not be compared with them. What they show
 is that each family's export, engine build and verify run on this machine and
-agree with its own bf16 policy to the digits above. SmolVLA and Evo-1 sit lower
-because eight observations is far too few for their four-bit action modules —
-the same effect the full protocol avoids with 128.
+agree with its own **PyTorch** bf16 policy to the digits above — the reference
+pass runs before any engine is installed, so a float engine is an arm in the
+table like any other, not the thing the others are measured against.
+
+The figure is the median, here and in `results/`; the mean and the minimum stay
+in each `verify.json` and are not the number to read. A clipped action space
+makes the per-observation distribution bimodal — a chunk railed on every
+channel scores 1.000 by construction, one with a couple of channels railed lets
+a small absolute error swing the cosine to near zero — so a mean moves with how
+often the policy was railed rather than with how faithful the engine is.
+`results/README.md` has the measurement behind that.
+
+SmolVLA and Evo-1 sit lower because eight observations is far too few for their
+four-bit action modules — the same effect the full protocol avoids with 128.
 
 ## 2b. The other two halves: serving, and the rollout
 

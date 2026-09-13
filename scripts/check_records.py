@@ -38,6 +38,14 @@ SEAM_KEYS = ("backbone_features", "kv_stack", "fused_tokens")
 LEAKY = re.compile(r"(?:/home/|/Users/)[^/\"\s]+/|[A-Za-z]:\\\\+Users\\\\+")
 
 
+def _action_cos(arm: dict) -> float:
+    """An arm's action cosine: the median, falling back to the mean for a record
+    written before the median was stored."""
+    a = arm["actions"]
+    value = a.get("cos_median")
+    return float(a["cos_mean"] if value is None else value)
+
+
 def _seam(record: dict) -> tuple[str, dict] | tuple[None, None]:
     for k in SEAM_KEYS:
         if k in record:
@@ -53,13 +61,18 @@ def check() -> list[str]:
             arms[p.parent.name] = json.loads(p.read_text())
 
         # ---- ladder: float must be at least as close to bf16 as W8A8.
+        # Compared on the median. The mean mixes two modes of a clipped action
+        # space -- fully railed chunks score 1.000 by construction, barely-moving
+        # ones let a small error swing the cosine to near zero -- so it moves with
+        # how often the arm was railed, not with how faithful the engine was.
         # Tolerance 1e-3, not 0: a float TensorRT kernel and an INT8 plugin reduce in
         # different orders, and either can land marginally closer to PyTorch. Measured
         # spread on sound arms is -5.4e-5 to +7.1e-3, so the action cosine alone does
         # not discriminate; the seam check below is the one that caught every real
         # defect (pi05 0.3981 against 0.9880, N1.6 0.3783 against 0.5667).
         if "float" in arms and "w8a8" in arms:
-            f, w = arms["float"]["actions"]["cos_mean"], arms["w8a8"]["actions"]["cos_mean"]
+            f = _action_cos(arms["float"])
+            w = _action_cos(arms["w8a8"])
             if f < w - 1e-3:
                 problems.append(
                     f"{fam}: float arm ({f:.5f}) drifts further than W8A8 ({w:.5f}). "

@@ -80,7 +80,20 @@ def n17_logs() -> dict[str, dict[str, tuple[float, float, float, float]]]:
 
 
 def drift_table() -> str:
-    rows = ["| family | arm | n | mean | median | min | worst \\|Δ\\| |", "|---|---|---|---|---|---|---|"]
+    """Action-cosine drift, reported as the median.
+
+    The mean and the minimum are still in every record, and they are not the
+    number to read. A VLA action space is clipped, so a chunk is often railed on
+    every channel at once; a cosine between two railed vectors compares their
+    signs and comes out at 1.000 whatever the arm did, while a chunk with two
+    channels railed and the rest near zero lets a small absolute error swing the
+    cosine to 0.02. The distribution is bimodal and the mean averages across the
+    two modes -- on a GR00T N1.6 bridge W4A4 arm it read 0.842 while the median
+    read 0.9985 and the arm's LIBERO success rate was within a point of bf16.
+    The median answers the question the table is asking: is the typical action
+    the same action?
+    """
+    rows = ["| family | arm | n | action cos (median) | worst \\|Δ\\| |", "|---|---|---|---|---|"]
     for fam in FAMILIES:
         for arm in ARMS:
             d = _load(RESULTS / fam / arm / "verify.json")
@@ -88,10 +101,7 @@ def drift_table() -> str:
                 continue
             a = d["actions"]
             med = "-" if a.get("cos_median") is None else f"{a['cos_median']:.5f}"
-            rows.append(
-                f"| {LABEL[fam]} | `{arm}` | {d['num_samples']} | {a['cos_mean']:.5f} | {med} "
-                f"| {a['cos_min']:.5f} | {a['max_abs']:.3f} |"
-            )
+            rows.append(f"| {LABEL[fam]} | `{arm}` | {d['num_samples']} | {med} | {a['max_abs']:.3f} |")
     return "\n".join(rows)
 
 

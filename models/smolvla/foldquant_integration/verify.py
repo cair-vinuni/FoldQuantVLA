@@ -217,10 +217,11 @@ def main(args: VerifyConfig) -> dict[str, Any]:
         },
     }
     logger.info(
-        "kv_stack cos mean %.5f min %.5f position-min %.4f | actions cos mean %.5f min %.5f max_abs %.4f",
+        "kv_stack cos mean %.5f min %.5f position-min %.4f | actions cos median %.5f (mean %.5f min %.5f) max_abs %.4f",
         report["kv_stack"]["cos_mean"],
         report["kv_stack"]["cos_min"],
         report["kv_stack"]["position_cos_min"],
+        report["actions"]["cos_median"],
         report["actions"]["cos_mean"],
         report["actions"]["cos_min"],
         report["actions"]["max_abs"],
