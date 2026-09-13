@@ -38,7 +38,9 @@ SIM_PY="$ROOT/gr00t/eval/sim/SimplerEnv/simpler_uv/.venv/bin/python"
 mkdir -p "$OUT_DIR"
 
 SERVE_ARGS=(--model-path "$MODEL_PATH" --embodiment-tag "$EMBODIMENT" --port "$PORT" --use-sim-policy-wrapper)
-[ -n "$ENGINE_DIR" ] && SERVE_ARGS+=(--engine-dir "$ENGINE_DIR")
+# The renderers want the card too: n_envs SAPIEN processes hold over a GiB each,
+# and the PyTorch weights an engine replaced are dead but resident. Drop them.
+[ -n "$ENGINE_DIR" ] && SERVE_ARGS+=(--engine-dir "$ENGINE_DIR" --free-replaced-weights)
 
 echo "[$(date +%T)] server: ${SERVE_ARGS[*]}" | tee "$OUT_DIR/run.log"
 "$ROOT/.venv/bin/python" -m foldquant_integration.serve "${SERVE_ARGS[@]}" > "$OUT_DIR/server.log" 2>&1 &

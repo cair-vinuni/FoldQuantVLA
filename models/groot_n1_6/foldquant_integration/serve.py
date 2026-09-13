@@ -66,6 +66,14 @@ class ServeConfig:
     port: int = 5555
     device: str = "cuda"
 
+    free_replaced_weights: bool = False
+    """Drop the PyTorch weights of every module an engine takes over. They are
+    never read once the engine answers for the module, and on a 16 GB card the
+    GiB they hold is the difference between a vectorised simulation client
+    fitting beside the renderers and failing with ``execute_async_v3() failed``
+    -- TensorRT's way of reporting that it could not get memory. One-way: this
+    server cannot fall back to PyTorch afterwards."""
+
     use_sim_policy_wrapper: bool = False
     """Wrap the policy in upstream's ``Gr00tSimPolicyWrapper`` (flat ``video.*`` /
     ``state.*`` observations), as ``run_gr00t_server.py --use-sim-policy-wrapper``
@@ -78,7 +86,9 @@ def main(args: ServeConfig) -> None:
 
     installed = None
     if args.engine_dir:
-        installed = install_engines(policy, args.engine_dir)
+        installed = install_engines(
+            policy, args.engine_dir, free_replaced=args.free_replaced_weights
+        )
         logger.info("serving with FoldQuant engines: %s", ", ".join(sorted(installed.engines)))
     else:
         logger.info("serving the bf16 PyTorch policy")
