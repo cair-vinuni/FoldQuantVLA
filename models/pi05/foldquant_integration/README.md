@@ -59,7 +59,14 @@ and `benchmark` times it as its own arm.
 
 ## Environment
 
-The upstream pins apply (Python 3.11, torch 2.7.1, transformers 4.53.2 with
+On a Jetson Orin, use `scripts/deployment/orin/install_deps.sh` instead of the
+commands below: it routes torch to the Jetson wheel index (PyPI's aarch64 torch
+does not run on sm_87), takes JetPack's TensorRT from the system rather than
+`tensorrt-cu12`, and applies the same transformers patches without touching the
+uv cache. Python 3.10 is what JetPack 6.2 ships and the only version that index
+publishes wheels for.
+
+On x86, the upstream pins apply (Python 3.11, torch 2.7.1, transformers 4.53.2 with
 openpi's patched Gemma copied over it). From this directory:
 
 ```bash
