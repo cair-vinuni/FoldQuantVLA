@@ -40,6 +40,10 @@
 : "${EVO1_DATA:?set EVO1_DATA to a local LeRobot LIBERO snapshot directory}"
 : "${ITERS:=20}"
 : "${WARMUP:=5}"
+# N16_VIDEO_BACKEND / N15_VIDEO_BACKEND pass --video-backend (e.g. decord where
+# torchcodec does not load), as in scripts/smoke_family.sh.
+# BENCH_ALLOW_BUSY_GPU=1 runs even when another process holds the GPU (timings
+# are then contaminated -- for checking that the path runs, not for results).
 
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -64,8 +68,15 @@ arms_of() {
 busy() {
   local n
   n=$(gpu_busy_pids | grep -c . || true)
-  [ "$n" -gt 0 ] && { echo "  SKIP: $n process(es) already on the GPU"; return 0; }
-  return 1
+  [ "$n" -gt 0 ] || return 1
+  # Same opt-in as SMOKE_ALLOW_BUSY_GPU: lets the benchmark path be exercised on a
+  # shared device, at the cost of latency numbers that are not worth recording.
+  if [ "${BENCH_ALLOW_BUSY_GPU:-0}" = 1 ]; then
+    echo "  WARNING: $n process(es) already on the GPU; timings are contaminated"
+    return 1
+  fi
+  echo "  SKIP: $n process(es) already on the GPU (BENCH_ALLOW_BUSY_GPU=1 to run anyway)"
+  return 0
 }
 
 base_pythonpath="${PYTHONPATH:-}"
@@ -101,8 +112,10 @@ for fam in "${FAMILIES[@]}"; do
   echo "  arms: ${ARMS[*]}"
 
   case "$fam" in
-    groot_n1_6) set -- --model-path "$N16_MODEL" --dataset-path "$GROOT_DATA" --embodiment-tag "$N16_EMBODIMENT" ;;
-    groot_n1_5) set -- --model-path "$N15_MODEL" --dataset-path "$GROOT_DATA" ;;
+    groot_n1_6) set -- --model-path "$N16_MODEL" --dataset-path "$GROOT_DATA" --embodiment-tag "$N16_EMBODIMENT"
+                [ -n "${N16_VIDEO_BACKEND:-}" ] && set -- "$@" --video-backend "$N16_VIDEO_BACKEND" ;;
+    groot_n1_5) set -- --model-path "$N15_MODEL" --dataset-path "$GROOT_DATA"
+                [ -n "${N15_VIDEO_BACKEND:-}" ] && set -- "$@" --video-backend "$N15_VIDEO_BACKEND" ;;
     pi05)       set -- --checkpoint-dir "$PI05_CKPT" --dataset-path "$GROOT_DATA" ;;
     smolvla)    set -- --dataset-path "$SMOLVLA_DATA" --episodes "$SMOLVLA_EPISODES" ;;
     evo_1)      set -- --checkpoint-dir "$EVO1_CKPT" --dataset-path "$EVO1_DATA" ;;
