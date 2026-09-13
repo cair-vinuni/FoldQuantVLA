@@ -63,10 +63,17 @@ against it.
 ```bash
 git submodule update --init third_party/cutlass
 cd models/groot_n1_7
-uv sync && uv pip install -e ../..
-python -m foldquant.kernels build
+# environment: the Orin recipe, not a plain `uv sync` -- see jetson_serve.md, section 1
+uv sync --project scripts/deployment/orin --no-install-project
+export PYTHONPATH=$PWD/../..:$PWD
+TENSORRT_ROOT=/usr python -m foldquant.kernels build
 python -m foldquant.kernels status
 ```
+
+A plain `uv sync` resolves the family's top-level `pyproject.toml`, whose torch
+comes from PyPI and does not run on the Orin's GPU. The full no-sudo setup is in
+[`jetson_serve.md`](jetson_serve.md), which also covers building everything on
+the board and serving it in one script.
 
 `status` must print an Orin slug — `sm87-aarch64-trt10.3`, or whatever
 TensorRT JetPack installed. An x86 slug means you are on the wrong machine.
