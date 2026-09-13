@@ -46,6 +46,7 @@ busy_mib=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/d
 # nvidia-smi answers "[N/A]" for memory on Tegra too; see scripts/_gpu_busy.sh
 # for why the PID check needs the same care.
 . "$R/scripts/_gpu_busy.sh"
+. "$R/scripts/_family_env.sh"
 busy_pids=$(gpu_busy_pids)
 case "$busy_mib" in ''|*N/A*|*Supported*) busy_mib="an unknown amount of" ;; esac
 busy_n=$(printf '%s\n' "$busy_pids" | grep -c . || true)
@@ -67,15 +68,8 @@ run_family () {
   # but not the root, and a script run by path gets neither -- so both imports fail
   # for anyone whose venv was built without `uv pip install -e .`, which the
   # per-family install_deps.sh does but a hand-built environment need not.
-  local pp="$R:$dir"
-  # Two families use a src/ layout -- pi05 (src/openpi) and smolvla
-  # (src/lerobot) -- and pi05 vendors its client as packages/*/src. Those
-  # directories, not the family directory, are what their imports resolve from.
-  local src
-  for src in "$dir/src" "$dir"/packages/*/src; do
-    [ -d "$src" ] && pp="$pp:$src"
-  done
-  pp="$pp${PYTHONPATH:+:$PYTHONPATH}"
+  local pp
+  pp=$(family_pythonpath "$R" "$dir")
   echo "═══ $fam"
   [ -x "$venv" ] || { note SKIP "no .venv — see models/$fam/foldquant_integration/README.md"; skip=$((skip+1)); return; }
 

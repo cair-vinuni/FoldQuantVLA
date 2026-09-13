@@ -60,6 +60,7 @@ arms_of() {
 }
 
 . "$(dirname "${BASH_SOURCE[0]}")/_gpu_busy.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/_family_env.sh"
 busy() {
   local n
   n=$(gpu_busy_pids | grep -c . || true)
@@ -67,6 +68,7 @@ busy() {
   return 1
 }
 
+base_pythonpath="${PYTHONPATH:-}"
 for fam in "${FAMILIES[@]}"; do
   venv="$REPO/models/$fam/.venv/bin/python"
   out="$REPO/results/$fam"
@@ -75,6 +77,9 @@ for fam in "${FAMILIES[@]}"; do
   busy && continue
   mkdir -p "$out"
   cd "$REPO/models/$fam"
+  # from the caller's PYTHONPATH each time, so families do not pile onto each other
+  export PYTHONPATH
+  PYTHONPATH=$(PYTHONPATH="$base_pythonpath" family_pythonpath "$REPO" "$REPO/models/$fam")
 
   if [ "$fam" = groot_n1_7 ]; then
     # upstream's own script: one engine directory per call, stdout is the record
