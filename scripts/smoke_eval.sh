@@ -26,7 +26,8 @@ mkdir -p "$OUT"
 FAMILIES=("$@")
 [ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 smolvla)
 
-busy_n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
+. "$(dirname "${BASH_SOURCE[0]}")/_gpu_busy.sh"
+busy_n=$(gpu_busy_pids | grep -c . || true)
 if [ "${busy_n:-0}" -gt 0 ] && [ "${SMOKE_ALLOW_BUSY_GPU:-0}" != 1 ]; then
   echo "warning: ${busy_n} process(es) already on the GPU; the simulator needs the room."
   echo "         SMOKE_ALLOW_BUSY_GPU=1 to run anyway."

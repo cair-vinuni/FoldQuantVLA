@@ -59,9 +59,10 @@ arms_of() {
   return 0
 }
 
+. "$(dirname "${BASH_SOURCE[0]}")/_gpu_busy.sh"
 busy() {
   local n
-  n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | grep -c . || true)
+  n=$(gpu_busy_pids | grep -c . || true)
   [ "$n" -gt 0 ] && { echo "  SKIP: $n process(es) already on the GPU"; return 0; }
   return 1
 }
