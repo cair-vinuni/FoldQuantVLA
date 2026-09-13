@@ -139,57 +139,8 @@ class InstalledEngines:
         self.engines.clear()
 
 
-def _free_replaced(module) -> int:
-    """Drop the weights of the decoder/transformer blocks an engine took over.
-
-    Only the blocks: the module's *other* children are still executed by
-    PyTorch, before and after the engine. The LLM engine takes ``inputs_embeds``
-    and ``attention_mask``, so the embedding table that produces those is read
-    on every call, and a first draft of this that emptied the whole subtree
-    broke with ``embedding(): argument 'weight' must be Tensor, not NoneType``.
-
-    Returns the bytes released. The module objects stay, so the rebound
-    ``forward`` keeps working; only their tensors go, which is why
-    ``InstalledEngines.remove()`` cannot undo this and it is opt-in.
-    """
-    import torch
-
-    blocks = None
-    for attr in ("layers", "blocks", "transformer_blocks", "h"):
-        for holder in (module, getattr(module, "model", None)):
-            if holder is None:
-                continue
-            candidate = getattr(holder, attr, None)
-            if isinstance(candidate, torch.nn.ModuleList) and len(candidate) > 0:
-                blocks = candidate
-                break
-        if blocks is not None:
-            break
-    if blocks is None:
-        logger.warning("%s: no block list found, weights kept", type(module).__name__)
-        return 0
-
-    freed = 0
-    for block in blocks:
-        for sub in block.modules():
-            for name, tensor in list(sub._parameters.items()):
-                if tensor is not None:
-                    freed += tensor.numel() * tensor.element_size()
-                    sub._parameters[name] = None
-            for name, tensor in list(sub._buffers.items()):
-                if tensor is not None and tensor.is_cuda:
-                    freed += tensor.numel() * tensor.element_size()
-                    sub._buffers[name] = None
-    torch.cuda.empty_cache()
-    return freed
-
-
 def install_engines(
-    policy,
-    engine_dir: str | Path,
-    *,
-    components: Optional[Iterable[str]] = None,
-    free_replaced: bool = False,
+    policy, engine_dir: str | Path, *, components: Optional[Iterable[str]] = None
 ) -> InstalledEngines:
     """Load the plugins an engine directory needs and swap its engines into *policy*.
 
@@ -197,12 +148,6 @@ def install_engines(
     by default every engine present in the directory is installed. An engine
     the directory lacks is skipped with a log line when the selection was
     implicit and is an error when it was asked for.
-
-    ``free_replaced`` drops the PyTorch weights of every module an engine takes
-    over. They are dead weight once the engine answers for the module, but
-    dropping them makes the swap one-way, so it is off by default: ``verify``
-    and ``benchmark`` install and remove engines inside one process and need the
-    originals back. A server never does.
     """
     engine_dir = Path(engine_dir)
     load_plugins(plugin_libs_of(engine_dir))
@@ -220,17 +165,12 @@ def install_engines(
         engine = TensorRTEngine(path)
         if name == "llm":
             engine.validate_binding_names(LLM_INPUTS, {LLM_OUTPUT})
-            module = llm_module(policy)
-            installed._rebind(module, _llm_forward(engine))
+            installed._rebind(llm_module(policy), _llm_forward(engine))
         else:
             engine.validate_binding_names(DIT_INPUTS, {DIT_OUTPUT})
-            module = dit_module(policy)
-            installed._rebind(module, _dit_forward(engine))
+            installed._rebind(dit_module(policy), _dit_forward(engine))
         installed.engines[name] = engine
         logger.info("%s: serving %s", name, path)
-        if free_replaced:
-            logger.info("%s: released %.2f GiB of replaced PyTorch weights", name,
-                        _free_replaced(module) / 2**30)
     if not installed.engines:
         raise FileNotFoundError(f"no FoldQuant engine found in {engine_dir}")
     return installed
