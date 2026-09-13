@@ -123,7 +123,10 @@ export CPLUS_INCLUDE_PATH="${CUDA_HOME}/include:${CPLUS_INCLUDE_PATH:-}"
 rm -rf /tmp/torchcodec
 git clone --depth 1 --branch v0.10.0 https://github.com/pytorch/torchcodec.git /tmp/torchcodec
 cd /tmp/torchcodec
-I_CONFIRM_THIS_IS_NOT_A_LICENSE_VIOLATION=1 uv pip install --python "$VENV_PYTHON" . --no-build-isolation
+# --force-reinstall: the version string matches whatever torchcodec is already
+# present, so without it uv treats the requirement as satisfied and keeps that
+# copy instead of this build.
+I_CONFIRM_THIS_IS_NOT_A_LICENSE_VIOLATION=1 uv pip install --python "$VENV_PYTHON" . --no-build-isolation --force-reinstall --no-deps
 cd "$REPO_ROOT" && rm -rf /tmp/torchcodec
 
 echo ""
