@@ -9,9 +9,12 @@ an older minor within the same major.
 So: **ONNX crosses, binaries do not.** Export on the workstation, build and
 test on the board.
 
-> The steps are derived from the code paths they invoke and every flag is
-> checked against its CLI, but they have not been run end to end on an Orin —
-> `results/README.md` still carries the Jetson latency row as pending.
+> The per-family scripts (`scripts/smoke_family.sh`, `smoke_serve.sh`,
+> `smoke_eval.sh`, `bench_all.sh`) have been run on a Jetson AGX Orin
+> (JetPack 6.2, CUDA 12.6, TensorRT 10.3, Python 3.10) for GR00T N1.7, N1.6,
+> N1.5, π₀.₅ and Evo-1 — see [Status on Orin](#status-on-orin). **SmolVLA does
+> not run on this platform yet.** No latency or accuracy figure from those runs
+> is recorded: they check that each path completes, not what it measures.
 
 ## 1. Export, on the workstation
 
@@ -60,10 +63,17 @@ against it.
 ```bash
 git submodule update --init third_party/cutlass
 cd models/groot_n1_7
-uv sync && uv pip install -e ../..
-python -m foldquant.kernels build
+# environment: the Orin recipe, not a plain `uv sync` -- see jetson_serve.md, section 1
+uv sync --project scripts/deployment/orin --no-install-project
+export PYTHONPATH=$PWD/../..:$PWD
+TENSORRT_ROOT=/usr python -m foldquant.kernels build
 python -m foldquant.kernels status
 ```
+
+A plain `uv sync` resolves the family's top-level `pyproject.toml`, whose torch
+comes from PyPI and does not run on the Orin's GPU. The full no-sudo setup is in
+[`jetson_serve.md`](jetson_serve.md), which also covers building everything on
+the board and serving it in one script.
 
 `status` must print an Orin slug — `sm87-aarch64-trt10.3`, or whatever
 TensorRT JetPack installed. An x86 slug means you are on the wrong machine.
@@ -136,3 +146,55 @@ arms should hold, the magnitudes will not. Measure, do not extrapolate.
 | engines load, actions are wrong | a graph's `.onnx.data` did not transfer, or the engine directory does not match the checkpoint being served |
 
 The third is the dangerous one: nothing reports it. Step 5 is how you find it.
+
+## Status on Orin
+
+Checked on a Jetson AGX Orin 64 GB, JetPack 6.2 (L4T R36.4.3), CUDA 12.6,
+TensorRT 10.3.0, with each family in its own virtualenv built from its
+`scripts/deployment/orin` recipe where one exists. "Runs" means the script
+completed on that board; these were checks that the path works, so no number
+from them belongs in `results/`.
+
+| family | export → build → verify | serve (bf16 / engines) | LIBERO rollout | benchmark |
+|---|---|---|---|---|
+| GR00T N1.7 | runs | runs / runs | runs | runs |
+| GR00T N1.6 | runs | runs / runs | runs | runs |
+| GR00T N1.5 | runs | runs / runs | runs | runs |
+| π₀.₅ | runs | runs / runs | client not covered | runs |
+| Evo-1 | runs | runs / runs | client not covered | runs |
+| SmolVLA | **does not run** | — | — | — |
+
+Platform notes that are not bugs in this repository:
+
+- GPTQ's Cholesky falls back to the CPU on every family: JetPack 6.2's
+  `libcusolver.so.11` is older than the one torch expects. It is logged and
+  only costs calibration time.
+- The LIBERO rollouts need the simulator stack from each family's integration
+  README (`robosuite==1.4.0`, `mujoco==2.3.7`, ...); those wheels install on
+  aarch64 without changing anything else in the environment.
+- torchcodec does not load in the GR00T N1.5 venv; set
+  `N15_VIDEO_BACKEND=decord` for `smoke_family.sh` and `bench_all.sh`.
+- π₀.₅ and Evo-1 roll out LIBERO from a separate client environment against
+  a running server, which `smoke_eval.sh` does not cover; only their server
+  side (the serve column) was checked.
+
+### SmolVLA
+
+SmolVLA cannot currently be installed on an Orin running JetPack 6:
+
+- The vendored LeRobot requires Python 3.12 (`requires-python = ">=3.12"`), and
+  that is not a packaging formality — the source uses PEP 695 syntax
+  (`class DataProcessorPipeline[TInput, TOutput]` in
+  `src/lerobot/processor/pipeline.py`, `type FeatureDict = ...` in
+  `src/lerobot/datasets/aggregate.py`), which is a `SyntaxError` on 3.10.
+- A CUDA-enabled torch for the Orin's GPU (sm_87) comes from the Jetson wheel
+  index (`pypi.jetson-ai-lab.io/jp6/cu126`), which publishes cp310 wheels only.
+  The aarch64 torch wheels on PyPI are not built for sm_87 and cannot use the
+  Orin's GPU.
+
+So there is no environment in which both hold. The ways out are a CUDA torch
+built from source for Python 3.12 on the board, a JetPack release whose wheel
+index covers 3.12, or back-porting the PEP 695 syntax in the vendored LeRobot
+to 3.10 — none of which is done here. Until one is, `smoke_*.sh` report
+SmolVLA as skipped (no `.venv`) on an Orin.
+

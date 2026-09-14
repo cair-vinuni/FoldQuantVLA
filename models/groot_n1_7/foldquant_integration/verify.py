@@ -187,10 +187,14 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     engine_dir = Path(args.engine_dir)
     manifest = _load_manifest(engine_dir)
-    split = _load_manifest(Path(args.split_from)) if args.split_from else manifest
+    split_dir = Path(args.split_from) if args.split_from else engine_dir
+    split = _load_manifest(split_dir) if args.split_from else manifest
     if split is None:
+        # Name the directory whose manifest is actually missing. With --split-from
+        # that is split_from, not engine_dir, and naming engine_dir sent the user to
+        # a file that exists.
         raise FileNotFoundError(
-            f"{engine_dir / MANIFEST_NAME} not found: a float engine directory carries no calibration "
+            f"{split_dir / MANIFEST_NAME} not found: a float engine directory carries no calibration "
             "split. Pass --split-from <quantized engine dir> to score it on that arm's held-out set."
         )
     calib_episodes = sorted({s["episode"] for s in split["calibration"]["samples"]})

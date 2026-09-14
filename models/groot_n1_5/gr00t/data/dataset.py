@@ -379,12 +379,23 @@ class LeRobotSingleDataset(Dataset):
                 state_action_meta = le_modality_meta.get_key_meta(f"{our_modality}.{subkey}")
                 assert isinstance(state_action_meta, LeRobotStateActionMetadata)
                 le_modality = state_action_meta.original_key
-                for stat_name in le_statistics[le_modality]:
-                    indices = np.arange(
-                        state_action_meta.start,
-                        state_action_meta.end,
-                    )
-                    stat = np.array(le_statistics[le_modality][stat_name])
+                # LeRobot writes per-dataset scalars next to the per-dimension
+                # statistics -- v2.1 emits `count` as shape (1,) alongside
+                # mean/std/min/max/q01/q99 of the feature's own width. Slicing a
+                # scalar by a subkey's dimension range raises IndexError for every
+                # subkey past the first, and for the first one silently stores the
+                # frame count as that subkey's statistic. Keep only the entries
+                # whose length matches the feature.
+                stats = le_statistics[le_modality]
+                width = max((np.asarray(v).shape[0] for v in stats.values() if np.asarray(v).ndim), default=0)
+                indices = np.arange(
+                    state_action_meta.start,
+                    state_action_meta.end,
+                )
+                for stat_name in stats:
+                    stat = np.array(stats[stat_name])
+                    if stat.ndim == 0 or stat.shape[0] != width:
+                        continue
                     dataset_statistics[our_modality][subkey][stat_name] = stat[indices].tolist()
 
         # 3. Full dataset metadata

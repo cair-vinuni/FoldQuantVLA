@@ -82,6 +82,12 @@ ABI-mismatched library. The `libero` extra pulls `hf-libero`, so the LIBERO
 suites need no separate checkout; rendering wants `MUJOCO_GL=egl` on a
 headless machine.
 
+**Not on Jetson AGX Orin (JetPack 6).** The Python 3.12 requirement is real —
+the vendored LeRobot uses PEP 695 generics — and the only CUDA torch for the
+Orin's GPU is published for Python 3.10. There is no working environment for
+this family on that board; see
+[`docs/deploy/jetson.md`](../../../docs/deploy/jetson.md#smolvla).
+
 ## Workflow
 
 Every step takes `--checkpoint` (a directory or hub id; SmolVLA keeps its

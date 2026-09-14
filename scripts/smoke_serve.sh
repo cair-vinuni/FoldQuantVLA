@@ -22,7 +22,9 @@ WAIT="${SMOKE_SERVE_WAIT:-180}"
 FAMILIES=("$@")
 [ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 pi05 smolvla evo_1)
 
-busy_n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
+. "$(dirname "${BASH_SOURCE[0]}")/_gpu_busy.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/_family_env.sh"
+busy_n=$(gpu_busy_pids | grep -c . || true)
 if [ "${busy_n:-0}" -gt 0 ] && [ "${SMOKE_ALLOW_BUSY_GPU:-0}" != 1 ]; then
   echo "warning: ${busy_n} process(es) already on the GPU; a server needs the room."
   echo "         SMOKE_ALLOW_BUSY_GPU=1 to run anyway."
@@ -55,7 +57,10 @@ serve_one () {
   local eng="${!eng_var:-}"
   [ -n "$eng" ] && args+=(--engine-dir "$eng")
 
-  ( cd "$dir" && "$venv" -m foldquant_integration.serve "${args[@]}" --port "$PORT" ) >"$log" 2>&1 &
+  # `exec` so that $! is the server itself rather than a subshell wrapping it:
+  # killing the subshell would leave the server running and holding the port.
+  ( cd "$dir" && PYTHONPATH="$(family_pythonpath "$R" "$dir")" \
+      exec "$venv" -m foldquant_integration.serve "${args[@]}" --port "$PORT" ) >"$log" 2>&1 &
   local pid=$!
   # Wait on the socket, not on the log. Each family announces readiness in its own
   # words — "listening on", "port %d", "ready", "running at ws://" — and matching

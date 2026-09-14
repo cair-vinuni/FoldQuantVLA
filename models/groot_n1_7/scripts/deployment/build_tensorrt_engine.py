@@ -433,6 +433,19 @@ def build_full_pipeline(
         logger.info(f"  {name:20s} -> {status}")
     logger.info("=" * 80)
 
+    # A component that raised must not be reported as a successful pipeline.
+    # Without this the caller sees exit status 0 and a "Complete!" summary while
+    # the engine directory is short a component, and the runtime then falls back
+    # to PyTorch for it silently (trt_model_forward.setup_tensorrt_engines).
+    failed = [(name, status) for name, _, status in results if status != "SUCCESS"]
+    if failed:
+        raise RuntimeError(
+            "full-pipeline build failed for "
+            + ", ".join(f"{name} ({status})" for name, status in failed)
+        )
+
+    return results
+
 
 # ============================================================
 # Main

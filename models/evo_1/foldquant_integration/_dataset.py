@@ -67,15 +67,24 @@ class LeRobotFrames:
         for path in files:
             table = pq.read_table(path)
             columns = set(table.column_names)
-            required = {"episode_index", "length", "data/chunk_index", "data/file_index"}
+            # Only episode_index and length are read on the frame path. The
+            # data/chunk_index and data/file_index columns are deliberately not
+            # trusted -- _episode_files() scans the data files instead, because a
+            # partial fetch leaves the metadata pointing at the wrong file -- so
+            # refusing a dataset that omits them rejected valid input for a value
+            # this reader then ignores.
+            required = {"episode_index", "length"}
             missing = required - columns
             if missing:
                 raise ValueError(f"{path} lacks {sorted(missing)}; is this a v3 LeRobot dataset?")
+            n = table.num_rows
+            chunks = table.column("data/chunk_index").to_pylist() if "data/chunk_index" in columns else [0] * n
+            files = table.column("data/file_index").to_pylist() if "data/file_index" in columns else [0] * n
             for ep, length, chunk, file_index in zip(
                 table.column("episode_index").to_pylist(),
                 table.column("length").to_pylist(),
-                table.column("data/chunk_index").to_pylist(),
-                table.column("data/file_index").to_pylist(),
+                chunks,
+                files,
                 strict=True,
             ):
                 entries[int(ep)] = EpisodeEntry(int(ep), int(length), int(chunk), int(file_index))
@@ -128,7 +137,18 @@ class LeRobotFrames:
         """
         tasks_path = self.root / "meta" / "tasks.parquet"
         if not tasks_path.is_file():
-            return {}
+            # LeRobot v2.x ships the same mapping as meta/tasks.jsonl. Without this
+            # fallback a dataset that has no per-frame `task` column silently sends
+            # an empty prompt, and nothing downstream reports it.
+            jsonl = self.root / "meta" / "tasks.jsonl"
+            if not jsonl.is_file():
+                return {}
+            out: dict[int, str] = {}
+            for line in jsonl.read_text().splitlines():
+                if line.strip():
+                    row = json.loads(line)
+                    out[int(row["task_index"])] = str(row["task"])
+            return out
         table = pq.read_table(tasks_path)
         names = table.column_names
         text_column = next((n for n in names if n != "task_index"), None)
@@ -152,6 +172,20 @@ class LeRobotFrames:
         if isinstance(value, dict) and "bytes" in value:  # HF Image struct
             return np.asarray(Image.open(io.BytesIO(value["bytes"])).convert("RGB"), dtype=np.uint8)
         array = np.asarray(value)
+        # A `list<uint8>` image column arrives flat. Reshape it to the shape
+        # meta/info.json declares; otherwise a 1-D array passed every check here and
+        # only failed later in calibration.client_request with
+        # "TypeError: object of type 'int' has no len()", which says nothing about
+        # the cause.
+        declared = self.features.get(key, {}).get("shape")
+        if array.ndim == 1 and declared:
+            expected = int(np.prod(declared))
+            if array.size != expected:
+                raise ValueError(
+                    f"{key}: stored as a flat array of {array.size} values, but meta/info.json "
+                    f"declares shape {list(declared)} ({expected} values)"
+                )
+            array = array.reshape(declared)
         if array.dtype != np.uint8:
             scaled = array.max() <= 1.0
             array = np.rint(array * 255.0).clip(0, 255).astype(np.uint8) if scaled else array.astype(np.uint8)

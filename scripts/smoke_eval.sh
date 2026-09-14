@@ -26,7 +26,9 @@ mkdir -p "$OUT"
 FAMILIES=("$@")
 [ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 smolvla)
 
-busy_n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
+. "$(dirname "${BASH_SOURCE[0]}")/_gpu_busy.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/_family_env.sh"
+busy_n=$(gpu_busy_pids | grep -c . || true)
 if [ "${busy_n:-0}" -gt 0 ] && [ "${SMOKE_ALLOW_BUSY_GPU:-0}" != 1 ]; then
   echo "warning: ${busy_n} process(es) already on the GPU; the simulator needs the room."
   echo "         SMOKE_ALLOW_BUSY_GPU=1 to run anyway."
@@ -82,7 +84,8 @@ eval_one () {
   fi
 
   rm -rf "$res"
-  ( cd "$dir" && env MUJOCO_GL=egl ${env_pass[@]+"${env_pass[@]}"} \
+  ( cd "$dir" && env MUJOCO_GL=egl PYTHONPATH="$(family_pythonpath "$R" "$dir")" \
+      ${env_pass[@]+"${env_pass[@]}"} \
       "$venv" -m foldquant_integration.eval_libero "${args[@]}" \
       --suites "$SUITE" --n-episodes "$EPISODES" --output "$res" ) >"$log" 2>&1 \
     || { note FAIL "rollout -- see $log"; fail=$((fail+1)); return; }

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 
@@ -47,6 +48,38 @@ def ensure_deployment_on_path() -> None:
 LIBERO_DIR = UPSTREAM_ROOT / "external_dependencies" / "LIBERO"
 
 
+def _seed_libero_config(benchmark_root: Path) -> None:
+    """Write LIBERO's default config if none exists yet (idempotent).
+
+    ``libero.libero`` asks on stdin, at import time, whether to use a custom
+    dataset folder whenever ``$LIBERO_CONFIG_PATH/config.yaml`` (default
+    ``~/.libero``) is missing. Under a redirected or closed stdin -- a script,
+    a log file, a CI job -- that is an ``EOFError`` on a fresh machine, or a
+    prompt nobody sees while the run appears to hang. Answer it the way
+    upstream's ``setup_libero.sh`` does: the default paths of this checkout.
+    An existing config is left untouched.
+    """
+    config_dir = Path(os.environ.get("LIBERO_CONFIG_PATH", os.path.expanduser("~/.libero")))
+    config_file = config_dir / "config.yaml"
+    if config_file.exists():
+        return
+    import yaml
+
+    root = str(benchmark_root)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    with open(config_file, "w") as f:
+        yaml.dump(
+            {
+                "benchmark_root": root,
+                "bddl_files": os.path.join(root, "./bddl_files"),
+                "init_states": os.path.join(root, "./init_files"),
+                "datasets": os.path.join(root, "../datasets"),
+                "assets": os.path.join(root, "./assets"),
+            },
+            f,
+        )
+
+
 def ensure_libero_on_path() -> None:
     """Make the pinned LIBERO checkout importable (idempotent).
 
@@ -61,3 +94,4 @@ def ensure_libero_on_path() -> None:
     d = str(LIBERO_DIR)
     if d not in sys.path:
         sys.path.insert(0, d)
+    _seed_libero_config(LIBERO_DIR / "libero" / "libero")

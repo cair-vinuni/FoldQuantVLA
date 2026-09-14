@@ -40,6 +40,10 @@
 : "${EVO1_DATA:?set EVO1_DATA to a local LeRobot LIBERO snapshot directory}"
 : "${ITERS:=20}"
 : "${WARMUP:=5}"
+# N16_VIDEO_BACKEND / N15_VIDEO_BACKEND pass --video-backend (e.g. decord where
+# torchcodec does not load), as in scripts/smoke_family.sh.
+# BENCH_ALLOW_BUSY_GPU=1 runs even when another process holds the GPU (timings
+# are then contaminated -- for checking that the path runs, not for results).
 
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -59,13 +63,24 @@ arms_of() {
   return 0
 }
 
+. "$(dirname "${BASH_SOURCE[0]}")/_gpu_busy.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/_family_env.sh"
 busy() {
   local n
-  n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | grep -c . || true)
-  [ "$n" -gt 0 ] && { echo "  SKIP: $n process(es) already on the GPU"; return 0; }
-  return 1
+  n=$(gpu_busy_pids | grep -c . || true)
+  [ "$n" -gt 0 ] || return 1
+  # Same opt-in as SMOKE_ALLOW_BUSY_GPU: lets the benchmark path be exercised on a
+  # shared device, at the cost of latency numbers that are not worth recording.
+  if [ "${BENCH_ALLOW_BUSY_GPU:-0}" = 1 ]; then
+    echo "  WARNING: $n process(es) already on the GPU; timings are contaminated"
+    return 1
+  fi
+  echo "  SKIP: $n process(es) already on the GPU (BENCH_ALLOW_BUSY_GPU=1 to run anyway)"
+  return 0
 }
 
+base_pythonpath="${PYTHONPATH:-}"
+fails=0
 for fam in "${FAMILIES[@]}"; do
   venv="$REPO/models/$fam/.venv/bin/python"
   out="$REPO/results/$fam"
@@ -74,6 +89,9 @@ for fam in "${FAMILIES[@]}"; do
   busy && continue
   mkdir -p "$out"
   cd "$REPO/models/$fam"
+  # from the caller's PYTHONPATH each time, so families do not pile onto each other
+  export PYTHONPATH
+  PYTHONPATH=$(PYTHONPATH="$base_pythonpath" family_pythonpath "$REPO" "$REPO/models/$fam")
 
   if [ "$fam" = groot_n1_7 ]; then
     # upstream's own script: one engine directory per call, stdout is the record
@@ -85,7 +103,8 @@ for fam in "${FAMILIES[@]}"; do
       "$venv" -m foldquant_integration.benchmark \
         --model-path "$N17_MODEL" \
         --trt-engine-path "$d" --trt-mode n17_full_pipeline \
-        2>&1 | tee "$out/$arm/benchmark.log" || echo "  FAIL: $fam/$arm (see results/$fam/$arm/benchmark.log)"
+        2>&1 | tee "$out/$arm/benchmark.log" \
+        || { echo "  FAIL: $fam/$arm (see results/$fam/$arm/benchmark.log)"; fails=$((fails+1)); }
     done
     cd "$REPO"; continue
   fi
@@ -95,8 +114,10 @@ for fam in "${FAMILIES[@]}"; do
   echo "  arms: ${ARMS[*]}"
 
   case "$fam" in
-    groot_n1_6) set -- --model-path "$N16_MODEL" --dataset-path "$GROOT_DATA" --embodiment-tag "$N16_EMBODIMENT" ;;
-    groot_n1_5) set -- --model-path "$N15_MODEL" --dataset-path "$GROOT_DATA" ;;
+    groot_n1_6) set -- --model-path "$N16_MODEL" --dataset-path "$GROOT_DATA" --embodiment-tag "$N16_EMBODIMENT"
+                [ -n "${N16_VIDEO_BACKEND:-}" ] && set -- "$@" --video-backend "$N16_VIDEO_BACKEND" ;;
+    groot_n1_5) set -- --model-path "$N15_MODEL" --dataset-path "$GROOT_DATA"
+                [ -n "${N15_VIDEO_BACKEND:-}" ] && set -- "$@" --video-backend "$N15_VIDEO_BACKEND" ;;
     pi05)       set -- --checkpoint-dir "$PI05_CKPT" --dataset-path "$GROOT_DATA" ;;
     smolvla)    set -- --dataset-path "$SMOLVLA_DATA" --episodes "$SMOLVLA_EPISODES" ;;
     evo_1)      set -- --checkpoint-dir "$EVO1_CKPT" --dataset-path "$EVO1_DATA" ;;
@@ -105,9 +126,15 @@ for fam in "${FAMILIES[@]}"; do
   "$venv" -m foldquant_integration.benchmark "$@" "${ARMS[@]}" \
       --num-iterations "$ITERS" --warmup "$WARMUP" \
       --output "$out/benchmark.json" 2>&1 | tee "$out/benchmark.log" \
-      || echo "  FAIL: $fam (see results/$fam/benchmark.log)"
+      || { echo "  FAIL: $fam (see results/$fam/benchmark.log)"; fails=$((fails+1)); }
   cd "$REPO"
 done
 
 echo
 echo "done — results under $REPO/results/"
+# A family that fails prints FAIL and the loop moves on; the exit status is what
+# tells a caller (or CI) that the run was not clean.
+if [ "$fails" -gt 0 ]; then
+  echo "$fails benchmark run(s) failed"
+  exit 1
+fi

@@ -35,6 +35,7 @@ Returns messages with VLAStepData as defined in types.py.
 from collections import defaultdict
 import json
 import logging
+import os
 from pathlib import Path
 import random
 from typing import Any
@@ -280,18 +281,36 @@ class LeRobotEpisodeLoader:
         if "video" in modality_configs and "video" in self.modality_meta:
             config_keys = modality_configs["video"].modality_keys
             meta_keys = list(self.modality_meta["video"].keys())
-            needs_mapping = any(k not in self.modality_meta["video"] for k in config_keys)
-            if needs_mapping:
-                assert len(config_keys) == len(meta_keys), (
-                    f"Cannot auto-map video keys: config has {len(config_keys)} keys "
-                    f"{config_keys} but dataset modality meta has {len(meta_keys)} keys "
-                    f"{meta_keys}. Counts must match for positional mapping."
-                )
+            missing = [k for k in config_keys if k not in self.modality_meta["video"]]
+            if missing:
+                # Mapping by position is a guess about which camera is which. When it
+                # guesses wrong the model is calibrated and served with its views
+                # swapped, which produces confident, well-formed, meaningless motion
+                # and no error anywhere. A single unmatched name used to remap ALL of
+                # them, in modality.json insertion order, behind a logging.warning.
+                # N1.5 and N1.6 refuse here; make the guess opt-in instead of default.
+                if os.environ.get("GR00T_ALLOW_POSITIONAL_VIDEO_MAP") != "1":
+                    raise ValueError(
+                        f"Video modality_keys {sorted(missing)} from the checkpoint's "
+                        f"modality config are not in the dataset's modality.json. "
+                        f"The checkpoint expects: {list(config_keys)}; "
+                        f"modality.json defines: {meta_keys}. Rename the keys in "
+                        f"modality.json to match the checkpoint. Only if you are "
+                        f"certain the two lists are in the same camera order, set "
+                        f"GR00T_ALLOW_POSITIONAL_VIDEO_MAP=1 to map them by position."
+                    )
+                if len(config_keys) != len(meta_keys):
+                    raise ValueError(
+                        f"Cannot map video keys by position: the checkpoint has "
+                        f"{len(config_keys)} {list(config_keys)} but modality.json has "
+                        f"{len(meta_keys)} {meta_keys}."
+                    )
                 for config_key, meta_key in zip(config_keys, meta_keys):
                     self._video_key_mapping[config_key] = meta_key
                 logging.warning(
                     f"Video key mismatch between model config and dataset. "
-                    f"Auto-mapping by position: {self._video_key_mapping}"
+                    f"Mapping by position as requested: {self._video_key_mapping}. "
+                    f"Verify this is the camera order you intend."
                 )
 
         return modality_configs

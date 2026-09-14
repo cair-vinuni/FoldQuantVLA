@@ -138,6 +138,24 @@ def _make_wrapper(policy):
     return InProcessGR00TPolicy(policy)
 
 
+def _task_init_states(task_suite, task_id: int):
+    """``task_suite.get_task_init_states(task_id)``, loadable on torch >= 2.6.
+
+    LIBERO saves each task's initial states as a pickled NumPy array and reads
+    them back with a bare ``torch.load``. torch 2.6 turned ``weights_only`` on by
+    default, which refuses that pickle, so every task raises before its first
+    episode and the run reports 0/0. The ``orin`` extra pins torch 2.8 (``base``
+    pins 2.5.1, where it still loads). The files come from the LIBERO checkout
+    itself, so load them the way LIBERO was written to.
+    """
+    import torch
+    from libero.libero import get_libero_path
+
+    task = task_suite.get_task(task_id)
+    path = os.path.join(get_libero_path("init_states"), task.problem_folder, task.init_states_file)
+    return torch.load(path, weights_only=False)
+
+
 def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, Any]:
     from libero.libero import benchmark
 
@@ -145,7 +163,7 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
 
     task_suite = benchmark.get_benchmark_dict()[suite]()
     task = task_suite.get_task(task_id)
-    initial_states = task_suite.get_task_init_states(task_id)
+    initial_states = _task_init_states(task_suite, task_id)
     env, task_description = get_libero_env(task, resolution=args.resolution)
     max_steps = MAX_STEPS[suite]
     successes = 0
