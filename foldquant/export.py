@@ -96,6 +96,12 @@ def _act_fold_knobs(scheme: str, params: Mapping[str, Any]) -> Dict[str, Any]:
     completely and hands every outlier to per-ROW weight quantization, where one
     cold channel then sets the row scale for all of them; 0.5 splits the burden.
     """
+    unknown = sorted(set(params) - _ACT_FOLD_PARAMS)
+    if unknown:
+        raise ValueError(
+            f"{scheme}: unknown action-module fold param(s) {unknown}; "
+            f"the action-module folds read only {sorted(_ACT_FOLD_PARAMS)}."
+        )
     fwht = schemes.uses_fwht(scheme)
     fold_order = str(params.get("sq_fold_order", "before" if fwht else "after"))
     if fold_order not in ("before", "after"):
@@ -103,7 +109,28 @@ def _act_fold_knobs(scheme: str, params: Mapping[str, Any]) -> Dict[str, Any]:
     knobs: Dict[str, Any] = {"fwht": fwht, "fold_order": fold_order}
     if fold_order == "before":
         knobs["alpha"] = float(params.get("sq_alpha", 0.5))
+    elif "sq_alpha" in params:
+        # The "after" fold is amax-only; dropping the value here would build an
+        # alpha=1.0 graph while the manifest records the requested alpha.
+        raise ValueError(
+            f"{scheme}: sq_alpha applies to sq_fold_order='before' only; the 'after' fold "
+            "(the default for the dense-rotation _r scheme) is amax-only. Pass "
+            "sq_fold_order='before' with it, or drop sq_alpha."
+        )
     return knobs
+
+
+#: The knobs :func:`_act_fold_knobs` reads; anything else was being dropped silently.
+_ACT_FOLD_PARAMS = frozenset({"sq_alpha", "sq_fold_order"})
+
+
+def _refuse_params(module: str, scheme: str, params: Mapping[str, Any]) -> None:
+    """A scheme that folds nothing has no knob to apply; refuse params instead of ignoring them."""
+    if params:
+        raise ValueError(
+            f"{module} {scheme!r} folds nothing, so fold params {sorted(params)} would be ignored "
+            "(and still recorded in the export manifest). Drop them or pick a folded scheme."
+        )
 
 
 # --------------------------------------------------------------------------- LLM
@@ -136,6 +163,8 @@ def export_llm(
     params = dict(params or {})
     onnx_path = Path(onnx_path)
     folded = scheme in schemes.LLM_FOLDED_SCHEMES
+    if not folded:
+        _refuse_params("llm", scheme, params)
     loop = _require_loop(scheme, forward_loop) if folded else forward_loop
     decoder = resolve_qwen3_decoder(module)
     prefix_graph = calibrate.is_llama(module) or calibrate.is_gemma(module)
@@ -294,6 +323,7 @@ def export_dit(
     if scheme == schemes.W8A8:
         from .dit_int8 import build_dit_plugin_onnx
 
+        _refuse_params("dit", scheme, params)
         build_dit_plugin_onnx(module, onnx_path)
         return ExportResult("dit", scheme, onnx_path, libs)
 
@@ -363,7 +393,9 @@ def export_expert(
         from .smolvla_expert import compute_smolvla_expert_sq_scales as compute
 
     kwargs: Dict[str, Any] = {}
-    if scheme != schemes.W8A8:
+    if scheme == schemes.W8A8:
+        _refuse_params("expert", scheme, params)
+    else:
         loop = _require_loop(scheme, forward_loop)
         knobs = _act_fold_knobs(scheme, params)
         scale_kwargs: Dict[str, Any] = {"fold_order": knobs["fold_order"]}
@@ -401,6 +433,7 @@ def export_action_head(
     if scheme == schemes.W8A8:
         from .evo1_head_int8 import build_evo1_head_plugin_onnx
 
+        _refuse_params("action_head", scheme, params)
         build_evo1_head_plugin_onnx(module, onnx_path)
         return ExportResult("action_head", scheme, onnx_path, libs)
 
