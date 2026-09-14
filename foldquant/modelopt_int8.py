@@ -3,27 +3,32 @@
 
 """NVIDIA ModelOpt INT8 SmoothQuant: a Q/DQ baseline arm to compare the FoldQuant folds against.
 
-Nothing here is a FoldQuant fold. The arm reproduces the VLA-OPT preset
-``groot_n1_7/tensorrt/modelopt_w8a8_smoothquant`` step for step, so its engines
-behave like the ones VLA-OPT builds, but it emits upstream-compatible graphs
-that the FoldQuant engine builder, verifier and server load unchanged:
+Nothing here is a FoldQuant fold. The arm reproduces the VLA-OPT presets
+``groot_n1_7/tensorrt/modelopt_w8a8_smoothquant`` and
+``pi05/tensorrt/modelopt_w8a8_smoothquant`` step for step, so its engines
+behave like the ones VLA-OPT builds, but it emits graphs under each family's
+FoldQuant I/O contract that the FoldQuant engine builder, verifier and server
+load unchanged:
 
-1. **Capture.** A forward-pre-hook records every ``(args, kwargs)`` call a
-   module receives while the whole bf16 policy replays the calibration
-   observations (seeded per observation). All quantized modules are captured in
-   one float pass, so the DiT calibrates on float-LLM activations (no cascade).
+1. **Capture.** Every call a quantized module receives is recorded while the
+   whole bf16 policy replays the calibration observations (seeded per
+   observation). All quantized modules are captured in one float pass, so a
+   downstream module calibrates on float upstream activations (no cascade).
 2. **Quantize.** ``mtq.INT8_SMOOTHQUANT_CFG`` (per-channel INT8 weights,
    per-tensor static INT8 activations, SmoothQuant pre-quant scales), with the
    norm / action-projection leaves excluded, calibrated by replaying the
-   captured calls into the module itself (:func:`quantize_module`).
+   captured calls through the module (:func:`quantize_module`).
 3. **Export.** The legacy TorchScript exporter at opset 20, which ModelOpt's
    quantizers export as ``QuantizeLinear`` / ``DequantizeLinear`` pairs, then
-   the dtype repairs TensorRT's parser needs (:func:`repair_onnx_dtypes`) and a
-   check that the Q/DQ nodes survived (:func:`require_qdq`).
+   the dtype repairs TensorRT's parser needs (:func:`repair_onnx_dtypes`), a
+   cast of the graph outputs back to the dtype the runtime binds
+   (:func:`cast_graph_outputs`), one external-data sidecar
+   (:func:`consolidate_external_data`) and a check that the Q/DQ nodes survived
+   (:func:`require_qdq`).
 4. **Build.** Strongly typed, like every other graph: the ModelOpt provider
    records ``builder_flags: {strongly_typed: true}`` for its quantized modules,
    so the Q/DQ pairs and the bf16 tensors the graph declares are what TensorRT
-   runs. Upstream's ``build_engine`` already builds that way; nothing here.
+   runs. The families' ``build_engines`` already build that way; nothing here.
 
 ``modelopt`` is imported lazily; only :func:`quantize_module` needs it.
 """
@@ -59,7 +64,7 @@ DEFAULT_LAYER_EXCLUDE: Tuple[str, ...] = ("*norm*", "*layernorm*", "*final_actio
 #: Opset of the exported Q/DQ graphs (the preset's ``export.opset``).
 DEFAULT_OPSET = 20
 
-_QUANTIZABLE_LEAF_TYPES: Tuple[type, ...] = (
+QUANTIZABLE_LEAF_TYPES: Tuple[type, ...] = (
     nn.Linear,
     nn.Conv1d,
     nn.Conv2d,
@@ -183,7 +188,7 @@ def apply_layer_exclusions(cfg: Dict[str, Any], module: nn.Module) -> List[str]:
     if not isinstance(quant_cfg, (dict, list)):
         raise TypeError(f"unrecognised ModelOpt quant_cfg type {type(quant_cfg).__name__}; cannot exclude layers")
     for sub_name, sub in module.named_modules():
-        if not sub_name or not isinstance(sub, _QUANTIZABLE_LEAF_TYPES):
+        if not sub_name or not isinstance(sub, QUANTIZABLE_LEAF_TYPES):
             continue
         if not any(fnmatch.fnmatch(sub_name.lower(), pattern) for pattern in DEFAULT_LAYER_EXCLUDE):
             continue
@@ -210,16 +215,26 @@ def quantize_module(
     cfg = copy.deepcopy(getattr(mtq, base_cfg))
     excluded = apply_layer_exclusions(cfg, module)
     mtq.quantize(module, cfg, forward_loop=forward_loop)
-    from modelopt.torch.quantization.nn import TensorQuantizer
 
-    n_quantizers = sum(1 for m in module.modules() if isinstance(m, TensorQuantizer) and m.is_enabled)
+    counts = quantizer_counts(module)
+    n_quantizers = counts["enabled"]
     if n_quantizers == 0:
         raise RuntimeError(f"{algorithm}: ModelOpt enabled no quantizer in {type(module).__name__}")
     try:
         from modelopt import __version__ as modelopt_version
     except ImportError:  # pragma: no cover - load_mtq succeeded
         modelopt_version = "unknown"
-    logger.info("%s: %d quantizers enabled, %d sub-layers excluded", algorithm, n_quantizers, len(excluded))
+    logger.info(
+        "%s: %d of %d quantizers enabled (%d input, %d weight, %d with a SmoothQuant pre-quant scale), "
+        "%d sub-layers excluded",
+        algorithm,
+        n_quantizers,
+        counts["inserted"],
+        counts["enabled_input"],
+        counts["enabled_weight"],
+        counts["pre_quant_scales"],
+        len(excluded),
+    )
     return {
         "algorithm": algorithm,
         "provider": "nvidia_modelopt",
@@ -228,7 +243,50 @@ def quantize_module(
         "layer_exclude": list(DEFAULT_LAYER_EXCLUDE),
         "excluded_sublayers": excluded,
         "enabled_quantizers": n_quantizers,
+        "quantizer_counts": counts,
     }
+
+
+def quantizer_counts(module: nn.Module) -> Dict[str, int]:
+    """How many ``TensorQuantizer``s ModelOpt inserted in *module*, how many are enabled, of which kind."""
+    from modelopt.torch.quantization.nn import TensorQuantizer
+
+    counts = {"inserted": 0, "enabled": 0, "enabled_input": 0, "enabled_weight": 0, "pre_quant_scales": 0}
+    for name, m in module.named_modules():
+        if not isinstance(m, TensorQuantizer):
+            continue
+        counts["inserted"] += 1
+        if not m.is_enabled:
+            continue
+        counts["enabled"] += 1
+        if name.endswith("input_quantizer"):
+            counts["enabled_input"] += 1
+        elif name.endswith("weight_quantizer"):
+            counts["enabled_weight"] += 1
+        if getattr(m, "pre_quant_scale", None) is not None:
+            counts["pre_quant_scales"] += 1
+    return counts
+
+
+def quantizer_state(module: nn.Module) -> Dict[str, Dict[str, Any]]:
+    """Per enabled quantizer: its ``amax`` and SmoothQuant ``pre_quant_scale`` (CPU float32), by name.
+
+    Names are relative to *module*, as ModelOpt matches its config patterns, so
+    the dump compares key for key against the same module quantized elsewhere.
+    """
+    from modelopt.torch.quantization.nn import TensorQuantizer
+
+    state: Dict[str, Dict[str, Any]] = {}
+    for name, m in module.named_modules():
+        if not isinstance(m, TensorQuantizer) or not m.is_enabled:
+            continue
+        entry: Dict[str, Any] = {}
+        for attr in ("amax", "pre_quant_scale"):
+            value = getattr(m, attr, None)
+            if isinstance(value, torch.Tensor):
+                entry[attr] = value.detach().float().cpu()
+        state[name] = entry
+    return state
 
 
 # ----------------------------------------------------------------------- export
@@ -448,3 +506,64 @@ def repair_onnx_dtypes(onnx_path: Path, name: str) -> Dict[str, int]:
         onnx.save(model, str(onnx_path))
         logger.info("%s: dtype repairs %s", name, fixed)
     return fixed
+
+
+def strip_default_scatternd_reduction(onnx_path: Path, name: str) -> int:
+    """Drop ``reduction="none"`` (the ONNX default) from ScatterND nodes, in place; returns the count.
+
+    TensorRT 10.3's parser (JetPack 6) rejects the attribute's mere presence
+    (``importScatterND: Assertion failed: !attrs.count("reduction")``); removing
+    the default is a semantic no-op. A non-default reduction is left to fail loudly.
+    """
+    import onnx
+
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    stripped = 0
+    for node in model.graph.node:
+        if node.op_type != "ScatterND":
+            continue
+        keep = [a for a in node.attribute if not (a.name == "reduction" and a.s == b"none")]
+        stripped += len(node.attribute) - len(keep)
+        del node.attribute[:]
+        node.attribute.extend(keep)
+    if stripped:
+        onnx.save(model, str(onnx_path))
+        logger.info("%s: stripped the default reduction from %d ScatterND node(s)", name, stripped)
+    return stripped
+
+
+def consolidate_external_data(onnx_path: Path, name: str) -> int:
+    """Gather a graph's external tensors into one ``<file>.onnx.data`` sidecar; returns the files merged.
+
+    The legacy exporter scatters a graph above 2 GB into one file per tensor
+    next to it, which TensorRT's parser does not load reliably. Only the files
+    this graph references are merged and removed, so a sibling graph's data in
+    the same directory is never touched. A graph already on its own single
+    sidecar is left as it is.
+    """
+    import onnx
+    from onnx.external_data_helper import _get_all_tensors, convert_model_to_external_data
+
+    onnx_path = Path(onnx_path)
+    sidecar = onnx_path.with_name(onnx_path.name + ".data")
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    locations = set()
+    for tensor in _get_all_tensors(model):  # initializers and Constant attributes
+        if tensor.data_location == onnx.TensorProto.EXTERNAL:
+            locations.update(e.value for e in tensor.external_data if e.key == "location")
+    if not locations or locations == {sidecar.name}:
+        return 0
+    model = onnx.load(str(onnx_path), load_external_data=True)
+    convert_model_to_external_data(model, all_tensors_to_one_file=True, location=sidecar.name, size_threshold=0)
+    tmp = onnx_path.with_name(onnx_path.name + ".consolidating")
+    tmp.mkdir(exist_ok=True)
+    # Written beside the old files first: the sidecar name may be one of them.
+    onnx.save(model, str(tmp / onnx_path.name))
+    del model
+    for location in locations:
+        (onnx_path.parent / location).unlink(missing_ok=True)
+    os.replace(tmp / sidecar.name, sidecar)
+    os.replace(tmp / onnx_path.name, onnx_path)
+    tmp.rmdir()
+    logger.info("%s: consolidated %d external-data files into %s", name, len(locations), sidecar.name)
+    return len(locations)

@@ -71,11 +71,12 @@ Valid for every module, needs no calibration, loads no plugin. ``none`` keeps Py
 ALL_SCHEMES: FrozenSet[str] = frozenset({W8A8}) | ACT_FOLDED_SCHEMES | LLM_FOLDED_SCHEMES
 
 # --- comparison baselines (not FoldQuant graphs) ------------------------------
-#: NVIDIA ModelOpt INT8 SmoothQuant Q/DQ graphs, built weakly typed with the INT8
-#: flag; see :mod:`.modelopt_int8`. Not in :data:`ALL_SCHEMES`: no emitter here
-#: produces them, only the GR00T N1.7 integration routes them, for its LLM and DiT.
+#: NVIDIA ModelOpt INT8 SmoothQuant Q/DQ graphs, built strongly typed like every
+#: other graph; see :mod:`.modelopt_int8`. Not in :data:`ALL_SCHEMES`: no emitter
+#: here produces them. The GR00T N1.7 integration routes them for its LLM and DiT,
+#: the Pi0.5 integration for its LLM and action expert.
 MODELOPT_SCHEMES: FrozenSet[str] = frozenset({MODELOPT_W8A8_SMOOTHQUANT})
-MODELOPT_MODULES: FrozenSet[str] = frozenset({"llm", "dit"})
+MODELOPT_MODULES: FrozenSet[str] = frozenset({"llm", "dit", "expert"})
 
 
 def validate(module: str, scheme: str) -> None:
@@ -91,8 +92,8 @@ def validate(module: str, scheme: str) -> None:
         return
     if scheme in MODELOPT_SCHEMES:
         raise ValueError(
-            f"{scheme!r} is a ModelOpt Q/DQ baseline, not a FoldQuant plugin graph; it is exported by "
-            "the GR00T N1.7 integration only (foldquant.modelopt_int8), for modules "
+            f"{scheme!r} is a ModelOpt Q/DQ baseline, not a FoldQuant plugin graph; it is routed by "
+            "the GR00T N1.7 and Pi0.5 integrations (foldquant.modelopt_int8), for modules "
             f"{sorted(MODELOPT_MODULES)}."
         )
     if scheme not in ALL_SCHEMES:

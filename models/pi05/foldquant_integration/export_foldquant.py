@@ -19,6 +19,12 @@ of the (config, checkpoint) pair. The expert graph is one denoise step
 (``x_t``, ``timestep``, ``prefix_pad_masks``, ``kv_stack`` -> ``velocity``);
 the Euler loop stays in PyTorch.
 
+``--llm-scheme`` / ``--expert-scheme modelopt_w8a8_smoothquant`` export a
+comparison baseline instead of a FoldQuant graph: NVIDIA ModelOpt INT8
+SmoothQuant Q/DQ graphs with the same file names and I/O contract (see
+:mod:`.modelopt_export`). ``build_engines``, ``verify`` and ``serve`` take them
+unchanged.
+
 Example::
 
     python -m foldquant_integration.export_foldquant \\
@@ -38,6 +44,7 @@ from pathlib import Path
 import time
 from typing import Any
 
+from foldquant import modelopt_int8
 from foldquant import schemes
 from foldquant.export import export_expert
 from foldquant.export import export_llm
@@ -95,6 +102,9 @@ class ExportConfig:
 
     expert_params: str = "{}"
     """JSON overrides for the expert fold (sq_alpha, sq_fold_order)."""
+
+    modelopt_opset: int = modelopt_int8.DEFAULT_OPSET
+    """ONNX opset of a ``modelopt_w8a8_smoothquant`` graph (the VLA-OPT preset exports at 20)."""
 
     device: str = "cuda"
 
@@ -173,10 +183,12 @@ def _capture_prefix(model, forward_loop):
     return seen
 
 
-def export_llm_float_pi05(policy, onnx_path, *, forward_loop):
-    from .runtime import llm_module, model_of, stack_cache
-    model, lm = model_of(policy), llm_module(policy)
-    seen = _capture_prefix(model, forward_loop)
+def export_llm_float_pi05(policy, onnx_path, *, forward_loop=None, seen=None, opset=17):
+    """Trace the live prefix pass. *seen* (the prefix call's kwargs) skips the capture replay."""
+    from .runtime import model_of, stack_cache
+    model = model_of(policy)
+    if seen is None:
+        seen = _capture_prefix(model, forward_loop)
     prefix = seen["inputs_embeds"][0]
     am, pid = seen["attention_mask"], seen["position_ids"]
     am_dtype = torch.bfloat16 if am.is_floating_point() else torch.bool   # the runtime feeds the engine bf16
@@ -196,14 +208,20 @@ def export_llm_float_pi05(policy, onnx_path, *, forward_loop):
                   Binding("position_ids", "position_ids", torch.int64)],
         output_name="kv_stack",
         example_kwargs={"prefix_embs": prefix.to(torch.bfloat16), "attention_mask": am.to(am_dtype), "position_ids": pid.to(torch.int64)},
-        extract=lambda o: o, call=call,
+        extract=lambda o: o, call=call, opset=opset,
     )
 
 
-def export_expert_float_pi05(policy, onnx_path, *, forward_loop):
+def export_expert_float_pi05(policy, onnx_path, *, forward_loop=None, seen=None, opset=17):
+    """Trace the live denoise step. *seen* (one step's inputs, KV stacked) skips the capture replay."""
     from .runtime import cache_from_stack, model_of, stack_cache
     model = model_of(policy)
-    seen, orig = {}, model.denoise_step
+    orig = model.denoise_step
+    if seen is not None:
+        seen = dict(seen)
+        forward_loop = None
+    else:
+        seen = {}
 
     def spy(state, prefix_pad_masks, past_key_values, x_t, timestep):
         seen.update(state=state.detach(), prefix_pad_masks=prefix_pad_masks.detach(),
@@ -211,15 +229,16 @@ def export_expert_float_pi05(policy, onnx_path, *, forward_loop):
                     x_t=x_t.detach(), timestep=timestep.detach())
         raise _Stop()
 
-    model.denoise_step = spy
-    try:
-        with torch.inference_mode():
-            try:
-                forward_loop(model)
-            except _Stop:
-                pass
-    finally:
-        model.__dict__.pop("denoise_step", None)
+    if forward_loop is not None:
+        model.denoise_step = spy
+        try:
+            with torch.inference_mode():
+                try:
+                    forward_loop(model)
+                except _Stop:
+                    pass
+        finally:
+            model.__dict__.pop("denoise_step", None)
     if "x_t" not in seen:
         raise RuntimeError("forward_loop never reached denoise_step")
 
@@ -235,7 +254,7 @@ def export_expert_float_pi05(policy, onnx_path, *, forward_loop):
         example_kwargs={"x_t": seen["x_t"].to(torch.float32), "timestep": seen["timestep"].reshape(1).to(torch.float32),
                         "prefix_pad_masks": seen["prefix_pad_masks"].to(torch.bool), "kv_stack": seen["kv_stack"].to(torch.bfloat16),
                         "state": seen["state"].to(torch.float32)},
-        extract=lambda o: o, call=call,
+        extract=lambda o: o, call=call, opset=opset,
     )
 
 def main(args: ExportConfig) -> Path:
@@ -244,16 +263,28 @@ def main(args: ExportConfig) -> Path:
     expert_scheme = _scheme_or_none(args.expert_scheme)
     if llm_scheme is None and expert_scheme is None:
         raise SystemExit("nothing to export: both --llm-scheme and --expert-scheme are none")
-    if llm_scheme is not None:
+    # ModelOpt Q/DQ baselines are routed to .modelopt_export, never to the FoldQuant emitters.
+    modelopt_towers = {
+        t: sch for t, sch in (("llm", llm_scheme), ("expert", expert_scheme)) if modelopt_int8.is_modelopt_scheme(sch)
+    }
+    if llm_scheme is not None and "llm" not in modelopt_towers:
         schemes.validate("llm", llm_scheme)
-    if expert_scheme is not None:
+    if expert_scheme is not None and "expert" not in modelopt_towers:
         schemes.validate("expert", expert_scheme)
+    if modelopt_towers and args.cascade:
+        raise SystemExit("--cascade emulates a FoldQuant LLM fold; the ModelOpt baseline calibrates without it")
+    for tower, tower_params in (("llm", args.llm_params), ("expert", args.expert_params)):
+        if tower in modelopt_towers and json.loads(tower_params):
+            raise SystemExit(f"--{tower}-params tunes a FoldQuant fold; {modelopt_towers[tower]} takes none")
     if args.cascade and (llm_scheme is None or expert_scheme is None):
         raise SystemExit("--cascade needs both an LLM scheme and an expert scheme")
     if args.cascade and llm_scheme not in schemes.LLM_FOLDED_SCHEMES:
         raise SystemExit(f"--cascade emulates a folded LLM; {llm_scheme!r} folds nothing")
     llm_params = json.loads(args.llm_params)
     expert_params = json.loads(args.expert_params)
+
+    if modelopt_towers:
+        modelopt_int8.ensure_cuda_ext()
 
     out = Path(args.output_dir) / "onnx"
     out.mkdir(parents=True, exist_ok=True)
@@ -272,10 +303,19 @@ def main(args: ExportConfig) -> Path:
     shapes = capture_shape_metadata(policy, observations[0], seed=args.seed)
     logger.info("captured shapes: %s", shapes)
 
+    modelopt_captures = None
+    if modelopt_towers:
+        from . import modelopt_export
+
+        # Captured before anything is quantized: every ModelOpt tower calibrates on float inputs.
+        t1 = time.time()
+        modelopt_captures = modelopt_export.capture(policy, loop, modelopt_towers)
+        logger.info("ModelOpt calibration capture in %.0fs", time.time() - t1)
+
     results = []
     plugin_libs: list = []
     llm_result = None
-    if llm_scheme is not None:
+    if llm_scheme is not None and "llm" not in modelopt_towers:
         t1 = time.time()
         # Gemma pins the prefix length from a captured call, so the loop is
         # passed for every scheme, the per-row one included.
@@ -288,7 +328,7 @@ def main(args: ExportConfig) -> Path:
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
 
-    if expert_scheme is not None:
+    if expert_scheme is not None and "expert" not in modelopt_towers:
         t1 = time.time()
         emulation = None
         if args.cascade:
@@ -311,6 +351,24 @@ def main(args: ExportConfig) -> Path:
                 emulation.remove()
         results.append(expert_result)
         logger.info("expert %s exported in %.0fs", expert_scheme, time.time() - t1)
+
+    # After the FoldQuant towers: ModelOpt quantizes in place, so a FoldQuant replay
+    # that ran later would calibrate through a fake-quantized tower.
+    modelopt_records: dict[str, Any] = {}
+    modelopt_files: dict[str, str] = {}
+    for tower, exporter, file_name in (
+        ("llm", "export_llm", "llm_bf16.onnx"),
+        ("expert", "export_expert", "expert_bf16.onnx"),
+    ):
+        if tower not in modelopt_towers:
+            continue
+        t1 = time.time()
+        modelopt_records[tower] = getattr(modelopt_export, exporter)(
+            policy, modelopt_captures, out / file_name, algorithm=modelopt_towers[tower], opset=args.modelopt_opset
+        )
+        modelopt_files[tower] = file_name
+        logger.info("%s %s exported in %.0fs", tower, modelopt_towers[tower], time.time() - t1)
+    modelopt_captures = None
 
     for r in results:
         for lib in r.plugin_libs:
@@ -338,11 +396,12 @@ def main(args: ExportConfig) -> Path:
         "checkpoint_dir": public_path(args.checkpoint_dir),
         "config": args.config,
         "dataset_path": public_path(args.dataset_path),
-        "schemes": {r.module: r.scheme for r in results},
+        "schemes": {**{r.module: r.scheme for r in results}, **modelopt_towers},
         "params": {"llm": llm_params, "expert": expert_params},
         "cascade": bool(args.cascade),
         "plugin_libs": plugin_libs,
-        "files": {r.module: r.onnx_path.name for r in results},
+        "files": {**{r.module: r.onnx_path.name for r in results}, **modelopt_files},
+        "modelopt": modelopt_records,
         "calibration": {
             "seed": args.seed,
             "num_samples": len(samples),

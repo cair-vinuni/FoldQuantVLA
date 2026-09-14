@@ -32,6 +32,10 @@ follow that split rather than the module tree:
   with the adaRMS modulation (Pi0.5) or the state token (Pi0), the output
   projection — and the 10-step Euler loop stays in PyTorch.
 
+For comparison, either module can instead take an NVIDIA ModelOpt INT8
+SmoothQuant Q/DQ graph (`modelopt_w8a8_smoothquant`) under the same file name
+and I/O contract; see [ModelOpt INT8 SmoothQuant baseline](#modelopt-int8-smoothquant-baseline).
+
 The KV stack is the contract between the two seams, so each engine can also
 be installed alone: the runtime stacks the PyTorch `DynamicCache` when the
 LLM stays float, and rebuilds one from the engine's stack when the expert
@@ -177,6 +181,52 @@ policy sees exactly what the websocket server hands it.
 Plugin graphs are emitted at batch 1; the upstream client sends one
 observation per request.
 
+## ModelOpt INT8 SmoothQuant baseline
+
+`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It reproduces the VLA-OPT
+preset `pi05/tensorrt/modelopt_w8a8_smoothquant`, so a FoldQuant arm and the
+ModelOpt baseline can be built, verified and served by the same tools and
+compared on a robot. It needs `nvidia-modelopt==0.45.0` (and `ninja`, for its
+CUDA extension) in the environment.
+
+```bash
+python -m foldquant_integration.export_foldquant --checkpoint-dir ... --dataset-path ... \
+    --num-calib 64 --seed 0 \
+    --llm-scheme modelopt_w8a8_smoothquant --expert-scheme modelopt_w8a8_smoothquant \
+    --output-dir exports/pi05_modelopt_w8a8_sq
+python -m foldquant_integration.build_engines \
+    --onnx-dir exports/pi05_modelopt_w8a8_sq/onnx --engine-dir exports/pi05_modelopt_w8a8_sq/engines
+python -m foldquant_integration.verify --checkpoint-dir ... --dataset-path ... \
+    --engine-dir exports/pi05_modelopt_w8a8_sq/engines --split-from exports/pi05_w8a8_w4a4/engines
+```
+
+What the arm does, step for step with the preset (`foldquant/modelopt_int8.py`,
+`modelopt_export.py`):
+
+| step | this arm |
+|---|---|
+| calibration data | `--num-calib` observations (the preset uses 64), seeded noise per observation; one bf16 policy replay records every prefix pass and every denoise step before anything is quantized |
+| quantized scopes | LLM: `paligemma.language_model` (VLA-OPT `backbone.model.model.language_model`); expert: `Pi05ExpertView` over the live expert, whose leaf names match VLA-OPT's `action_expert` (`expert_model.model.layers.*`, `action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`) |
+| calibration replay | LLM: the captured `prefix_embs` / 4-D mask / `position_ids` through `paligemma_with_expert.forward`; expert: the captured `x_t` / `timestep` / `prefix_pad_masks` / KV stack through `denoise_step`; the expert sees float-LLM caches (no cascade) |
+| config | `mtq.INT8_SMOOTHQUANT_CFG`: per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant pre-quant scales |
+| excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*`: on Pi0.5 that is the adaRMS `dense` modulation of every expert norm; `action_in_proj` / `action_out_proj` and the time MLP are quantized, as in the preset |
+| export | the float arm's own trace wrappers over the quantized live modules (same bindings and dtypes), legacy TorchScript exporter at opset 20 (`--modelopt-opset`), dtype repairs, graph outputs cast back to the runtime dtype (ModelOpt's Q/DQ dequantizes to float32), one external-data sidecar, default ScatterND `reduction` stripped for TensorRT 10.3, export refused when no Q/DQ node survived |
+| engine | strongly typed, by the unchanged `build_engines` (no plugin library) |
+
+`--cascade` and `--llm-params` / `--expert-params` are refused for this
+scheme. `foldquant_export.json` records, per module, the excluded leaves,
+the inserted / enabled quantizer counts, the Q/DQ node counts and the repairs
+made; `onnx/<module>_modelopt_quantizers.pt` holds every enabled quantizer's
+`amax` and `pre_quant_scale` under ModelOpt's names relative to the quantized
+scope, for a key-by-key comparison with the same module quantized elsewhere.
+
+Differences that remain: the reference policy keeps upstream openpi's mixed
+precision (the norms, and the projections around the expert, in float32)
+where VLA-OPT casts the whole policy to bf16 before calibration; the
+graphs use the FoldQuant bindings (VLA-OPT's `llm` and `expert` graphs have the
+same input and output names, but a dynamic prefix length); the engine directory
+is served by `runtime.install_engines` rather than VLA-OPT's runtime.
+
 ## A checkpoint the release has never heard of
 
 Every tool takes `--config`, and upstream resolves that name from a list of its
@@ -267,6 +317,7 @@ installation check.
 |---|---|
 | `calibration.py` | upstream policy / dataset loading, seeded sample plan, client-format observations, forward loop |
 | `export_foldquant.py` | scheme validation, shape capture, `export_llm` / `export_expert`, manifests |
+| `modelopt_export.py` | ModelOpt INT8 SmoothQuant baseline: seam capture, live-module quantization, Q/DQ export under the FoldQuant contract |
 | `build_engines.py` | plugin load + `foldquant.runtime.builder.build_engine` per component |
 | `runtime.py` | engine installer (`install_engines`), the two rebinds, KV-stack helpers, `PrefixCapture` |
 | `verify.py` | held-out PyTorch-vs-engine drift report |
