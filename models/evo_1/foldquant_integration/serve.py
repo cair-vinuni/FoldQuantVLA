@@ -63,7 +63,10 @@ def main(args: ServeConfig) -> None:
     async def _serve() -> None:
         logger.info("EVO_1 server running at ws://0.0.0.0:%d", args.port)
         async with websockets.serve(
-            lambda ws: handle_request(ws, deployed.model, deployed.normalizer, args.arm_key, args.dataset_key),
+            # The resolved keys, not the CLI's: --arm-key defaults to "" and load_policy
+            # reads the real one off norm_stats.json. Passing the empty string made every
+            # request fail with "Arm key '' not found in normalization stats".
+            lambda ws: handle_request(ws, deployed.model, deployed.normalizer, deployed.arm_key, deployed.dataset_key),
             "0.0.0.0",
             args.port,
             max_size=100_000_000,
