@@ -227,6 +227,23 @@ graphs use the FoldQuant bindings (VLA-OPT's `llm` and `expert` graphs have the
 same input and output names, but a dynamic prefix length); the engine directory
 is served by `runtime.install_engines` rather than VLA-OPT's runtime.
 
+Measured on the SO101 multitask checkpoint (`pi05_so101`, 64 calibration
+observations, 32 held-out observations shared with the `w8a8_sr` + `w8a8_sh`
+arm through `--split-from`, Jetson AGX Orin, TensorRT 10.3):
+
+| arm | kv_stack cos mean | position cos min | action cos mean / median / min | action max abs mean / worst |
+|---|---|---|---|---|
+| `modelopt_w8a8_smoothquant` both modules | 0.97719 | 0.595 | 0.99931 / 0.99955 / 0.99624 | 4.15 / 12.55 |
+| `w8a8_sr` LLM + `w8a8_sh` expert | 0.99660 | 0.882 | 0.99997 / 0.99998 / 0.99979 | 0.90 / 1.97 |
+
+Both graphs carry the Q/DQ pairs VLA-OPT's own graphs for the preset carry
+(LLM 242, expert 260, in the same order), with SmoothQuant pre-quant scales
+whose log-profiles agree with VLA-OPT's at a median cosine of 0.989 (LLM) and
+0.983 (expert) despite a different calibration set. VLA-OPT's artifact drifts
+from its own bf16 PyTorch policy by a comparable action cosine (mean 0.9989),
+so the gap to `w8a8` is the recipe (per-tensor static activations), not the
+port.
+
 ## A checkpoint the release has never heard of
 
 Every tool takes `--config`, and upstream resolves that name from a list of its
