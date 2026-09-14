@@ -209,6 +209,11 @@ def build_evo1_head_plugin_onnx(
 
     def _macro(weight: Any, s_ch: Any) -> tuple:
         """One site of a fused macro node: packed INT8 + scale + the paired rotation."""
+        if sq_scales is None:
+            # Unfolded W8A8: no rotation slot on these nodes, so pack in the weight's
+            # own frame (see the same guard in dit_int8.py).
+            i8, sc, _ = foldq.fold_site(weight, bits=8, block_size=block_size, s_ch=None, fwht=False)
+            return i8, sc, None, None
         perm, R = foldq.site_rotation(weight, block_size, fwht)
         i8, sc, r_use = foldq.fold_macro_site(weight, perm, R, block_size, s_ch, fold_order=fold_order, bits=8)
         return i8, sc, perm, r_use
@@ -334,7 +339,12 @@ def build_evo1_head_plugin_onnx(
         # KV goes under the SHARED encoder rotation, like the INT4 emitter: every
         # block reads the same pre-quantized context, so one rotation covers them.
         wKV = torch.cat([wK, wV], dim=0)
-        kv_i8, sKV_b, _ = foldq.fold_macro_site(wKV, enc_perm, enc_R, block_size, s_enc, fold_order=fold_order, bits=8)
+        if sq_scales is None:
+            kv_i8, sKV_b, _ = foldq.fold_site(wKV, bits=8, block_size=block_size, s_ch=None, fwht=False)
+        else:
+            kv_i8, sKV_b, _ = foldq.fold_macro_site(
+                wKV, enc_perm, enc_R, block_size, s_enc, fold_order=fold_order, bits=8
+            )
         # The butterfly ships the raw per-channel vector; the dense arm folds it
         # into the matrix instead, so only one of the two ever rides along.
         bf_q = _pre_vec("act_scale_pre_in", s_q)

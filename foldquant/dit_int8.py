@@ -160,6 +160,13 @@ def _build_v2_dynamic_graph(
         The same shared fold the INT4 emitter uses; bit width is the only
         difference, which is why it is a parameter and not a second code path.
         """
+        if sq_scales is None:
+            # Unfolded W8A8: these nodes carry no rotation slot, so the weight has to
+            # be packed in its own frame. Packing it under a dense rotation (what
+            # fold_macro_site does for any supplied rotation) builds an engine that
+            # runs and returns unrelated actions (action cosine ~0.27 on N1.7).
+            i8, sc, _ = foldq.fold_site(weight, bits=8, block_size=block_size, s_ch=None, fwht=False)
+            return i8, sc, None, None
         perm, R = rotation if rotation is not None else foldq.site_rotation(weight, block_size, fwht)
         i8, sc, r_use = foldq.fold_macro_site(weight, perm, R, block_size, s_ch, fold_order=sq_fold_order, bits=8)
         return i8, sc, perm, r_use
