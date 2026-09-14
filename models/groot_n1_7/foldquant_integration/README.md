@@ -286,6 +286,24 @@ engines do not load into `trt_model_forward`), the LLM wrapper is upstream's
 `LLMForExport` over the live layers, and the engine directory is served by
 upstream's pipeline swap rather than VLA-OPT's runtime.
 
+Measured on a GR00T N1.7 SO101 checkpoint (Jetson AGX Orin, 64 calibration
+samples, the 32 held-out samples of the `w8a8` arm via `verify --split-from`):
+backbone cosine 0.99974, action cosine mean 0.9986 (min 0.9915). The same
+recipe is close to lossless on this checkpoint. VLA-OPT's own `dit.onnx` for
+this preset, renamed to upstream's I/O and built and verified here, scores
+0.9986 as well, and its SmoothQuant vectors match this arm's (cosine >= 0.97
+per layer), so the two graphs agree.
+
+When comparing against an engine served from a VLA-OPT artifact, check that
+artifact's `embodiments/<tag>/action_schema.json`: a `clip_range` of
+`[-3.14159, 3.14159]` with `units: rad` is applied to every action channel. On
+a checkpoint whose actions are in degrees (SO101) that clips the joints to
++-3.14, and the artifact scores about 0.84 action cosine against the PyTorch
+policy with or without quantization (its float TensorRT artifact measured
+0.839, its ModelOpt INT8 SmoothQuant artifact 0.840). Differences observed on
+the robot between the two stacks can come from that clip rather than from
+quantization.
+
 `--cascade` and `--llm-params` / `--dit-params` are refused for this scheme.
 The export compiles ModelOpt's CUDA fake-quant extension on first use (about
 95 s on an Orin, cached in `~/.cache/torch_extensions`); without it the ONNX
