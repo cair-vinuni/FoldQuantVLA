@@ -46,6 +46,42 @@ class ServeConfig:
 
     port: int = 8000
     device: str = "cuda"
+    warmup: bool = True
+    """Run one inference before opening the port (see _warm_up)."""
+
+
+#: Upstream's random example observation for a config family, by config-name prefix.
+_EXAMPLES = {
+    "pi05_libero": ("openpi.policies.libero_policy", "make_libero_example"),
+    "pi0_libero": ("openpi.policies.libero_policy", "make_libero_example"),
+    "pi05_droid": ("openpi.policies.droid_policy", "make_droid_example"),
+    "pi0_droid": ("openpi.policies.droid_policy", "make_droid_example"),
+    "pi05_aloha": ("openpi.policies.aloha_policy", "make_aloha_example"),
+    "pi0_aloha": ("openpi.policies.aloha_policy", "make_aloha_example"),
+}
+
+
+def _warm_up(policy, config: str) -> None:
+    """Pay the first-call cost before a client can connect.
+
+    The bf16 arm serves under torch.compile(mode="max-autotune"), which compiles on
+    the first infer: about 50 s on a Jetson AGX Orin. Upstream's server runs infer
+    synchronously inside its asyncio loop, so for that whole call it answers no
+    websocket pings, and openpi-client's connection (20 s ping timeout) drops the
+    first request with "keepalive ping timeout". Warming up with upstream's own
+    example observation moves the compile ahead of serve_forever().
+    """
+    import importlib
+    import time
+
+    entry = next((v for k, v in _EXAMPLES.items() if config.startswith(k)), None)
+    if entry is None:
+        logger.warning("no example observation known for config %r: skipping warm-up", config)
+        return
+    example = getattr(importlib.import_module(entry[0]), entry[1])()
+    t0 = time.monotonic()
+    policy.infer(example)
+    logger.info("warm-up inference done in %.1f s", time.monotonic() - t0)
 
 
 def main(args: ServeConfig) -> None:
@@ -61,6 +97,9 @@ def main(args: ServeConfig) -> None:
         logger.info("serving with FoldQuant engines: %s", ", ".join(sorted(installed.engines)))
     else:
         logger.info("serving the bf16 PyTorch policy")
+
+    if args.warmup:
+        _warm_up(policy, args.config)
 
     from openpi.serving import websocket_policy_server
 
