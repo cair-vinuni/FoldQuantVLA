@@ -74,6 +74,12 @@ class EvalConfig:
     device: str = "cuda"
 
 
+def _client_port(source: str) -> int | None:
+    """The port in the client's ``SERVER_URL = "ws://host:port"``, if it names one."""
+    found = re.search(r"SERVER_URL\s*=\s*[\"']wss?://[^:\"'/]+:(\d+)", source)
+    return int(found.group(1)) if found else None
+
+
 def _port_open(port: int) -> bool:
     with socket.socket() as sock:
         sock.settimeout(0.5)
@@ -159,6 +165,15 @@ def main(args: EvalConfig) -> dict[str, Any]:
         raise SystemExit(f"--client-python {args.client_python} is not a file")
     if not LIBERO_CLIENT.is_file():
         raise SystemExit(f"upstream's client is missing: {LIBERO_CLIENT}")
+    # The client takes no arguments and connects to the SERVER_URL written into its
+    # Args class, so --port only moves the server. A mismatch starts the server on one
+    # port while the client dials another and dies on "connection refused".
+    client_port = _client_port(LIBERO_CLIENT.read_text())
+    if client_port is not None and client_port != args.port:
+        raise SystemExit(
+            f"--port {args.port} does not match the port upstream's client connects to "
+            f"({client_port}, Args.SERVER_URL in {LIBERO_CLIENT.name}); use --port {client_port}"
+        )
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     summary_path = out / "summary.json"
