@@ -138,7 +138,9 @@ what upstream's server starts with for LIBERO.
    to their sum. `eval_libero` starts
    the served policy and runs upstream's client against it. That client takes
    no arguments — its suite list, episode count, horizon and step budgets are
-   class attributes — so it walks all four suites in one process and the
+   class attributes, and so is its `SERVER_URL` (`ws://0.0.0.0:9000`), which is
+   why `--port` must stay 9000 (`eval_libero` refuses any other value) — so it
+   walks all four suites in one process and the
    summary is parsed per suite from its own log; a finished run is not
    repeated, but an interrupted one restarts rather than resuming mid-suite.
    `benchmark` times the embedder (tower included), the tower alone, the

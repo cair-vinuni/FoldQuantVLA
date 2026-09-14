@@ -202,6 +202,11 @@ they do not fit next to the model on 16 GB); `build_engines` 47 s; `verify`
 
 ## Serving
 
+On a Jetson AGX Orin, [`docs/deploy/jetson_serve.md`](../../../docs/deploy/jetson_serve.md)
+walks through building and serving an arm on the board, and
+[`scripts/deploy_groot_n17_jetson.sh`](../../../scripts/deploy_groot_n17_jetson.sh)
+does it in one command.
+
 For a real robot the arm under test is a server: upstream's `PolicyServer`
 answers over ZMQ, and [`serve.py`](serve.py) is that server with the FoldQuant
 engines installed into the policy first. Nothing on the wire changes, so a

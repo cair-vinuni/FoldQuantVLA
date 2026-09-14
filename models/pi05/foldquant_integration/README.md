@@ -159,7 +159,11 @@ policy sees exactly what the websocket server hands it.
    drift in `verify.json`; `--split-from <quantized engine dir>` scores
    another directory on that arm's held-out set. `serve` is upstream's
    `WebsocketPolicyServer` around a policy with the engines installed, so
-   upstream's client runs unchanged. `eval_libero` starts that server and
+   upstream's client runs unchanged. Serving the bf16 arm compiles on the
+   first inference (about 50 s on an Orin) while upstream's server answers no
+   websocket pings, which openpi-client treats as a dead connection; `serve`
+   therefore runs one warm-up inference on upstream's example observation
+   before it opens the port (`--no-warmup` skips it). `eval_libero` starts that server and
    runs the unmodified upstream client per suite in its own environment,
    reading the final success rate off its log into a resume-safe
    `summary.json` (the client's replay videos land under

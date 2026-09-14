@@ -213,6 +213,9 @@ embodiment.
 paper measures: what has to be built on the board itself — the plugin library
 and the engines, because neither is portable across `(SM, TensorRT)` — versus
 what crosses from a workstation as ONNX.
+[`docs/deploy/jetson_serve.md`](docs/deploy/jetson_serve.md) builds and serves
+GR00T N1.7 entirely on an Orin, step by step or through
+[`scripts/deploy_groot_n17_jetson.sh`](scripts/deploy_groot_n17_jetson.sh).
 
 ## License
 

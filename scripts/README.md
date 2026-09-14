@@ -7,7 +7,12 @@ they either drive several families in turn or tune the knobs the per-family
 
 | script | needs | does |
 |---|---|---|
-| `bench_all.sh` | built engines, each family's `.venv` | latency for every family into `results/<family>/benchmark.json` |
+| `bench_all.sh` | built engines, each family's `.venv` | latency for every family into `results/<family>/benchmark.json`; exits non-zero if any family fails (`BENCH_ALLOW_BUSY_GPU=1` runs on a shared GPU, timings then unusable) |
+| `smoke_family.sh` | each family's `.venv`, checkpoint and dataset paths | export -> build -> verify on 8 calibration / 8 held-out observations: does the chain run here |
+| `smoke_serve.sh` | as above | starts each family's server on a spare port and checks it binds (a bound port, not a served request) |
+| `smoke_eval.sh` | the LIBERO simulator stack in the family `.venv` | one LIBERO episode per task through `eval_libero`: does the rollout run |
+| `deploy_groot_n17_jetson.sh` | a Jetson AGX Orin, GR00T N1.7 `.venv` | plugins, float pipeline, export, engines, verify and serve in one resumable run; see [`docs/deploy/jetson_serve.md`](../docs/deploy/jetson_serve.md) |
+| `_gpu_busy.sh`, `_family_env.sh` | — | sourced helpers: which processes hold the GPU (Tegra-aware), and the `PYTHONPATH` a family's CLI needs |
 | `results_tables.py` | `results/` only | regenerates the tables in `results/README.md` from the records |
 | `sweep_llm_quant_knobs.py` | a GR00T `.venv`, GPU | RTN grid then GPTQ rescoring over the LLM fold's `sq_alpha` × `act_clip_ratio` |
 | `llm_learn_calib.py` | a GR00T `.venv`, GPU | learns per-layer SmoothQuant scales, activation clips and weight clips for the INT4 LLM fold |
