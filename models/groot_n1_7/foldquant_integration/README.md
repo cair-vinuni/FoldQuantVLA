@@ -20,6 +20,10 @@ without knowing they are quantized. The action head reads the LLM's
 **pre-final-norm** residual stream (`hidden_states[-1]`), as upstream does;
 the FoldQuant LLM graph is emitted with `final_norm=False` for that reason.
 
+For comparison, either module can instead take an NVIDIA ModelOpt INT8
+SmoothQuant Q/DQ graph (`modelopt_w8a8_smoothquant`) under the same file name
+and I/O contract; see [ModelOpt INT8 SmoothQuant baseline](#modelopt-int8-smoothquant-baseline).
+
 ## Environment
 
 The upstream pins apply (Python 3.10, torch 2.7.1, transformers 4.57.3,
@@ -242,12 +246,60 @@ because the release ships the whole pipeline swap itself and a second install
 path could drift from it silently.
 
 
+## ModelOpt INT8 SmoothQuant baseline
+
+`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It reproduces the VLA-OPT
+preset `groot_n1_7/tensorrt/modelopt_w8a8_smoothquant`, so a FoldQuant arm and
+the ModelOpt baseline can be built, verified and served by the same tools and
+compared on a robot. It needs two extra packages in the family environment,
+which add to it without changing any pinned version:
+
+```bash
+uv pip install --python .venv/bin/python nvidia-modelopt==0.45.0 onnx-graphsurgeon==0.6.1
+```
+
+```bash
+python -m foldquant_integration.export_foldquant --model-path ... --dataset-path ... \
+    --embodiment-tag ... --num-calib 64 --seed 0 \
+    --llm-scheme modelopt_w8a8_smoothquant --dit-scheme modelopt_w8a8_smoothquant \
+    --output-dir exports/modelopt_w8a8_sq
+python -m foldquant_integration.build_engines \
+    --onnx-dir exports/modelopt_w8a8_sq/onnx --engine-dir exports/modelopt_w8a8_sq/engines \
+    --float-onnx-dir exports/float/onnx --float-engine-dir exports/float/engines
+```
+
+What the arm does, step for step with the preset (`foldquant/modelopt_int8.py`,
+`modelopt_export.py`):
+
+| step | this arm |
+|---|---|
+| calibration data | `--num-calib` observations (the preset uses 64), `torch.manual_seed(seed + i)` before each; one bf16 policy replay captures every call into the LLM and every DiT denoising step |
+| config | `mtq.INT8_SMOOTHQUANT_CFG`: per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant pre-quant scales |
+| excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*` |
+| quantization | `mtq.quantize` on the live module, calibrated by replaying its captured calls; the DiT sees float-LLM activations (no cascade) |
+| export | legacy TorchScript exporter, opset 20 (`--modelopt-opset`), dtype repairs for TensorRT's parser, export refused when no Q/DQ node survived |
+| graph outputs | ModelOpt dequantizes to float32, so `embeddings` / `output` would be float32; a final `Cast` to bf16 keeps upstream's contract (VLA-OPT's engines output float32 and its runtime casts at the next engine's bf16 input, which is the same arithmetic) |
+| engine | strongly-typed network (the provider records `builder_flags: {strongly_typed: true}`), built by upstream's `build_engine` like every other graph; the other five components stay upstream bf16 |
+
+Differences that remain: the graphs use upstream's I/O names (VLA-OPT's own
+engines do not load into `trt_model_forward`), the LLM wrapper is upstream's
+`LLMForExport` over the live layers, and the engine directory is served by
+upstream's pipeline swap rather than VLA-OPT's runtime.
+
+`--cascade` and `--llm-params` / `--dit-params` are refused for this scheme.
+The export compiles ModelOpt's CUDA fake-quant extension on first use (about
+95 s on an Orin, cached in `~/.cache/torch_extensions`); without it the ONNX
+trace segfaults, so the export fails up front when it cannot be built.
+`foldquant_export.json` records, per module, the config, the excluded leaves,
+the number of enabled quantizers, the Q/DQ node counts and the repairs made.
+
 ## Files
 
 | file | role |
 |---|---|
 | `calibration.py` | upstream policy / dataset loading, seeded sample plan, observation building, forward loop |
 | `export_foldquant.py` | scheme validation, shape-metadata capture, `export_llm` / `export_dit`, manifests |
+| `modelopt_export.py` | ModelOpt INT8 SmoothQuant baseline: live-module quantization, upstream-contract Q/DQ export |
 | `build_engines.py` | plugin load + upstream `build_engine` per component; float completion |
 | `verify.py` | held-out PyTorch-vs-engine drift report |
 | `serve.py` | upstream's ZMQ `PolicyServer` with the engines installed |

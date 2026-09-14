@@ -13,6 +13,10 @@
 #   ARM=w4a4 LLM_SCHEME=w4a4_srg DIT_SCHEME=w4a4_shg STEPS=export,build,verify,serve \
 #   CKPT=... DS=... TAG=... scripts/deploy_groot_n17_jetson.sh
 #
+#   # NVIDIA ModelOpt INT8 SmoothQuant comparison baseline (needs nvidia-modelopt, see the guide)
+#   ARM=modelopt_w8a8_sq LLM_SCHEME=modelopt_w8a8_smoothquant DIT_SCHEME=modelopt_w8a8_smoothquant \
+#   NUM_CALIB=64 CKPT=... DS=... TAG=... scripts/deploy_groot_n17_jetson.sh
+#
 #   # serve an arm that is already built
 #   STEPS=serve PORT=5556 CKPT=... TAG=... scripts/deploy_groot_n17_jetson.sh
 #
@@ -25,6 +29,7 @@
 #   OUT          export root (default: models/groot_n1_7/exports)
 #   ARM          arm name, the subdirectory of OUT (default: w8a8)
 #   LLM_SCHEME   default w8a8_sr          DIT_SCHEME   default w8a8_sh
+#                (modelopt_w8a8_smoothquant: the ModelOpt Q/DQ baseline instead of a FoldQuant graph)
 #   LLM_PARAMS   JSON, e.g. '{"site_bits": {"o": 8, "down": 8}}'   (default: {})
 #   NUM_CALIB    calibration samples (default 128; keep >= 128 for a *_g scheme)
 #   NUM_VERIFY   held-out verify samples (default 32)
@@ -104,6 +109,12 @@ if not torch.cuda.is_available():
     sys.exit("  torch has no CUDA device (a PyPI aarch64 wheel? use the Jetson index)")
 print(f"  torch {torch.__version__}, CUDA device {torch.cuda.get_device_name(0)}, TensorRT {tensorrt.__version__}")
 EOF
+  case "$LLM_SCHEME $DIT_SCHEME" in
+    *modelopt_*)
+      "$PYTHON" -c "import modelopt.torch.quantization, onnx_graphsurgeon" 2>/dev/null \
+        || die "a modelopt_* scheme needs nvidia-modelopt==0.45.0 and onnx-graphsurgeon -- see docs/deploy/jetson_serve.md"
+      echo "  nvidia-modelopt present" ;;
+  esac
 fi
 
 if has_step kernels; then

@@ -25,6 +25,7 @@ from .llm_rotation_sq import (
     LLM_INT4_ALGORITHMS,
     LLM_INT8_ALGORITHMS,
 )
+from .modelopt_int8 import MODELOPT_W8A8_SMOOTHQUANT
 
 # --- dynamic per-row baseline (every module) --------------------------------
 W8A8 = "w8a8"
@@ -69,6 +70,13 @@ FLOAT = "float"
 Valid for every module, needs no calibration, loads no plugin. ``none`` keeps PyTorch instead."""
 ALL_SCHEMES: FrozenSet[str] = frozenset({W8A8}) | ACT_FOLDED_SCHEMES | LLM_FOLDED_SCHEMES
 
+# --- comparison baselines (not FoldQuant graphs) ------------------------------
+#: NVIDIA ModelOpt INT8 SmoothQuant Q/DQ graphs, built weakly typed with the INT8
+#: flag; see :mod:`.modelopt_int8`. Not in :data:`ALL_SCHEMES`: no emitter here
+#: produces them, only the GR00T N1.7 integration routes them, for its LLM and DiT.
+MODELOPT_SCHEMES: FrozenSet[str] = frozenset({MODELOPT_W8A8_SMOOTHQUANT})
+MODELOPT_MODULES: FrozenSet[str] = frozenset({"llm", "dit"})
+
 
 def validate(module: str, scheme: str) -> None:
     """Refuse a (module, scheme) pair that has no plugin graph.
@@ -81,6 +89,12 @@ def validate(module: str, scheme: str) -> None:
         raise ValueError(f"FoldQuant has plugin graphs for {sorted(MODULES)}; module {module!r} has none.")
     if scheme == FLOAT:
         return
+    if scheme in MODELOPT_SCHEMES:
+        raise ValueError(
+            f"{scheme!r} is a ModelOpt Q/DQ baseline, not a FoldQuant plugin graph; it is exported by "
+            "the GR00T N1.7 integration only (foldquant.modelopt_int8), for modules "
+            f"{sorted(MODELOPT_MODULES)}."
+        )
     if scheme not in ALL_SCHEMES:
         raise ValueError(f"unknown FoldQuant scheme {scheme!r}; known: {sorted(ALL_SCHEMES)}")
     if scheme in ACT_FOLDED_SCHEMES and module not in ACT_MODULES:

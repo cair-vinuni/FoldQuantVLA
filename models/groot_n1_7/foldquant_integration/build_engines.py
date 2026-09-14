@@ -14,6 +14,10 @@ cached binary matches), then walks the seven upstream pipeline components:
   (``--float-onnx-dir``) or copied from an existing upstream engine directory
   (``--float-engine-dir``), whichever is given.
 
+A ModelOpt Q/DQ baseline graph (``modelopt_w8a8_smoothquant``) goes through
+the same strongly-typed build, which is also how the recipe it reproduces
+builds it.
+
 The result is a directory ``trt_model_forward.setup_tensorrt_engines`` loads
 as ``n17_full_pipeline`` — after the same plugins are loaded in-process, which
 :mod:`.verify`, :mod:`.eval_libero`, :mod:`.rollout` and :mod:`.benchmark` do.

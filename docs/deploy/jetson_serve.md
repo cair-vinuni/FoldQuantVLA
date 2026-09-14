@@ -36,6 +36,10 @@ ARM=w4a4 LLM_SCHEME=w4a4_srg DIT_SCHEME=w4a4_shg scripts/deploy_groot_n17_jetson
 ARM=w4a4_res8 LLM_SCHEME=w4a4_srg DIT_SCHEME=w4a4_shg \
 LLM_PARAMS='{"site_bits": {"o": 8, "down": 8}}' scripts/deploy_groot_n17_jetson.sh
 
+# NVIDIA ModelOpt INT8 SmoothQuant comparison baseline (section 4, "ModelOpt baseline")
+ARM=modelopt_w8a8_sq LLM_SCHEME=modelopt_w8a8_smoothquant DIT_SCHEME=modelopt_w8a8_smoothquant \
+NUM_CALIB=64 scripts/deploy_groot_n17_jetson.sh
+
 # build and verify only, no server
 STEPS=check,kernels,float,export,build,verify scripts/deploy_groot_n17_jetson.sh
 
@@ -146,9 +150,37 @@ python -m foldquant_integration.export_foldquant \
 | `w8a8` | `w8a8_sr` | `w8a8_sh` | safest starting point |
 | `w4a4` | `w4a4_srg` | `w4a4_shg` | GPTQ; keep `--num-calib` at 128 or more |
 | `w4a4_res8` | `w4a4_srg` + `--llm-params '{"site_bits": {"o": 8, "down": 8}}'` | `w4a4_shg` | 4 bit with two 8 bit sites |
+| `modelopt_w8a8_sq` | `modelopt_w8a8_smoothquant` | `modelopt_w8a8_smoothquant` | ModelOpt Q/DQ baseline, not FoldQuant; `--num-calib 64` |
 
 GPTQ's Cholesky falls back to the CPU on JetPack 6.2 (its cuSOLVER is older
 than torch expects). The log says so; it only makes calibration slower.
+
+### ModelOpt baseline
+
+`modelopt_w8a8_smoothquant` builds the NVIDIA ModelOpt INT8 SmoothQuant arm of
+the VLA-OPT preset `groot_n1_7/tensorrt/modelopt_w8a8_smoothquant` inside this
+pipeline, so it is verified and served exactly like a FoldQuant arm. It needs
+no plugin library, but two extra packages (additions only; check with
+`--dry-run` first):
+
+```bash
+uv pip install --python $PY nvidia-modelopt==0.45.0 onnx-graphsurgeon==0.6.1
+```
+
+```bash
+python -m foldquant_integration.export_foldquant \
+    --model-path "$CKPT" --dataset-path "$DS" --embodiment-tag "$TAG" \
+    --num-calib 64 --seed 0 \
+    --llm-scheme modelopt_w8a8_smoothquant --dit-scheme modelopt_w8a8_smoothquant \
+    --output-dir exports/modelopt_w8a8_sq
+```
+
+The first export compiles ModelOpt's CUDA extension (about 95 s, cached in
+`~/.cache/torch_extensions`); it needs `ninja` from the venv and
+`CUDA_HOME=/usr/local/cuda-12.6`. `build_engines` (section 5) needs nothing
+extra: the Q/DQ graphs build strongly typed like every other graph, as the
+preset does. Recipe details are in the
+[N1.7 integration README](../../models/groot_n1_7/foldquant_integration/README.md#modelopt-int8-smoothquant-baseline).
 
 ## 5. Build the engines
 
@@ -264,5 +296,6 @@ machine.
 | `ImportError: torchcodec is not available` | torchcodec wheel not installed; or pass `--video-backend decord` (`VIDEO_BACKEND=decord` for the script) |
 | float pipeline ends with fewer than 7 engines | read `exports/float/pipeline.log`; the build now fails loudly instead of skipping a component |
 | `Failed to deserialize the cuda engine` | engines built on another device or TensorRT version; rebuild on this board |
+| `ModelOpt's CUDA extension (modelopt_cuda_ext) could not be built` | `ninja` missing from the venv or `CUDA_HOME` unset; a CPU fallback would segfault during the ONNX trace |
 | `port ... already in use` | another server holds that port; pick another `--port` |
 | engines load, actions are wrong | engine directory does not match the checkpoint, or a graph's `.onnx.data` is missing; run section 6 |

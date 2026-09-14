@@ -10,6 +10,12 @@ Writes, under ``--output-dir``::
     onnx/export_metadata.json upstream shape hints for the engine builder
     onnx/foldquant_export.json what was exported, from which samples, needing which plugins
 
+``--llm-scheme`` / ``--dit-scheme modelopt_w8a8_smoothquant`` export a
+comparison baseline instead of a FoldQuant graph: NVIDIA ModelOpt INT8
+SmoothQuant Q/DQ graphs with the same file names and I/O contract (see
+:mod:`.modelopt_export`). ``build_engines``, ``verify`` and ``serve`` take them
+unchanged.
+
 The two graphs are drop-in replacements for the files of the same name that
 upstream ``export_onnx_n1d7.py --export-mode full_pipeline`` writes: same
 input / output names, dtypes and dynamic-dim names, so upstream's engine
@@ -36,7 +42,7 @@ from pathlib import Path
 import time
 from typing import Any, Dict, Optional
 
-from foldquant import schemes
+from foldquant import modelopt_int8, schemes
 from foldquant.export import export_dit, export_llm, install_llm_emulation
 from foldquant.provenance import public_path
 import torch
@@ -91,6 +97,9 @@ class ExportConfig:
 
     dit_params: str = "{}"
     """JSON overrides for the DiT fold (sq_alpha, sq_fold_order)."""
+
+    modelopt_opset: int = modelopt_int8.DEFAULT_OPSET
+    """ONNX opset of a ``modelopt_w8a8_smoothquant`` graph (the VLA-OPT preset exports at 20)."""
 
     video_backend: str = "torchcodec"
     """Video decoder for the dataset loader."""
@@ -163,16 +172,28 @@ def main(args: ExportConfig) -> Path:
         logger.info("float tower(s) %s: taken from upstream's export at build time (--float-onnx-dir)", float_towers)
     llm_scheme = None if llm_scheme == FLOAT else llm_scheme
     dit_scheme = None if dit_scheme == FLOAT else dit_scheme
-    if llm_scheme is not None:
+    # ModelOpt Q/DQ baselines are routed to .modelopt_export, never to the FoldQuant emitters.
+    modelopt_towers = {
+        t: sch for t, sch in (("llm", llm_scheme), ("dit", dit_scheme)) if modelopt_int8.is_modelopt_scheme(sch)
+    }
+    if llm_scheme is not None and "llm" not in modelopt_towers:
         schemes.validate("llm", llm_scheme)
-    if dit_scheme is not None:
+    if dit_scheme is not None and "dit" not in modelopt_towers:
         schemes.validate("dit", dit_scheme)
+    if modelopt_towers and args.cascade:
+        raise SystemExit("--cascade emulates a FoldQuant LLM fold; the ModelOpt baseline calibrates without it")
+    for tower, tower_params in (("llm", args.llm_params), ("dit", args.dit_params)):
+        if tower in modelopt_towers and json.loads(tower_params):
+            raise SystemExit(f"--{tower}-params tunes a FoldQuant fold; {modelopt_towers[tower]} takes none")
     if args.cascade and (llm_scheme is None or dit_scheme is None):
         raise SystemExit("--cascade needs both an LLM scheme and a DiT scheme")
     if args.cascade and llm_scheme not in schemes.LLM_FOLDED_SCHEMES:
         raise SystemExit(f"--cascade emulates a folded LLM; {llm_scheme!r} folds nothing")
     llm_params = json.loads(args.llm_params)
     dit_params = json.loads(args.dit_params)
+
+    if modelopt_towers:
+        modelopt_int8.ensure_cuda_ext()
 
     out = Path(args.output_dir) / "onnx"
     out.mkdir(parents=True, exist_ok=True)
@@ -191,10 +212,19 @@ def main(args: ExportConfig) -> Path:
     shapes = capture_shape_metadata(policy, observations[0])
     logger.info("captured shapes: %s", shapes)
 
+    modelopt_calls: Dict[str, list] = {}
+    if modelopt_towers:
+        from . import modelopt_export
+
+        # Captured before anything is quantized: every ModelOpt tower calibrates on float inputs.
+        t1 = time.time()
+        modelopt_calls = modelopt_export.capture({t: modules[t] for t in modelopt_towers}, loop)
+        logger.info("ModelOpt calibration capture in %.0fs", time.time() - t1)
+
     results = []
     plugin_libs: list = []
     llm_result = None
-    if llm_scheme is not None:
+    if llm_scheme is not None and "llm" not in modelopt_towers:
         t1 = time.time()
         # No final norm: the upstream backbone reads hidden_states[-1], the last
         # decoder layer's PRE-norm output (see upstream export_llm_to_onnx).
@@ -209,7 +239,7 @@ def main(args: ExportConfig) -> Path:
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
 
-    if dit_scheme is not None:
+    if dit_scheme is not None and "dit" not in modelopt_towers:
         t1 = time.time()
         emulation = None
         if args.cascade:
@@ -229,6 +259,34 @@ def main(args: ExportConfig) -> Path:
                 emulation.remove()
         results.append(dit_result)
         logger.info("DiT %s exported in %.0fs", dit_scheme, time.time() - t1)
+
+    # After the FoldQuant towers: ModelOpt quantizes in place, so a FoldQuant replay
+    # that ran later would calibrate through a fake-quantized tower.
+    modelopt_records: Dict[str, Any] = {}
+    modelopt_files: Dict[str, str] = {}
+    if "llm" in modelopt_towers:
+        t1 = time.time()
+        modelopt_records["llm"] = modelopt_export.export_llm(
+            modules["llm"],
+            modelopt_calls["llm"],
+            out / "llm_bf16.onnx",
+            num_layers=int(policy.model.backbone.select_layer),
+            algorithm=modelopt_towers["llm"],
+            opset=args.modelopt_opset,
+        )
+        modelopt_files["llm"] = "llm_bf16.onnx"
+        logger.info("LLM %s exported in %.0fs", modelopt_towers["llm"], time.time() - t1)
+    if "dit" in modelopt_towers:
+        t1 = time.time()
+        modelopt_records["dit"] = modelopt_export.export_dit(
+            modules["dit"],
+            modelopt_calls["dit"],
+            out / "dit_bf16.onnx",
+            algorithm=modelopt_towers["dit"],
+            opset=args.modelopt_opset,
+        )
+        modelopt_files["dit"] = "dit_bf16.onnx"
+        logger.info("DiT %s exported in %.0fs", modelopt_towers["dit"], time.time() - t1)
 
     for r in results:
         for lib in r.plugin_libs:
@@ -255,12 +313,17 @@ def main(args: ExportConfig) -> Path:
         "model_path": public_path(args.model_path),
         "embodiment_tag": str(policy.embodiment_tag),
         "dataset_path": public_path(args.dataset_path),
-        "schemes": {**{r.module: r.scheme for r in results}, **{t: FLOAT for t in float_towers}},
+        "schemes": {
+            **{r.module: r.scheme for r in results},
+            **modelopt_towers,
+            **{t: FLOAT for t in float_towers},
+        },
         **{t: FLOAT for t in float_towers},
         "params": {"llm": llm_params, "dit": dit_params},
         "cascade": bool(args.cascade),
         "plugin_libs": plugin_libs,
-        "files": {r.module: r.onnx_path.name for r in results},
+        "files": {**{r.module: r.onnx_path.name for r in results}, **modelopt_files},
+        "modelopt": modelopt_records,
         "calibration": {
             "seed": args.seed,
             "num_samples": len(samples),
