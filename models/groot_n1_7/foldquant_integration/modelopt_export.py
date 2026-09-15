@@ -1,5 +1,5 @@
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 
 """The ModelOpt INT8 SmoothQuant baseline arm for GR00T N1.7 (see :mod:`foldquant.modelopt_int8`).
 

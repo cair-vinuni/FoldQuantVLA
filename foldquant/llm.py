@@ -1,5 +1,5 @@
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 
 """Dynamic per-row INT8/INT4 (width-selectable) plugin ONNX construction for the GR00T N1.6 Qwen3 LLM.
 

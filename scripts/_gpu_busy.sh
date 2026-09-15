@@ -1,5 +1,5 @@
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 #
 # Sourced, not executed. Defines gpu_busy_pids, which prints the PIDs of the
 # processes currently holding a CUDA context, one per line (nothing when idle).

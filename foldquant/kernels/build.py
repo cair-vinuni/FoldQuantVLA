@@ -1,5 +1,5 @@
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 
 """Rebuild the custom TensorRT plugin ``.so`` from vendored source (build-time).
 

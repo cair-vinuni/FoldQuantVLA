@@ -1,5 +1,5 @@
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 #
 # Sourced, not executed. Defines family_pythonpath ROOT FAMILY_DIR, which prints
 # the PYTHONPATH a family's `python -m foldquant_integration.*` call needs.

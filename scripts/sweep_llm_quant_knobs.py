@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 
 """ARC: grid-sweep the W4A4 LLM calibration knobs and rank presets by decoded action.
 

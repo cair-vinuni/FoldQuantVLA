@@ -11,7 +11,7 @@
   <img alt="Targets" src="https://img.shields.io/badge/GPU-sm__87%20Orin%20%7C%20sm__89%20Ada%20%7C%20sm__90%20Hopper-627067">
   <img alt="Families" src="https://img.shields.io/badge/VLA%20families-GR00T%20N1.5%2FN1.6%2FN1.7%20%7C%20%CF%80%E2%82%80.%E2%82%85-78877E">
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11-DAE3DC">
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F2F5F2"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-F2F5F2"></a>
 </p>
 
 **FoldQuantVLA: Native Low-Bit Quantization of Vision-Language-Action Models
@@ -217,7 +217,7 @@ GR00T N1.7 entirely on an Orin, step by step or through
 ## License
 
 FoldQuant code is released under the
-[PolyForm Noncommercial License 1.0.0](LICENSE) for research use. Upstream
+[Apache License, Version 2.0](LICENSE); see [NOTICE](NOTICE). Upstream
 model code under `models/*/` and third-party sources keep their own licenses
 (Apache-2.0 / BSD-3-Clause), retained alongside them. See
 [CITATION.cff](CITATION.cff) to cite.

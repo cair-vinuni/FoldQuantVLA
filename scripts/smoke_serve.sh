@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 #
 # Does each family's policy server start and bind? One family at a time, on a
 # port nothing else uses, killed as soon as it answers.

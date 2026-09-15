@@ -3,7 +3,7 @@ message: "If you use this software, please cite the FoldQuantVLA paper."
 title: "FoldQuantVLA"
 authors:
   - name: "The FoldQuant Authors"
-license: PolyForm-Noncommercial-1.0.0
+license: Apache-2.0
 version: 0.1.0
 date-released: 2026-09-04
 preferred-citation:

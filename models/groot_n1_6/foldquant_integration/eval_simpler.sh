@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 #
 # SimplerEnv sweep for one arm of a GR00T N1.6 checkpoint: starts
 # `foldquant_integration.serve --use-sim-policy-wrapper` (bf16 when ENGINE_DIR is

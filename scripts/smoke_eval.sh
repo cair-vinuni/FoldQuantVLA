@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 #
 # Does the LIBERO rollout run? One suite, one episode per task — ten episodes,
 # two to four minutes a family. It answers whether eval_libero drives the

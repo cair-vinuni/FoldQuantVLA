@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 The FoldQuant Authors.
-# Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
+# Licensed under the Apache License, Version 2.0; see LICENSE.
 #
 # One family, end to end, small: export -> build -> verify, on 8 calibration
 # observations and 8 held-out ones. It answers one question — does this
