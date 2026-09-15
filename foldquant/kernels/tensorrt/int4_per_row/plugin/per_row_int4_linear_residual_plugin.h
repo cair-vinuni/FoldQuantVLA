@@ -2,10 +2,10 @@
 // (no bias) + residual add, all in one IPluginV3.
 //
 // INT4 analogue of PerRowInt8LinearResidual, for linears that no macro plugin
-// covers (first user: the Evo-1 action-head FFN, whose LayerNorm is followed by
-// a *runtime* time-embedding add that FusedFfnBlockInt4's baked no-affine norm
-// cannot express — so the norm/add/GELU stay ONNX ops and only the two GEMMs
-// run through this plugin).
+// covers (e.g. an action-head FFN whose LayerNorm is followed by a *runtime*
+// time-embedding add that FusedFfnBlockInt4's baked no-affine norm cannot
+// express — so the norm/add/GELU stay ONNX ops and only the two GEMMs run
+// through this plugin).
 //
 // Pipeline:
 //   1. dit_int4_per_row_rotate_quant_bf16(x, perm, rotation) → x_i4, x_scale
@@ -34,7 +34,7 @@
 //
 // Two rotation modes, selected by the baked field set (one creator, two users):
 //   FoldQuant mode  — "perm"+"rotation" present: fused permute + dense per-block
-//                  rotation quant (Evo-1 head / expert emitters, unchanged).
+//                  rotation quant (expert emitters, unchanged).
 //   FWHT mode    — "perm"/"rotation" absent, "rot_block_size" >= 1: in-plugin
 //                  block-diagonal Sylvester Hadamard before per-row quant, the
 //                  LLM W4A4 residual path (o_proj / down_proj). Weight side is

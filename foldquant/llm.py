@@ -45,7 +45,7 @@ Graph I/O names follow the upstream deployment exports so the engine is a
 drop-in for the float LLM engine in each model's own TensorRT glue: plain
 Qwen3 emits ``inputs_embeds``/``attention_mask`` -> ``hidden_states``; Qwen3-VL
 (``n1d7_mode``) adds ``position_ids``/``visual_pos_masks``/``deepstack_i`` and
-emits ``embeddings``; the SmolLM2/Gemma prefix graphs emit ``kv_stack``.
+emits ``embeddings``; the Gemma prefix graph emits ``kv_stack``.
 
 This module performs ONNX construction only. It does not import ``tensorrt``,
 load any ``.so``, or run TensorRT.
@@ -346,8 +346,6 @@ def _emit_layer(
     nodes: list,
     inits: list,
     rot_bs: int = 0,
-    pad_bias_name: "str | None" = None,
-    keep_mult_name: "str | None" = None,
     gemma_mode: bool = False,
     bits: int = 8,
     gptq: "Any | None" = None,
@@ -358,10 +356,8 @@ def _emit_layer(
 ) -> str:
     """Emit ONNX nodes for one Qwen2/Qwen3 decoder layer. Returns the output tensor name.
 
-    Qwen2 (Evo-1) differences are read off ``layer_state`` structurally: q/k/v
-    biases (added after the INT8 GEMM), and no per-head q/k RMSNorm.
-    ``pad_bias_name``/``keep_mult_name`` carry Evo-1's flash-parity padded-query
-    semantics; both ``None`` gives GR00T's causal-only attention unchanged.
+    Qwen2 differences are read off ``layer_state`` structurally: q/k/v biases
+    (added after the INT8 GEMM), and no per-head q/k RMSNorm.
 
     Dynamic-S body: no hardcoded seq_len in any constant. The caller passes
     sliced rope/causal_mask names (sized to current_S at runtime).
@@ -441,7 +437,7 @@ def _emit_layer(
     w_qkv = torch.cat([w_q, w_k, w_v], dim=0)  # (q_dim + 2*kv_dim, K)
     gamma_pre = layer_state["input_layernorm.weight"]
 
-    # Qwen2 (Evo-1's LLM) carries q/k/v biases; Qwen3 does not. A bias is added
+    # Qwen2 carries q/k/v biases; Qwen3 does not. A bias is added
     # after the INT8 GEMM as a plain BF16 Add — it lives outside both the
     # SmoothQuant fold (which rescales input channels) and the rotation fold
     # (which transforms the input space), so neither touches it.
@@ -561,25 +557,12 @@ def _emit_layer(
     inits.append(_bf16_initializer(f"{b}_attn_scale", torch.tensor(1.0 / math.sqrt(d), dtype=torch.bfloat16)))
     nodes.append(oh.make_node("Mul", [f"{b}_qk", f"{b}_attn_scale"], [f"{b}_qk_s"]))
     nodes.append(oh.make_node("Add", [f"{b}_qk_s", causal_mask_init_name], [f"{b}_qk_m"]))
-    softmax_in = f"{b}_qk_m"
-    if pad_bias_name is not None:
-        # Key-padding bias on top of causal: Evo-1 pads prompts to a fixed
-        # length, and the checkpoint was trained under flash-attn semantics
-        # where padded keys are never attended.
-        nodes.append(oh.make_node("Add", [softmax_in, pad_bias_name], [f"{b}_qk_mp"]))
-        softmax_in = f"{b}_qk_mp"
-    nodes.append(oh.make_node("Softmax", [softmax_in], [f"{b}_attn_w"], axis=-1))
+    nodes.append(oh.make_node("Softmax", [f"{b}_qk_m"], [f"{b}_attn_w"], axis=-1))
     nodes.append(oh.make_node("MatMul", [f"{b}_attn_w", f"{b}_v_full"], [f"{b}_attn_4"]))
     nodes.append(oh.make_node("Transpose", [f"{b}_attn_4"], [f"{b}_attn_perm"], perm=[0, 2, 1, 3]))
     inits.append(_i64_init(f"{b}_attn_flat_shape", [0, 0, q_dim]))
     nodes.append(oh.make_node("Reshape", [f"{b}_attn_perm", f"{b}_attn_flat_shape"], [f"{b}_attn_flat"], allowzero=0))
     attn_flat_name = f"{b}_attn_flat"
-    if keep_mult_name is not None:
-        # flash_attention_2's re-pad scatter leaves ZEROS at padded query
-        # positions — they receive only the residual stream. o_proj has no
-        # bias, so zeroing its input reproduces that exactly.
-        nodes.append(oh.make_node("Mul", [attn_flat_name, keep_mult_name], [f"{b}_attn_kept"]))
-        attn_flat_name = f"{b}_attn_kept"
 
     # ===== Plugin 2: o_proj + residual =====
     w_o = layer_state["self_attn.o_proj.weight"]
@@ -839,9 +822,7 @@ def build_llm_plugin_onnx(
     sq_scales: Optional[Dict[str, Any]] = None,
     rot_bs: int = 0,
     n1d7_mode: bool = False,
-    smolvla_mode: bool = False,
     gemma_mode: bool = False,
-    padded_query_mask: bool = False,
     mrope_section: Optional[list] = None,
     attention_scaling: float = 1.0,
     num_deepstack: int = 0,
@@ -872,23 +853,13 @@ def build_llm_plugin_onnx(
     field is baked.
 
     Args:
-        smolvla_mode: emit SmolVLA's prefix-pass contract instead of GR00T's
-            hidden-states one — inputs ``prefix_embs`` [1, S, hidden] /
-            ``attention_mask`` BOOL [1, S, S] (the live block mask; image and
-            language tokens attend bidirectionally, so a baked causal mask is
-            wrong here) / ``position_ids`` INT64 [1, S]; RoPE gathered from a
-            baked table at theta=10000 (SmolVLA's ``apply_rope`` hardcodes
-            ``max_wavelength=10_000`` — the checkpoint config's
-            ``rope_theta=100000`` is NOT what the runtime computes); output is
-            the stacked post-RoPE KV cache ``kv_stack`` [L, 2, 1, S, H_kv, D]
-            with no final norm (the prefix pass's hidden states are consumed
-            nowhere — only the cache crosses the engine boundary). Batch is
-            pinned to 1 (the repeat_kv reshape is B=1-shaped).
-        padded_query_mask: reproduce ``flash_attention_2``'s treatment of a
-            fixed-length padded prompt (Evo-1): padded keys get an additive
-            bias on top of the causal mask, and each layer's attention output
-            is zeroed at padded query positions before o_proj. GR00T never
-            pads, so its graphs stay causal-only.
+        gemma_mode: emit the Pi0/Pi0.5 PaliGemma prefix-pass contract instead of
+            GR00T's hidden-states one — inputs ``prefix_embs`` [B, S, hidden] /
+            the additive ``attention_mask`` [B, 1, S, S] / ``position_ids``
+            INT64 [B, S]; RoPE gathered from a baked table at theta=10000;
+            output is the stacked post-RoPE KV cache ``kv_stack``
+            [L, 2, B, H_kv, S, D] with no final norm (only the cache crosses the
+            engine boundary).
         qwen3_model: live PyTorch LLM. Must expose ``.config`` and ``.layers`` and
             a ``state_dict()`` keyed ``layers.<i>.<...>`` plus ``norm.weight``.
         output_path: path to save the ``.onnx`` (external data written
@@ -932,22 +903,17 @@ def build_llm_plugin_onnx(
     d = getattr(cfg, "head_dim", k_dim // h)
     eps = cfg.rms_norm_eps
     theta = getattr(cfg, "rope_theta", 1000000.0)
-    if smolvla_mode:
-        # SmolVLA's apply_rope hardcodes max_wavelength=10_000; using the
-        # checkpoint config's rope_theta (100000) would silently disagree with
-        # the runtime the reference is measured on.
-        theta = 10000.0
     # Gemma genuinely uses rope_theta=10000; keep whatever the config gives
     # (10000) but pin it so a PaliGemma override cannot drift the emitter.
     if gemma_mode:
         theta = 10000.0
     num_layers = len(qwen3_model.layers)
-    # gemma_mode shares smolvla_mode's prefix-KV contract (prefix_embs in, block
-    # mask, position_ids RoPE, kv_stack out); the differences (RMSNorm +1,
-    # gelu-tanh MLP, KV axis order, final-norm +1) are applied inline below.
-    kv_stack_mode = smolvla_mode or gemma_mode
-    if kv_stack_mode and (n1d7_mode or padded_query_mask):
-        raise ValueError("smolvla_mode/gemma_mode is exclusive with n1d7_mode/padded_query_mask.")
+    # gemma_mode emits the prefix-KV contract (prefix_embs in, additive block
+    # mask, position_ids RoPE, kv_stack out); the Gemma specifics (RMSNorm +1,
+    # gelu-tanh MLP) are applied inline below.
+    kv_stack_mode = gemma_mode
+    if kv_stack_mode and n1d7_mode:
+        raise ValueError("gemma_mode is exclusive with n1d7_mode.")
 
     inits: list = []
     nodes: list = []
@@ -981,27 +947,18 @@ def build_llm_plugin_onnx(
     out_tensor = "embeddings" if n1d7_mode else ("kv_stack" if kv_stack_mode else "hidden_states")
     if kv_stack_mode:
         x_in = oh.make_tensor_value_info("prefix_embs", onnx.TensorProto.BFLOAT16, [batch_dim, seq_dim, k_dim])
-        if gemma_mode:
-            # The Pi prefix seam hands the engine the SAME 4-D ADDITIVE mask
-            # the float export captured ([B, 1, S, S], HF `_prepare_4d_mask`
-            # output) — declare that contract instead of a bool mask so the
-            # drop-in module needs no conversion and the graph rank matches
-            # the manifest's observed input_features.
-            am_in = oh.make_tensor_value_info(
-                "attention_mask", onnx.TensorProto.BFLOAT16, [batch_dim, 1, seq_dim, seq_dim2]
-            )
-        else:
-            am_in = oh.make_tensor_value_info("attention_mask", onnx.TensorProto.BOOL, [batch_dim, seq_dim, seq_dim2])
-        if gemma_mode:
-            # Gemma's stack_kv_cache keeps HF-native [B, H_kv, S, D] per layer.
-            y_out = oh.make_tensor_value_info(
-                out_tensor, onnx.TensorProto.BFLOAT16, [num_layers, 2, batch_dim, hkv, seq_dim, d]
-            )
-        else:
-            # SmolVLA's stack_kv_cache uses [B, S, H_kv, D].
-            y_out = oh.make_tensor_value_info(
-                out_tensor, onnx.TensorProto.BFLOAT16, [num_layers, 2, batch_dim, seq_dim, hkv, d]
-            )
+        # The Pi prefix seam hands the engine the SAME 4-D ADDITIVE mask
+        # the float export captured ([B, 1, S, S], HF `_prepare_4d_mask`
+        # output) — declare that contract instead of a bool mask so the
+        # drop-in module needs no conversion and the graph rank matches
+        # the manifest's observed input_features.
+        am_in = oh.make_tensor_value_info(
+            "attention_mask", onnx.TensorProto.BFLOAT16, [batch_dim, 1, seq_dim, seq_dim2]
+        )
+        # Gemma's stack_kv_cache keeps HF-native [B, H_kv, S, D] per layer.
+        y_out = oh.make_tensor_value_info(
+            out_tensor, onnx.TensorProto.BFLOAT16, [num_layers, 2, batch_dim, hkv, seq_dim, d]
+        )
     else:
         x_in = oh.make_tensor_value_info("inputs_embeds", onnx.TensorProto.BFLOAT16, [batch_dim, "seq_len", k_dim])
         # ``attention_mask`` is declared for IO parity and to size the dynamic seq_len, but
@@ -1041,22 +998,8 @@ def build_llm_plugin_onnx(
         inits.append(_i64_init("_rope_axes_1", [1]))
         nodes.append(oh.make_node("Unsqueeze", ["rope_cos_g", "_rope_axes_1"], ["rope_cos"]))
         nodes.append(oh.make_node("Unsqueeze", ["rope_sin_g", "_rope_axes_1"], ["rope_sin"]))
-        if gemma_mode:
-            # Input is already the additive [B, 1, S, S] bias — pass through.
-            nodes.append(oh.make_node("Identity", ["attention_mask"], ["block_mask"]))
-        else:
-            # The live bool block mask -> additive BF16 [B, 1, S, S]. Half of
-            # bf16-min, the same margin the causal mask uses; every prefix
-            # query attends at least itself, so no softmax row is all-masked.
-            _tt = _torch()
-            mask_val = float(_tt.finfo(_tt.bfloat16).min * 0.5)
-            inits.append(_bf16_initializer("blk_one", _tt.tensor(1.0, dtype=_tt.bfloat16)))
-            inits.append(_bf16_initializer("blk_scale", _tt.tensor(-mask_val, dtype=_tt.bfloat16)))
-            nodes.append(oh.make_node("Cast", ["attention_mask"], ["blk_f"], to=onnx.TensorProto.BFLOAT16))
-            nodes.append(oh.make_node("Sub", ["blk_one", "blk_f"], ["blk_inv"]))
-            nodes.append(oh.make_node("Mul", ["blk_inv", "blk_scale"], ["blk_neg"]))
-            nodes.append(oh.make_node("Neg", ["blk_neg"], ["blk_bias_3d"]))
-            nodes.append(oh.make_node("Unsqueeze", ["blk_bias_3d", "_rope_axes_1"], ["block_mask"]))
+        # Input is already the additive [B, 1, S, S] bias — pass through.
+        nodes.append(oh.make_node("Identity", ["attention_mask"], ["block_mask"]))
     else:
         # Bake the causal mask at max_seq_len; slice down at runtime (both families).
         inits.append(_bf16_initializer("causal_mask_full", _causal_mask(max_seq_len)))
@@ -1067,7 +1010,7 @@ def build_llm_plugin_onnx(
         )
         _emit_mrope_causal_mask(nodes, inits)
     elif not kv_stack_mode:
-        # N1.6/Qwen2: bake 1D RoPE tables at max_seq_len + rope/mask slice helpers.
+        # N1.5/N1.6: bake 1D RoPE tables at max_seq_len + rope/mask slice helpers.
         cos, sin = _compute_qwen3_rope(max_seq_len, d, theta)
         inits.append(_bf16_initializer("rope_cos_full", cos))
         inits.append(_bf16_initializer("rope_sin_full", sin))
@@ -1075,11 +1018,10 @@ def build_llm_plugin_onnx(
 
     # Key-padding bias, folded into the causal mask: a batch of parallel environments
     # is padded to the longest prompt, and the causal mask alone says nothing about
-    # pad positions. Evo-1 (`padded_query_mask`) gets its own flash-parity treatment
-    # below and the kv-stack prefix graphs build their own block mask, so this covers
-    # the plain causal families.
+    # pad positions. The kv-stack prefix graph takes its own block mask, so this
+    # covers the plain causal families.
     attn_mask_name = "causal_mask"
-    if not kv_stack_mode and not padded_query_mask:
+    if not kv_stack_mode:
         _t = _torch()
         key_pad_val = float(_t.finfo(_t.bfloat16).min * 0.5)
         inits.append(_bf16_initializer("_kp_one", _t.tensor(1.0, dtype=_t.bfloat16)))
@@ -1091,31 +1033,6 @@ def build_llm_plugin_onnx(
         nodes.append(oh.make_node("Unsqueeze", ["_kp_bias", "_kp_axes"], ["_kp_bias_4d"]))
         nodes.append(oh.make_node("Add", ["causal_mask", "_kp_bias_4d"], ["attn_mask"]))
         attn_mask_name = "attn_mask"
-
-    pad_bias_name = keep_mult_name = None
-    if padded_query_mask:
-        # attention_mask [B, S] int64 -> the two flash-parity tensors:
-        #   pad_bias  [B, 1, 1, S]  additive key bias ((mask - 1) * |mask_val|)
-        #   keep_mult [B, S, 1]     multiplicative query keep
-        # HALF the causal mask's magnitude, deliberately: a padded query's own
-        # key is both causally-blocked and padded, so the two biases add. At
-        # equal magnitude the sum (finfo.min) overflows to -inf in bf16, and a
-        # softmax row that is entirely -inf yields NaN — which the later
-        # query-zeroing multiply cannot repair (NaN * 0 = NaN). At half
-        # magnitude the worst-case sum stays finite, the row softmaxes to
-        # uniform (exactly like the PyTorch flash-parity path's
-        # masked_fill(finfo.min)), and the zeroing then discards it.
-        mask_val = float(_torch().finfo(_torch().bfloat16).min * 0.25)
-        inits.append(_bf16_initializer("pad_one", _torch().tensor(1.0, dtype=_torch().bfloat16)))
-        inits.append(_bf16_initializer("pad_scale", _torch().tensor(-mask_val, dtype=_torch().bfloat16)))
-        nodes.append(oh.make_node("Cast", ["attention_mask"], ["am_bf16"], to=onnx.TensorProto.BFLOAT16))
-        nodes.append(oh.make_node("Sub", ["am_bf16", "pad_one"], ["am_m1"]))
-        nodes.append(oh.make_node("Mul", ["am_m1", "pad_scale"], ["pad_bias_2d"]))
-        inits.append(_i64_init("pad_axes_11", [1, 2]))
-        nodes.append(oh.make_node("Unsqueeze", ["pad_bias_2d", "pad_axes_11"], ["pad_bias"]))
-        inits.append(_i64_init("keep_axes_2", [2]))
-        nodes.append(oh.make_node("Unsqueeze", ["am_bf16", "keep_axes_2"], ["keep_mult"]))
-        pad_bias_name, keep_mult_name = "pad_bias", "keep_mult"
 
     cur_x = "prefix_embs" if kv_stack_mode else "inputs_embeds"
     # Batch-aware repeat_kv target, shared by every layer (see KV_SHAPE_DYN).
@@ -1181,8 +1098,6 @@ def build_llm_plugin_onnx(
             nodes=nodes,
             inits=inits,
             rot_bs=rot_bs,
-            pad_bias_name=pad_bias_name,
-            keep_mult_name=keep_mult_name,
             gemma_mode=gemma_mode,
             bits=bits,
             gptq=gptq,
@@ -1194,13 +1109,8 @@ def build_llm_plugin_onnx(
         if kv_stack_mode:
             # Collect post-RoPE K and raw V (both pre-repeat_kv) into the
             # runtime KV-stack layout. Gemma keeps HF-native [B, HKV, S, D]
-            # (k_r and v_t are already that); SmolVLA uses [B, S, HKV, D]
-            # (transpose k, take the un-transposed v_4).
-            if gemma_mode:
-                k_export, v_export = f"{prefix}_k_r", f"{prefix}_v_t"
-            else:
-                nodes.append(oh.make_node("Transpose", [f"{prefix}_k_r"], [f"{prefix}_k_export"], perm=[0, 2, 1, 3]))
-                k_export, v_export = f"{prefix}_k_export", f"{prefix}_v_4"
+            # (k_r and v_t are already that).
+            k_export, v_export = f"{prefix}_k_r", f"{prefix}_v_t"
             nodes.append(oh.make_node("Unsqueeze", [k_export, "_kv_axes_0"], [f"{prefix}_k_u"]))
             nodes.append(oh.make_node("Unsqueeze", [v_export, "_kv_axes_0"], [f"{prefix}_v_u"]))
             nodes.append(oh.make_node("Concat", [f"{prefix}_k_u", f"{prefix}_v_u"], [f"{prefix}_kv"], axis=0))
@@ -1219,8 +1129,9 @@ def build_llm_plugin_onnx(
         # consumed nowhere (only the cache crosses the engine boundary).
         inits.append(_i64_init("_kv_axes_0", [0]))
         nodes.append(oh.make_node("Concat", kv_layer_names, [out_tensor], axis=0))
-        graph_name = "llm_gemma_prefix_plugin" if gemma_mode else "llm_smolvla_prefix_plugin"
-        graph = oh.make_graph(nodes, graph_name, [x_in, am_in] + extra_inputs, [y_out], initializer=inits)
+        graph = oh.make_graph(
+            nodes, "llm_gemma_prefix_plugin", [x_in, am_in] + extra_inputs, [y_out], initializer=inits
+        )
         model = oh.make_model(
             graph,
             opset_imports=[oh.make_opsetid("", opset), oh.make_opsetid("trt.plugins", 1)],

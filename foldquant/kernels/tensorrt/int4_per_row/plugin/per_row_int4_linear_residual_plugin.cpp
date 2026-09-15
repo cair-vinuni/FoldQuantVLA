@@ -1,5 +1,4 @@
 // IPluginV3 wrapper: rotated per-row INT4 quant + W4A4 Linear (no bias) + residual.
-// First user: the Evo-1 action-head FFN GEMMs under w4a4_sr.
 
 #include "plugin_field_util.h"
 #include "per_row_int4_linear_residual_plugin.h"
@@ -237,7 +236,7 @@ int32_t PerRowInt4LinearResidualPlugin::enqueue(PluginTensorDesc const* inputDes
         void* xRot      = ws + aBytes + sBytes + xBytes;  // BF16 (M, K) rotated
 
         // Step 1: per-row INT4 quant, rotation mode picked by the baked fields.
-        // FoldQuant mode (Evo-1 head / experts): fused permute + dense per-block
+        // FoldQuant mode (experts): fused permute + dense per-block
         // rotation. FWHT mode (LLM W4A4 o/down sites): block-diagonal Sylvester
         // Hadamard, weight side folded offline with W·Hᵀ. An engine baked with
         // NEITHER field set quantizes un-rotated (rot_bs <= 1 delegates).

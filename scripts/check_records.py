@@ -30,8 +30,8 @@ import sys
 from pathlib import Path
 
 RESULTS = Path(__file__).resolve().parent.parent / "results"
-FAMILIES = ("groot_n1_7", "groot_n1_6", "groot_n1_5", "pi05", "smolvla", "evo_1")
-SEAM_KEYS = ("backbone_features", "kv_stack", "fused_tokens")
+FAMILIES = ("groot_n1_7", "groot_n1_6", "groot_n1_5", "pi05")
+SEAM_KEYS = ("backbone_features", "kv_stack")
 # Absolute home-directory paths, in the three shapes an operator's machine writes them.
 # Deliberately name-agnostic: hardcoding the current operator's username would pass on
 # anyone else's machine, and would put the name being hidden into the file that hides it.

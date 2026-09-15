@@ -166,16 +166,6 @@ def is_gemma(module: nn.Module) -> bool:
     return _model_type(module) == "gemma"
 
 
-def is_llama(module: nn.Module) -> bool:
-    """SmolVLA's SmolLM2 text stack reports ``model_type == "llama"``."""
-    return _model_type(module) == "llama"
-
-
-def is_qwen2(module: nn.Module) -> bool:
-    """Evo-1's InternVL3 LLM. Implies q/k/v biases (read structurally) and the flash-parity padded-query mask."""
-    return _model_type(module) == "qwen2"
-
-
 def is_qwen3_vl(module: nn.Module) -> bool:
     """GR00T N1.7's Qwen3-VL text tower — decided by ``rope_scaling.mrope_section``, not by name."""
     return bool(rope_scaling(module).get("mrope_section"))
@@ -243,8 +233,6 @@ __all__: List[str] = [
     "capture_llm_snapshots",
     "captured_prefix_len",
     "is_gemma",
-    "is_llama",
-    "is_qwen2",
     "is_qwen3_vl",
     "load_learned_calib",
     "qwen3_vl_graph_params",

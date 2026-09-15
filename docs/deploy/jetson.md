@@ -12,8 +12,7 @@ test on the board.
 > The per-family scripts (`scripts/smoke_family.sh`, `smoke_serve.sh`,
 > `smoke_eval.sh`, `bench_all.sh`) have been run on a Jetson AGX Orin
 > (JetPack 6.2, CUDA 12.6, TensorRT 10.3, Python 3.10) for GR00T N1.7, N1.6,
-> N1.5, π₀.₅ and Evo-1 — see [Status on Orin](#status-on-orin). **SmolVLA does
-> not run on this platform yet.** No latency or accuracy figure from those runs
+> N1.5 and π₀.₅ — see [Status on Orin](#status-on-orin). No latency or accuracy figure from those runs
 > is recorded: they check that each path completes, not what it measures.
 
 ## 1. Export, on the workstation
@@ -128,9 +127,8 @@ directly. Setting the variable here is inert — no graph is captured and the
 latency is unchanged (measured on a served SO101 W8A8 arm: 43.5 ms median round
 trip either way).
 
-The other five families do route through the runtime, and there the flag pays
-most for engines called many times per chunk — Evo-1's head runs 50×, π₀.₅'s
-expert 10×. Launch overhead is relatively larger on an Orin than on x86, so it
+The other three families do route through the runtime, and there the flag pays
+most for engines called many times per chunk — π₀.₅'s expert runs 10×. Launch overhead is relatively larger on an Orin than on x86, so it
 is worth measuring there even where it did not pay on a workstation
 (`results/FLOAT_ARMS.md` has the x86 numbers).
 
@@ -161,8 +159,6 @@ from them belongs in `results/`.
 | GR00T N1.6 | runs | runs / runs | runs | runs |
 | GR00T N1.5 | runs | runs / runs | runs | runs |
 | π₀.₅ | runs | runs / runs | client not covered | runs |
-| Evo-1 | runs | runs / runs | client not covered | runs |
-| SmolVLA | **does not run** | — | — | — |
 
 Platform notes that are not bugs in this repository:
 
@@ -174,27 +170,6 @@ Platform notes that are not bugs in this repository:
   aarch64 without changing anything else in the environment.
 - torchcodec does not load in the GR00T N1.5 venv; set
   `N15_VIDEO_BACKEND=decord` for `smoke_family.sh` and `bench_all.sh`.
-- π₀.₅ and Evo-1 roll out LIBERO from a separate client environment against
-  a running server, which `smoke_eval.sh` does not cover; only their server
+- π₀.₅ rolls out LIBERO from a separate client environment against
+  a running server, which `smoke_eval.sh` does not cover; only its server
   side (the serve column) was checked.
-
-### SmolVLA
-
-SmolVLA cannot currently be installed on an Orin running JetPack 6:
-
-- The vendored LeRobot requires Python 3.12 (`requires-python = ">=3.12"`), and
-  that is not a packaging formality — the source uses PEP 695 syntax
-  (`class DataProcessorPipeline[TInput, TOutput]` in
-  `src/lerobot/processor/pipeline.py`, `type FeatureDict = ...` in
-  `src/lerobot/datasets/aggregate.py`), which is a `SyntaxError` on 3.10.
-- A CUDA-enabled torch for the Orin's GPU (sm_87) comes from the Jetson wheel
-  index (`pypi.jetson-ai-lab.io/jp6/cu126`), which publishes cp310 wheels only.
-  The aarch64 torch wheels on PyPI are not built for sm_87 and cannot use the
-  Orin's GPU.
-
-So there is no environment in which both hold. The ways out are a CUDA torch
-built from source for Python 3.12 on the board, a JetPack release whose wheel
-index covers 3.12, or back-porting the PEP 695 syntax in the vendored LeRobot
-to 3.10 — none of which is done here. Until one is, `smoke_*.sh` report
-SmolVLA as skipped (no `.venv`) on an Orin.
-

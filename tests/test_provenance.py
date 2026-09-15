@@ -19,10 +19,10 @@ from foldquant.provenance import public_path
         ("~/weights/pi05_libero_pytorch", "pi05_libero_pytorch"),
         # A Hugging Face cache carries the repo in its own directory name, so the
         # reduction keeps the identifier rather than the snapshot hash.
-        ("/home/someone/.cache/huggingface/hub/models--MINT-SJTU--Evo1_LIBERO/snapshots/3ddc6c9c", "MINT-SJTU/Evo1_LIBERO"),
+        ("/home/someone/.cache/huggingface/hub/models--nvidia--GR00T-N1.6-3B/snapshots/3ddc6c9c", "nvidia/GR00T-N1.6-3B"),
         ("/x/.cache/huggingface/lerobot/hub/datasets--HuggingFaceVLA--libero/snapshots/869589", "HuggingFaceVLA/libero"),
         # Already portable: hub ids and repo-relative paths are left alone.
-        ("HuggingFaceVLA/smolvla_libero", "HuggingFaceVLA/smolvla_libero"),
+        ("lerobot/pi05_base", "lerobot/pi05_base"),
         ("exports/w4a4/engines", "exports/w4a4/engines"),
         ("examples.Libero.custom_data_config:LiberoDataConfig", "examples.Libero.custom_data_config:LiberoDataConfig"),
         # Pass-through, so a caller need not guard an optional field.

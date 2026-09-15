@@ -7,8 +7,8 @@ Cascade calibration needs the *downstream* modules (DiT/expert/action head) to b
 calibrated against the context a **quantized** LLM produces — the distribution the
 deployed full-W4A4 engine actually feeds them — instead of the float baseline's.
 Measured motivation: the solo arms pass while the composed ``act_w4a4_sr_llm_w4a4_srg`` arm
-degrades super-additively (Pi0: the interaction term is 44% of end-to-end error;
-Evo-1: 34/40 ∧ 21/40 solo → 15/40 composed), because every static quantizer
+degrades super-additively (Pi0: the interaction term is 44% of end-to-end error),
+because every static quantizer
 parameter of the downstream module (SmoothQuant fold, rotated-activation amax,
 GPTQ/RTN rounding) was measured with a full-precision LLM upstream.
 
@@ -33,10 +33,10 @@ Float QDQ here is distribution-exact w.r.t. the s4 kernels: INT4 code products
 only divergence from the int32-accumulating tensor-core path is scale-multiply
 rounding — negligible against the 4-bit grid.
 
-Supported: Qwen2 / Qwen3 / Qwen3-VL decoders (GR00T + Evo-1 families) and Gemma
+Supported: Qwen2 / Qwen3 / Qwen3-VL decoders (GR00T families) and Gemma
 (Pi0/Pi0.5) — Gemma's ``(1+γ)`` RMSNorm is handled by folding in the effective
 gamma and writing back ``gamma_folded − 1``, matching the deployed emitter's
-``gemma_mode``. SmolLM2/Llama take the plain-RMSNorm path.
+``gemma_mode``.
 
 Torch is imported lazily (build-time only). No ``tensorrt`` / ``.so`` /
 ``foldquant.runtime`` imports.
@@ -195,8 +195,6 @@ def install_llm_per_row_emulation(
 
     decoder = resolve_qwen3_decoder(module)
     cls_name = type(decoder).__name__
-    # SmolLM2 / Llama: same projection layout and gamma keys as Qwen, plain RMSNorm — the Qwen
-    # path below applies unchanged (gemma_plus_one is False for them).
     # GemmaRMSNorm applies its weight as (1+w) (y = rms(x)·(1+w); rms from x
     # BEFORE the gamma, same as Qwen) — so the SQ fold must see gamma=(1+w),
     # exactly as the deployed emitter materializes it, and the value written

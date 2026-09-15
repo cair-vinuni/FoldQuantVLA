@@ -15,8 +15,8 @@ Two layouts occur across the families and they index oppositely:
 * **channel-major** — the action arrives as a dict of named channels, each a
   whole chunk, concatenated in key order (GR00T). Element ``i`` belongs to
   channel ``i // steps``.
-* **step-major** — the action is a ``(steps, width)`` chunk flattened (pi,
-  SmolVLA, Evo-1). Element ``i`` belongs to channel ``i % width``.
+* **step-major** — the action is a ``(steps, width)`` chunk flattened (pi).
+  Element ``i`` belongs to channel ``i % width``.
 
 Getting that backwards names the wrong channel while still looking plausible,
 which is why the caller states the layout rather than the helper guessing it.

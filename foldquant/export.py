@@ -4,7 +4,7 @@
 """Export a live module as a FoldQuant plugin-node ONNX graph.
 
 One entry point per module kind — :func:`export_llm`, :func:`export_dit`,
-:func:`export_expert`, :func:`export_action_head` — plus :func:`export_module`,
+:func:`export_expert` — plus :func:`export_module`,
 which dispatches on the module name. Each takes the live PyTorch module, a
 destination path, a scheme key from :mod:`.schemes` and, for every folded
 scheme, a ``forward_loop(module)`` that replays calibration observations
@@ -149,9 +149,8 @@ def export_llm(
     """Emit the LLM decoder as a plugin-node graph.
 
     The architecture is read off ``module.config``: Qwen2 / Qwen3 / Qwen3-VL
-    (GR00T, Evo-1) get the dynamic-S decoder graph; SmolLM2 (``smolvla_mode``)
-    and Gemma (``gemma_mode``) get the KV-stack prefix graph the expert
-    cross-attends. A Qwen3-VL LLM needs a ``forward_loop`` even for ``w8a8``:
+    (GR00T) get the dynamic-S decoder graph; Gemma (``gemma_mode``) gets the
+    KV-stack prefix graph the expert cross-attends. A Qwen3-VL LLM needs a ``forward_loop`` even for ``w8a8``:
     its deepstack count and visual-token width come from a captured call.
     ``final_norm`` states whether the graph ends with the tower's final RMSNorm
     (``None`` reads it off the module; see :func:`foldquant.llm.build_llm_plugin_onnx`).
@@ -167,26 +166,24 @@ def export_llm(
         _refuse_params("llm", scheme, params)
     loop = _require_loop(scheme, forward_loop) if folded else forward_loop
     decoder = resolve_qwen3_decoder(module)
-    prefix_graph = calibrate.is_llama(module) or calibrate.is_gemma(module)
+    prefix_graph = calibrate.is_gemma(module)
 
     mode_kwargs: Dict[str, Any] = {}
     snapshots: list = []
     if prefix_graph:
-        mode_kwargs = {"gemma_mode": True} if calibrate.is_gemma(module) else {"smolvla_mode": True}
-        if calibrate.is_gemma(module):
-            # The Pi processor pads text to a fixed length and the camera count is
-            # fixed, so the runtime prefix is constant; pin it from a captured
-            # call. Hook layer 0's q_proj LEAF: the Pi prefix replay drives the
-            # projection submodules directly and never runs the decoder's forward.
-            if loop is None:
-                raise ValueError(
-                    "The Gemma plugin graph pins its prefix length from a captured forward call — "
-                    "pass forward_loop even for the dynamic per-row scheme."
-                )
-            q0 = decoder.layers[0].self_attn.q_proj
-            mode_kwargs["pin_seq_len"] = calibrate.captured_prefix_len(calibrate.capture_llm_snapshots(q0, loop))
+        mode_kwargs = {"gemma_mode": True}
+        # The Pi processor pads text to a fixed length and the camera count is
+        # fixed, so the runtime prefix is constant; pin it from a captured
+        # call. Hook layer 0's q_proj LEAF: the Pi prefix replay drives the
+        # projection submodules directly and never runs the decoder's forward.
+        if loop is None:
+            raise ValueError(
+                "The Gemma plugin graph pins its prefix length from a captured forward call — "
+                "pass forward_loop even for the dynamic per-row scheme."
+            )
+        q0 = decoder.layers[0].self_attn.q_proj
+        mode_kwargs["pin_seq_len"] = calibrate.captured_prefix_len(calibrate.capture_llm_snapshots(q0, loop))
     else:
-        mode_kwargs["padded_query_mask"] = calibrate.is_qwen2(module)
         mode_kwargs["final_norm"] = final_norm
         if folded or calibrate.is_qwen3_vl(module):
             if loop is None:
@@ -248,12 +245,7 @@ def export_llm(
         "weight_clip": weight_clip,
     }
     build_llm_plugin_onnx(module, onnx_path, max_seq_len=max_seq_len, **fold_kwargs, **mode_kwargs)
-    if calibrate.is_gemma(module):
-        family = "gemma"
-    elif calibrate.is_llama(module):
-        family = "smollm_llama"
-    else:
-        family = "qwen"
+    family = "gemma" if prefix_graph else "qwen"
     logger.info("Emitted %s LLM graph (%s, %d-bit) at %s", scheme, family, bits, onnx_path)
     return ExportResult(
         "llm",
@@ -273,21 +265,17 @@ def install_llm_emulation(module: nn.Module, result: ExportResult) -> Any:
 
     Raises:
         ValueError: *result* carries no emulation data (not a folded LLM scheme).
-        NotImplementedError: SmolLM2 — its convention is not covered by the
-            Qwen / Gemma emulation, and a wrong emulation is worse than none.
+        NotImplementedError: a decoder family the Qwen / Gemma emulation does
+            not cover — a wrong emulation is worse than none.
     """
     data = result.emulation
     if data is None:
         raise ValueError(f"{result.scheme!r} on {result.module!r} has no LLM emulation to install.")
-    if data["family"] not in ("qwen", "gemma", "smollm_llama"):
+    if data["family"] not in ("qwen", "gemma"):
         raise NotImplementedError(
-            f"cascade calibration: the PyTorch emulation covers Qwen2/Qwen3/Qwen3-VL, Gemma and "
-            f"SmolLM2/Llama; {data['family']!r} is not validated there."
+            f"cascade calibration: the PyTorch emulation covers Qwen3/Qwen3-VL and Gemma; "
+            f"{data['family']!r} is not validated there."
         )
-    if data["family"] == "smollm_llama":
-        # Llama layout, plain RMSNorm (y = rms(x)*w): the Qwen path applies unchanged. Validated
-        # against the W4A4 kv-stack engine on SmolVLA (see models/smolvla README, cascade).
-        logger.info("cascade emulation on a SmolLM2/Llama decoder: plain-RMSNorm (Qwen) fold path")
     from .llm_fake_quant import install_llm_per_row_emulation
 
     return install_llm_per_row_emulation(
@@ -374,23 +362,21 @@ def export_expert(
     forward_loop: Optional[ForwardLoop] = None,
     params: Optional[Mapping[str, Any]] = None,
 ) -> ExportResult:
-    """Emit the SmolVLA (SmolLM2 dual-stream) or Pi (Gemma-300M) action expert.
+    """Emit the Pi (Gemma-300M) action expert.
 
-    Which emitter runs is decided structurally: a Pi expert exposes
-    ``expert_model``. Both emitters take the SAME kwargs, from one mapping —
-    a knob dropped on one side leaves the capture measuring in one frame while
-    the emitter folds in another, with no error anywhere.
+    The scale capture and the emitter take the SAME fold kwargs, from one
+    mapping — a knob dropped on one side leaves the capture measuring in one
+    frame while the emitter folds in another, with no error anywhere.
     """
     schemes.validate("expert", scheme)
     params = dict(params or {})
     onnx_path = Path(onnx_path)
-    is_gemma_expert = hasattr(module, "expert_model")
-    if is_gemma_expert:
-        from .gemma_expert import build_gemma_expert_plugin_onnx as build
-        from .gemma_expert import compute_gemma_expert_sq_scales as compute
-    else:
-        from .smolvla_expert import build_smolvla_expert_plugin_onnx as build
-        from .smolvla_expert import compute_smolvla_expert_sq_scales as compute
+    if not hasattr(module, "expert_model"):
+        raise TypeError(
+            f"export_expert: expected a Pi action expert exposing 'expert_model', got {type(module).__name__}."
+        )
+    from .gemma_expert import build_gemma_expert_plugin_onnx as build
+    from .gemma_expert import compute_gemma_expert_sq_scales as compute
 
     kwargs: Dict[str, Any] = {}
     if scheme == schemes.W8A8:
@@ -413,65 +399,12 @@ def export_expert(
     return ExportResult("expert", scheme, onnx_path, schemes.plugin_libs(scheme, params=params))
 
 
-# ------------------------------------------------------------------- action head
-
-
-def export_action_head(
-    module: nn.Module,
-    onnx_path: Path,
-    *,
-    scheme: str = schemes.W8A8,
-    forward_loop: Optional[ForwardLoop] = None,
-    params: Optional[Mapping[str, Any]] = None,
-) -> ExportResult:
-    """Emit Evo-1's action head (one denoising step) as a plugin-node graph."""
-    schemes.validate("action_head", scheme)
-    params = dict(params or {})
-    onnx_path = Path(onnx_path)
-    libs = schemes.plugin_libs(scheme, params=params)
-
-    if scheme == schemes.W8A8:
-        from .evo1_head_int8 import build_evo1_head_plugin_onnx
-
-        _refuse_params("action_head", scheme, params)
-        build_evo1_head_plugin_onnx(module, onnx_path)
-        return ExportResult("action_head", scheme, onnx_path, libs)
-
-    from .evo1_head_int4 import compute_evo1_head_sq_scales
-
-    loop = _require_loop(scheme, forward_loop)
-    knobs = _act_fold_knobs(scheme, params)
-    sq = compute_evo1_head_sq_scales(module, loop, **knobs)
-
-    if scheme == schemes.W8A8_SH:
-        from .evo1_head_int8 import build_evo1_head_plugin_onnx
-
-        build_evo1_head_plugin_onnx(module, onnx_path, sq_scales=sq, fold_order=knobs["fold_order"], fwht=True)
-        return ExportResult("action_head", scheme, onnx_path, libs)
-
-    from .evo1_head_int4 import build_evo1_head_plugin_onnx_int4
-
-    gptq = None
-    if scheme == schemes.W4A4_SHG:
-        from .evo1_head_int4 import compute_evo1_head_gptq_hessians
-
-        hess = compute_evo1_head_gptq_hessians(
-            module, loop, sq, block_size=64, fold_order=knobs["fold_order"], fwht=knobs["fwht"]
-        )
-        gptq = _prepare_gptq(hess)
-    build_evo1_head_plugin_onnx_int4(
-        module, onnx_path, sq_scales=sq, fwht=knobs["fwht"], fold_order=knobs["fold_order"], gptq=gptq
-    )
-    return ExportResult("action_head", scheme, onnx_path, libs)
-
-
 # ---------------------------------------------------------------------- dispatch
 
 _EXPORTERS: Dict[str, Callable[..., ExportResult]] = {
     "llm": export_llm,
     "dit": export_dit,
     "expert": export_expert,
-    "action_head": export_action_head,
 }
 
 
@@ -492,7 +425,6 @@ def export_module(
 __all__ = [
     "LLM_BAKE_MAX_SEQ_LEN",
     "ExportResult",
-    "export_action_head",
     "export_dit",
     "export_expert",
     "export_llm",

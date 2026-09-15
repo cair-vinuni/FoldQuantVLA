@@ -161,8 +161,8 @@ def export_with_example(
 ) -> ExportResult:
     """Like :func:`export_module_float` but with the module's call given explicitly.
 
-    For modules whose deployed step is not their ``forward`` (Evo-1's action head runs its
-    Euler loop inside ``get_action``; the engine is one step of it), the caller assembles the
+    For modules whose deployed step is not their ``forward`` (a head that runs its Euler loop
+    inside a sampling method, with the engine being one step of it), the caller assembles the
     example kwargs itself and may pass ``call`` — a function taking the same kwargs — in place
     of ``module(**kwargs)``.
     """

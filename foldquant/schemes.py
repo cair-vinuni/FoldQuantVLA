@@ -8,7 +8,7 @@ fixed order: ``s`` SmoothQuant scale, then ``r`` (learned dense rotation) or ``h
 (fixed Sylvester butterfly), then ``g`` GPTQ rounding. ``w8a8`` alone is the
 dynamic per-row baseline, which folds nothing and needs no calibration.
 
-Action-module keys (DiT, Evo-1 action head, SmolVLA / Pi expert) and LLM keys
+Action-module keys (DiT, Pi expert) and LLM keys
 are separate vocabularies: the two graph families are different emitters over
 different plugin sets, so a key is refused for a module it has no graph for
 rather than silently downgraded.
@@ -39,14 +39,14 @@ W4A4_SH = "w4a4_sh"
 #: ``w4a4_sh`` with GPTQ-rounded weights. Free at runtime — identical kernel,
 #: node attributes and byte layout — GPTQ only spends the same 16 levels better.
 W4A4_SHG = "w4a4_shg"
-#: The butterfly fold at 8 bit. Harmless on Gemma, decisive on SmolVLA, whose
-#: SmolLM2 activations carry the outliers SmoothQuant exists to move.
+#: The butterfly fold at 8 bit, for activations whose outlier channels are what
+#: SmoothQuant exists to move.
 W8A8_SH = "w8a8_sh"
 
 ACT_W4A4_SCHEMES: FrozenSet[str] = frozenset({W4A4_SR, W4A4_SH, W4A4_SHG})
 ACT_FWHT_SCHEMES: FrozenSet[str] = frozenset({W4A4_SH, W4A4_SHG, W8A8_SH})
 ACT_FOLDED_SCHEMES: FrozenSet[str] = ACT_W4A4_SCHEMES | {W8A8_SH}
-ACT_MODULES: FrozenSet[str] = frozenset({"dit", "action_head", "expert"})
+ACT_MODULES: FrozenSet[str] = frozenset({"dit", "expert"})
 
 # --- LLM schemes ------------------------------------------------------------
 #: The LLM defaults at each width — SmoothQuant + block rotation, GPTQ at 4 bit.
@@ -100,8 +100,8 @@ def validate(module: str, scheme: str) -> None:
         raise ValueError(f"unknown FoldQuant scheme {scheme!r}; known: {sorted(ALL_SCHEMES)}")
     if scheme in ACT_FOLDED_SCHEMES and module not in ACT_MODULES:
         raise ValueError(
-            f"{scheme!r} has plugin graphs for the DiT, the Evo-1 action head and the SmolVLA/Pi "
-            f"expert; module {module!r} has none. Supported: {sorted(ACT_MODULES)}."
+            f"{scheme!r} has plugin graphs for the DiT and the Pi expert; "
+            f"module {module!r} has none. Supported: {sorted(ACT_MODULES)}."
         )
     if scheme in LLM_FOLDED_SCHEMES and module not in LLM_MODULES:
         raise ValueError(f"{scheme!r} is LLM-only; module {module!r} has no LLM SQ/rotation plugin graph.")

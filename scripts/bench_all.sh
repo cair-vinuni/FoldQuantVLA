@@ -5,7 +5,7 @@
 # Latency for every family, on this device, into results/<family>/.
 #
 #   scripts/bench_all.sh                 # every family that has engines built
-#   scripts/bench_all.sh smolvla evo_1   # only these
+#   scripts/bench_all.sh pi05 groot_n1_5 # only these
 #
 # Each family runs in its OWN virtualenv and from its OWN directory, because
 # the integrations are pinned to their upstream's environment (Python 3.10 to
@@ -34,10 +34,6 @@
 : "${N15_MODEL:?set N15_MODEL to the GR00T N1.5 LIBERO checkpoint directory}"
 : "${PI05_CKPT:?set PI05_CKPT to the converted pi05_libero PyTorch checkpoint directory}"
 : "${GROOT_DATA:?set GROOT_DATA to the LIBERO 4-suite calibration dataset (LeRobot layout)}"
-: "${SMOLVLA_DATA:=HuggingFaceVLA/libero}"
-: "${SMOLVLA_EPISODES:=0-149}"
-: "${EVO1_CKPT:?set EVO1_CKPT to the Evo1_LIBERO snapshot directory}"
-: "${EVO1_DATA:?set EVO1_DATA to a local LeRobot LIBERO snapshot directory}"
 : "${ITERS:=20}"
 : "${WARMUP:=5}"
 # N16_VIDEO_BACKEND / N15_VIDEO_BACKEND pass --video-backend (e.g. decord where
@@ -48,7 +44,7 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FAMILIES=("$@")
-[ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 pi05 smolvla evo_1)
+[ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 pi05)
 
 # LABEL=DIR for every built arm of a family; empty when none exist. Emitted as
 # ONE `--arms a=... b=...` group: tyro's list flag keeps only the last `--arms`
@@ -119,8 +115,6 @@ for fam in "${FAMILIES[@]}"; do
     groot_n1_5) set -- --model-path "$N15_MODEL" --dataset-path "$GROOT_DATA"
                 [ -n "${N15_VIDEO_BACKEND:-}" ] && set -- "$@" --video-backend "$N15_VIDEO_BACKEND" ;;
     pi05)       set -- --checkpoint-dir "$PI05_CKPT" --dataset-path "$GROOT_DATA" ;;
-    smolvla)    set -- --dataset-path "$SMOLVLA_DATA" --episodes "$SMOLVLA_EPISODES" ;;
-    evo_1)      set -- --checkpoint-dir "$EVO1_CKPT" --dataset-path "$EVO1_DATA" ;;
   esac
 
   "$venv" -m foldquant_integration.benchmark "$@" "${ARMS[@]}" \

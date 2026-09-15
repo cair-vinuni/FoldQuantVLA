@@ -33,14 +33,12 @@ shows up as a diff rather than as a discrepancy nobody notices.
 
 Each family runs in **its own virtualenv, from its own directory**. They pin
 different Python and torch versions and share nothing but the `foldquant`
-package, so there is no single environment that runs all six. Install one
+package, so there is no single environment that runs all four. Install one
 family by following its integration README —
 [N1.7](../models/groot_n1_7/foldquant_integration/README.md),
 [N1.6](../models/groot_n1_6/foldquant_integration/README.md),
 [N1.5](../models/groot_n1_5/foldquant_integration/README.md),
-[π₀.₅](../models/pi05/foldquant_integration/README.md),
-[SmolVLA](../models/smolvla/foldquant_integration/README.md),
-[Evo-1](../models/evo_1/foldquant_integration/README.md) — then:
+[π₀.₅](../models/pi05/foldquant_integration/README.md) — then:
 
 ```bash
 git submodule update --init third_party/cutlass
@@ -58,7 +56,7 @@ scripts/smoke_family.sh groot_n1_7
 ```
 
 With no arguments it tries every family and skips the ones whose paths are
-unset, so holding two of six checkpoints still gives a useful report. The
+unset, so holding two of four checkpoints still gives a useful report. The
 environment variables it reads are listed in the script's header.
 
 A smoke pass means the chain runs and emits a record. It does **not** mean the
@@ -72,7 +70,7 @@ known to be good fail it exactly as a fresh build does. That was diagnosed here
 by running a verified arm under the same conditions and watching it fail too.
 `SMOKE_ALLOW_BUSY_GPU=1` overrides the check if you want it anyway.
 
-All six pass on one RTX 4070 Ti SUPER, about 45 minutes for the set:
+All four pass on one RTX 4070 Ti SUPER:
 
 | family | action cos (median) | worst \|Δ\| |
 |---|---|---|
@@ -80,8 +78,6 @@ All six pass on one RTX 4070 Ti SUPER, about 45 minutes for the set:
 | `groot_n1_6` | 0.99989 | 0.0293 |
 | `groot_n1_5` | 0.99984 | 0.3616 |
 | `pi05` | 0.99991 | 0.0328 |
-| `smolvla` | 0.99869 | 2.0143 |
-| `evo_1` | 0.99696 | 1.0474 |
 
 Those are the default schemes on eight calibration observations, so they are
 not the arms in `results/` and should not be compared with them. What they show
@@ -98,9 +94,6 @@ a small absolute error swing the cosine to near zero — so a mean moves with ho
 often the policy was railed rather than with how faithful the engine is.
 `results/README.md` has the measurement behind that.
 
-SmolVLA and Evo-1 sit lower because eight observations is far too few for their
-four-bit action modules — the same effect the full protocol avoids with 128.
-
 ## 2b. The other two halves: serving, and the rollout
 
 `smoke_family.sh` covers export → build → verify. Two things a reviewer will
@@ -116,7 +109,7 @@ scripts/smoke_serve.sh                                  # bf16 policies
 ENGINE_GROOT_N1_7=exports/w8a8/engines scripts/smoke_serve.sh groot_n1_7
 ```
 
-All six bind on this desktop, N1.7 both as bf16 and over its W8A8 engines.
+All four bind on this desktop, N1.7 both as bf16 and over its W8A8 engines.
 Readiness is decided by the socket, not by the log: each family announces
 itself in its own words and matching those cost a false failure here.
 
@@ -134,26 +127,19 @@ scripts/smoke_eval.sh groot_n1_7
 | `groot_n1_7` | 10/10 episodes, 10 tasks |
 | `groot_n1_6` | 9/10 episodes, 10 tasks |
 | `groot_n1_5` | 10/10 episodes, 10 tasks |
-| `smolvla` | 80% over 10 episodes, 10 tasks |
 
 **Ten episodes ranks nothing.** The question is whether the driver reaches the
 family's upstream loop and writes a summary, not what the arm scores; the
-published sweeps are 800 episodes. π₀.₅ and Evo-1 are skipped with that
-reason: their rollout drives an upstream client from a second environment
+published sweeps are 800 episodes. π₀.₅ is skipped with that
+reason: its rollout drives an upstream client from a second environment
 against a running server, which is two processes and a different check.
 
 The N1.5 release pins no LIBERO checkout — it is the operator's to supply — so
 the script borrows a sibling's pinned copy and says so. `FOLDQUANT_LIBERO_DIR`
 overrides.
 
-This check earned its place twice on the day it was written. It found that
-SmolVLA's `eval_libero` read `aggregated` / `per_task_infos` from upstream's
-evaluator, which returns `overall` / `per_task`: every field came back `None`,
-ten rollouts ran and their results were discarded, and the summary recorded
-`nan%`. No published number depended on it — `results/smolvla/` carries drift
-and latency, not success rate — but a reviewer running the obvious command
-would have hit it first. It also caught the check's own first draft printing
-`ok 0/0` for that empty rollout, which is why an empty rollout is now a
+This check caught its own first draft printing `ok 0/0` for an empty
+rollout, which is why an empty rollout is now a
 failure: in a reproducibility harness a false pass is worse than no check.
 
 ## 3. Reproduce a number

@@ -15,9 +15,9 @@
 family_pythonpath() {
   local root="$1" dir="$2" pp src
   pp="$root:$dir"
-  # Two families use a src/ layout -- pi05 (src/openpi) and smolvla
-  # (src/lerobot) -- and pi05 vendors its client as packages/*/src. Those
-  # directories, not the family directory, are what their imports resolve from.
+  # pi05 uses a src/ layout (src/openpi) and vendors its client as
+  # packages/*/src. Those directories, not the family directory, are what its
+  # imports resolve from.
   for src in "$dir/src" "$dir"/packages/*/src; do
     [ -d "$src" ] && pp="$pp:$src"
   done

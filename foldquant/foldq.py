@@ -11,8 +11,8 @@ attributes describe the result. The per-(family, width) emitters only choose
 This module exists because the alternative was measured: the INT8 action path
 kept its own copy of "quantize the weight per row", drifted away from the INT4
 copy, and ended up folding nothing at all. That was invisible on the Gemma
-expert (gate 0.9991) and cost SmolVLA 0.6005 expert cosine — a model whose
-SmolLM2 activations carry exactly the outliers SmoothQuant exists to move.
+expert (gate 0.9991) and collapsed an expert whose activations carry exactly
+the outliers SmoothQuant exists to move (0.6005 expert cosine).
 
 Contract, identical at 4 and 8 bit:
 
@@ -57,9 +57,9 @@ def rotation_block_for(k_in: int, block_size: int) -> int:
     """Largest power-of-two rotation block ``<= block_size`` that divides ``k_in``.
 
     Sites whose input width is not a multiple of the nominal block still get a
-    rotation, just a narrower one — SmolVLA's 480-wide projections drop from 64
-    to 32. Callers that can pad the input axis (the INT4 path) should do that
-    instead and keep the full width; callers that cannot (a fused-norm plugin
+    rotation, just a narrower one — a 480-wide projection drops from 64 to 32.
+    Callers that can pad the input axis (the INT4 path) should do that instead
+    and keep the full width; callers that cannot (a fused-norm plugin
     normalises over K internally and cannot take a padded activation) use this.
     """
     bs = int(block_size)
@@ -87,7 +87,7 @@ def fold_macro_site(
 ) -> Tuple[bytes, bytes, Any]:
     """Fold + INT4-pack one site of a fused MACRO plugin.
 
-    Macro plugins (the DiT's and Evo-1's attention/FFN blocks) bake several sites
+    Macro plugins (the DiT's attention/FFN blocks) bake several sites
     into one node, so they need the packed weight and the paired rotation matrix
     back rather than a ready-made attribute dict — the caller decides which of its
     many ``rotation_*``/``act_scale_pre*`` slots each site fills.
@@ -117,8 +117,8 @@ def fold_macro_site(
 def fold_rotation(R: Any, perm: Any, s_ch: Any | None, fold_order: str) -> Any:
     """The SmoothQuant-folded rotation matrix, for sites that bake one.
 
-    Some sites ship a matrix rather than a packed weight — the DiT's and Evo-1's
-    encoder pre-quant share one rotation across every cross block's KV pack. They
+    Some sites ship a matrix rather than a packed weight — the DiT's
+    encoder pre-quant shares one rotation across every cross block's KV pack. They
     still have to fold on the same axis as the weights they pair with: a mismatch
     breaks every cross-attention KV product (measured on the DiT, cosine 0.9996 ->
     0.9923) with no error anywhere. Which axis that is belongs here, next to
@@ -236,7 +236,7 @@ def _pack(weight: Any, bits: int, gptq: Any | None = None) -> Tuple[bytes, bytes
     order — is affected.
 
     Why it is worth a branch here rather than in each emitter: at 4 bits the
-    error is grid-limited, not outlier-limited. Measured on Evo-1's action head,
+    error is grid-limited, not outlier-limited. Measured on a flow-matching action head,
     W4A4/W8A8 error came out at 18.3x against an ideal 127/7 = 18.14x, so the
     fold already extracts everything the grid allows. GPTQ adds no grid; it
     spends the same grid better by propagating each column's rounding error into
@@ -400,7 +400,7 @@ def scale_accumulator(rot: Dict[str, tuple], block_size: int = 0, fold_order: st
     emitter folds, and ``R.shape[-1]`` is exactly the block it rotates in.
 
     That matters because the two bit widths handle an awkward width differently.
-    SmolVLA's 480-wide projections are zero-PADDED to 512 on the INT4 path, while
+    A 480-wide projection is zero-PADDED to 512 on the INT4 path, while
     the INT8 path NARROWS the block to 32 and stays at 480 — a fused norm+GEMM
     plugin has nowhere to put a Pad node. A capture that assumed one policy
     produced a 512-long scale for a 480-wide site and the build died on a shape

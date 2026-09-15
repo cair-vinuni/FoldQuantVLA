@@ -11,7 +11,7 @@ pinned to its upstream environment — with the family named on the command line
 this module puts ``models/<family>`` on ``sys.path`` so
 ``foldquant_integration`` resolves to that family's copy.
 
-The other integrations (Pi0.5, SmolVLA, Evo-1) drive inference through
+The Pi0.5 integration drives inference through
 ``calibration.infer(...)`` rather than ``policy.get_action`` and are not covered
 here; the ARC presets in ``results/`` were measured on the GR00T families only.
 """

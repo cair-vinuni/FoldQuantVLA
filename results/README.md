@@ -11,7 +11,7 @@ family is reproduced under *its own* loop, and those loops differ (see the
 settle-step note under Success rate). These are therefore **per-family
 reproductions** — each answering "what does this arm do to this policy, run
 the way its authors run it". A cross-family success-rate comparison is a
-different measurement and needs one harness applied uniformly to all six,
+different measurement and needs one harness applied uniformly to all four,
 which these drivers deliberately are not. Where a paper table compares
 families in one column, it comes from such a uniform harness and says so.
 
@@ -55,58 +55,13 @@ order reverses to 1.94x and 2.08x. Only the second pair compares the two
 families.
 
 GR00T N1.5's upstream engines use a different DiT contract
-(fp16, `sa_embs`/`vl_embs` inputs), and openpi, LeRobot and Evo-1 ship no
-TensorRT path at all, so for those four families only the two FoldQuant
+(fp16, `sa_embs`/`vl_embs` inputs), and openpi ships no TensorRT path at
+all, so for those two families only the two FoldQuant
 engines run under TensorRT, the rest of the policy stays in PyTorch, there is
 no float TRT arm, and drift is read against the bf16 PyTorch policy alone.
 
 The second quantized module is the family's action generator, whatever its
-shape: a DiT for GR00T, a Gemma-300M expert for pi, SmolVLA's dual-stream
-expert, Evo-1's cross-attention flow-matching head.
-
-**SmolVLA's cascade arm exists now**, and the reason it did not is worth
-keeping. Cascade calibrates the action module on the activations an already
-quantized LLM produces, which needs a PyTorch fake-quant of that LLM; the one
-here was validated for Qwen2/Qwen3/Qwen3-VL and Gemma and refused SmolLM2
-rather than emulating a convention it had not been checked against. Writing
-that path — SmolLM2/Llama share Qwen's projection layout and plain RMSNorm, so
-the Qwen fold applies unchanged — is what the arm was waiting on.
-
-It helps, on the family where W4A4 hurts most:
-
-| SmolVLA, 32 held-out observations | mean | median | min | worst \|Δ\| |
-|---|---|---|---|---|
-| `w4a4` | 0.86210 | 0.92967 | 0.30339 | 2.069 |
-| `w4a4_cascade` | 0.89828 | 0.98717 | 0.43551 | 2.076 |
-
-The median moves 0.930 to 0.987 and the minimum 0.303 to 0.436 — the typical
-observation is most of the way back, and the worst one is still broken.
-Recalibrating the expert under the quantized LLM cannot repair an arm whose
-damage is in the LLM: the seam split below puts the collapse there, and
-cascade does not touch it.
-
-Which of the two graphs carries that failure is a separate measurement, and it
-has been made: `--components llm` and `--components expert` on the same
-engines and the same 32 observations, beside the arm as `verify_llm_only.json`
-and `verify_expert_only.json`.
-
-| SmolVLA W4A4, engines installed | mean | median | min | median worst-\|Δ\| | >1.5 |
-|---|---|---|---|---|---|
-| `--components llm` (expert float) | 0.8757 | 0.9264 | 0.4342 | 1.985 | 22/32 |
-| `--components expert` (LLM float) | 0.9812 | 0.9993 | 0.8973 | 0.082 | 11/32 |
-| both — the arm | 0.8621 | 0.9297 | 0.3034 | 1.987 | 22/32 |
-
-The LLM alone reproduces the arm, to the third digit and to the same 22
-observations (the arm and the LLM-only pass disagree on one observation each
-way, 21 of 22 shared). The expert alone is a tail rather than a collapse, and
-its eleven flipping observations are a strict subset of the LLM's twenty-two —
-so the two do not add: on an observation both damage, the channel has already
-saturated. Every flip in all three configurations is the same channel, index
-6, the gripper.
-
-That makes the reading for this family unambiguous: **the W4A4 LLM carries the
-collapse**, and the expert contributes a tail on observations the LLM has
-already broken.
+shape: a DiT for GR00T, a Gemma-300M expert for pi.
 
 ## Calibration
 
@@ -144,9 +99,9 @@ that travels between families is the **median worst-|Δ|**, recorded per
 observation as `action_worst`, rather than a count above a fixed threshold.
 
 The worst channel's *name* travels less far than that. GR00T returns a named
-action dict, so its records carry `gripper`, `x`, `y`, `z`; π₀.₅, SmolVLA and
-Evo-1 return an unnamed vector, so `action_worst.label` is null for all three
-and only the index and the magnitude are available. That is a property of what
+action dict, so its records carry `gripper`, `x`, `y`, `z`; π₀.₅ returns an
+unnamed vector, so `action_worst.label` is null there and only the index and
+the magnitude are available. That is a property of what
 those policies emit, not a gap in the records, and it is why the channel name
 appears in this file only where a GR00T family is under discussion.
 
@@ -190,17 +145,16 @@ That attribution is by seam, not by observation. **Damage to the backbone
 output does not predict which observation's chunk breaks.** Each `verify.json`
 sample carries the worst per-position cosine of the representation the action
 module consumes — `backbone_token_cos_min` for the three GR00T families,
-`kv_stack_position_cos_min` for π₀.₅ and SmolVLA,
-`fused_tokens_position_cos_min` for Evo-1 — and over the 32 held-out
+`kv_stack_position_cos_min` for π₀.₅ — and over the 32 held-out
 observations of each W4A4 arm its Pearson correlation with the action cosine
-is +0.30 (N1.7), +0.16 (N1.6), +0.08 (N1.5), +0.31 (π₀.₅), +0.10 (SmolVLA),
-+0.21 (Evo-1). Positive in every family, weak in all six: in four of the six
-the single most-damaged prefix decodes to an action cosine of 0.9987 or
+is +0.30 (N1.7), +0.16 (N1.6), +0.08 (N1.5), +0.31 (π₀.₅). Positive in every
+family, weak in all four: in every one of them the single most-damaged prefix
+decodes to an action cosine of 0.9987 or
 better. The two depths measure the same arm; they are not two views of the
 same observations, and a per-observation reading across them is not supported
 by these files — see [`groot_n1_7/README.md`](groot_n1_7/README.md) for the
 case that prompted the check. `scripts/results_tables.py --table correlation`
-regenerates the six figures from the committed records alone.
+regenerates the four figures from the committed records alone.
 
 ## Success rate (`eval_libero`)
 
@@ -211,8 +165,8 @@ pooled:
 - **GR00T N1.7 / N1.6** — upstream `MultiStepWrapper` (8-step action chunks,
   504-step cap, terminate on success) and the upstream unseeded `reset()`. This
   harness takes **no settle steps**: the policy acts on the first frame after
-  the reset. The other four families wait first (N1.5 and π₀.₅ ten steps,
-  SmolVLA and Evo-1 their own counts) issuing LIBERO's own no-op,
+  the reset. The other two families wait first (N1.5 and π₀.₅ ten steps)
+  issuing LIBERO's own no-op,
   `[0, 0, 0, 0, 0, 0, -1]`, whose last channel holds the gripper open. That
   asymmetry is upstream's, not this repository's — each family runs the loop
   its authors published — but it is a real difference in starting conditions
@@ -226,19 +180,11 @@ pooled:
   `foldquant_integration.serve` (the upstream websocket server over the
   engines): `replan_steps 5`, per-suite step budgets (220 / 280 / 300 / 520),
   50 trials per task, `seed 7`.
-- **SmolVLA** — upstream's own evaluator (`lerobot_eval.eval_policy_all`)
-  over upstream's `LiberoEnv`, one environment per task, `start_seed 7`, run
-  suite by suite from the integration's driver.
-- **Evo-1** — upstream's `LIBERO_evaluation/libero_client_4tasks.py`
-  unchanged, against the integration's copy of upstream's websocket server
-  with the engines installed: upstream's per-suite step budgets, its action
-  horizon and its `SEED`.
-
 ## Latency (`benchmark`)
 
 Upstream `benchmark_inference.py` for GR00T N1.7 / N1.6, and the
 integration's own component timer where the release ships none (N1.5,
-π₀.₅, SmolVLA, Evo-1) — 5 warm-up, 20 timed chunks by default, end-to-end
+π₀.₅) — 5 warm-up, 20 timed chunks by default, end-to-end
 from observation to action chunk, on
 
 - an RTX 4070 Ti SUPER (sm89, 16 GB, TensorRT 10.15), and
@@ -246,8 +192,8 @@ from observation to action chunk, on
 
 float TRT and FoldQuant arms with identical pipelines apart from the two
 quantized engines. Where there is no float TRT arm the reference is the
-upstream PyTorch serving configuration: bf16 eager for N1.5, SmolVLA and
-Evo-1 — all three serve eagerly upstream — and for π₀.₅ both eager and
+upstream PyTorch serving configuration: bf16 eager for N1.5 — which serves
+eagerly upstream — and for π₀.₅ both eager and
 upstream's `torch.compile(max-autotune)` default (the FoldQuant seams need the
 eager model, so the compiled arm is timed end to end only).
 
@@ -294,8 +240,8 @@ different mechanism. Two unrelated ways of holding precision fixed agree on
 roughly three quarters.
 
 No family outside GR00T has a float engine for its action module, so none of
-their tables makes the split that way; π₀.₅ and SmolVLA make it with a
-compile-only arm instead, and N1.5 and Evo-1 have neither. What every row
+their tables makes the split that way; π₀.₅ makes it with a compile-only
+arm instead, and N1.5 has neither. What every row
 can bound is the last step alone, 8-bit to 4-bit, which no graph change
 explains:
 
@@ -303,49 +249,10 @@ explains:
 |---|---|---|
 | N1.5 action head | 8.88 ms | 2.74 ms (31%) |
 | π₀.₅ denoise loop | 48.70 ms | 3.46 ms (7%) |
-| Evo-1 denoise loop | 51.47 ms | 6.59 ms (13%) |
-| SmolVLA denoise loop | 155.71 ms | 1.60 ms (1%) |
 
 The remainder of each row is graph and 8-bit quantization together. For N1.5
-and Evo-1 these records do not separate the two — which is not evidence that
-precision did the work, only that nothing here isolates it.
-SmolVLA is the row to read carefully: its 5.7x end-to-end is the largest here
-and the least attributable to quantization. Upstream's eager denoise step
-materializes a dense `[batch, suffix, prefix + suffix]` attention mask and
-re-crops the KV cache on every one of the ten steps, and its measured cost —
-17.6 ms per step — is more than double π₀.₅'s 8.0 ms for a *larger* expert.
-Most of what the SmolVLA engines recover is that overhead. Quoting 5.7x as a
-quantization result would be wrong; it is a deployment-path result, which is
-what this table measures and what the arm names say.
-
-For SmolVLA that is no longer an inference. A compile-only control —
-`--compiled`, `torch.compile(sample_actions, max-autotune)`, no quantization
-anywhere — was measured against the same fixed observation in one process
-(`smolvla/benchmark_compiled.json`):
-
-| SmolVLA, e2e median | ms | min-max |
-|---|---|---|
-| eager | 210.01 | 206.38-214.70 |
-| `torch.compile(max-autotune)` | 38.93 | 38.17-40.19 |
-| W8A8 | 39.31 | 38.97-40.88 |
-| W4A4 | 36.74 | 36.43-37.88 |
-
-**Compiling alone recovers 171.1 ms of the 173.3 ms between eager and W4A4 —
-98.7% of the gap, with nothing quantized.** The compiled graph and W8A8 are
-indistinguishable here (their ranges overlap; no ordering should be read), and
-W4A4 sits 2.18 ms under the compiled graph, 1.06x. So the family's 5.7x is
-almost entirely the graph, and the quantization is worth the two-and-a-bit
-milliseconds the 8-to-4-bit row already reports.
-
-Two limits on that control. It is timed end to end only, because
-`torch.compile` inlines the pieces the component stopwatches wrap — so it
-speaks to e2e, not to the denoise loop. And the benchmark holds one
-observation for every iteration, which pins `prefix_len` and means the
-compiled graph never recompiles; SmolVLA does not pad (`pad_language_to=
-"longest"`), and the engines carry a 130-177 profile for exactly that reason.
-A compiled deployment would meet the varying length this measurement does not,
-so 38.93 ms is an optimistic bound for compilation in a way the engine numbers
-are not.
+these records do not separate the two — which is not evidence that precision
+did the work, only that nothing here isolates it.
 
 ## Results
 
@@ -400,14 +307,6 @@ the sampler's.
 | π₀.₅ | `w8a8` | 32 | 1.00000 | 1.00000 | 0.99999 | 0.009 |
 | π₀.₅ | `w4a4` | 32 | 0.99450 | 0.99942 | 0.84749 | 1.998 |
 | π₀.₅ | `w4a4_cascade` | 32 | 0.99449 | 0.99945 | 0.84704 | 2.005 |
-| SmolVLA | `float` | 32 | 0.99809 | 0.99999 | 0.97048 | 1.967 |
-| SmolVLA | `w8a8` | 32 | 0.99548 | 0.99993 | 0.94164 | 1.967 |
-| SmolVLA | `w4a4` | 32 | 0.91641 | 0.96849 | 0.48031 | 2.056 |
-| SmolVLA | `w4a4_cascade` | 32 | 0.91026 | 0.98717 | 0.43551 | 2.074 |
-| Evo-1 | `float` | 32 | 0.99605 | 0.99995 | 0.90655 | 1.012 |
-| Evo-1 | `w8a8` | 32 | 0.99450 | 0.99985 | 0.90700 | 1.012 |
-| Evo-1 | `w4a4` | 32 | 0.95708 | 0.96891 | 0.76064 | 1.051 |
-| Evo-1 | `w4a4_cascade` | 32 | 0.95833 | 0.97464 | 0.75616 | 1.047 |
 
 Read the median beside the mean: these distributions have tails, and on the
 families where W4A4 breaks it is a minority of observations that carry the
@@ -416,9 +315,7 @@ gripper on GR00T, ~2.0 is a saturated channel where actions run [-1, 1].
 
 **Read the float row before reading the quantized ones.** It is the same graph
 compiled with nothing quantized, so whatever it already costs is not
-quantization. Every family has one now, and on two of them it carries most of
-what looks like four-bit damage: Evo-1's float engine is at a worst \|Δ\| of
-1.010 where its W4A4 arm is at 1.036, and SmolVLA's is at 1.967.
+quantization. Every family has one now.
 
 That row is only a control if it is built the way the quantized arms are. It
 was not, at first: a traced float graph was compiled weakly typed, so TensorRT
@@ -442,8 +339,6 @@ above uses.
 | GR00T N1.6 | 69.26 | 50.71 | 40.93 | 35.79 | 35.79 | 1.94x |
 | GR00T N1.5 | 54.54 | - | 37.22 | 32.76 | 33.53 | 1.66x |
 | π₀.₅ | 169.36 | - | 89.85 | 76.55 | 76.54 | 2.21x |
-| SmolVLA | 209.98 | - | 38.74 | 36.67 | - | 5.73x |
-| Evo-1 | 175.61 | - | 119.58 | 113.33 | 112.42 | 1.55x |
 
 The last column is the deployment-path result against upstream's own serving
 configuration, **not** a quantization result — see the graph-versus-precision
@@ -478,13 +373,5 @@ _Pending: re-measured with the upstream harness (see the integration README)._
 _Pending: re-measured with the upstream harness (see the integration README)._
 
 ### π₀.₅ — LIBERO
-
-_Pending: re-measured with the upstream harness (see the integration README)._
-
-### SmolVLA — LIBERO
-
-_Pending: re-measured with the upstream harness (see the integration README)._
-
-### Evo-1 — LIBERO
 
 _Pending: re-measured with the upstream harness (see the integration README)._

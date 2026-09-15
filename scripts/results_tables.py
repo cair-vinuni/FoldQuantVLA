@@ -32,26 +32,22 @@ import re
 from pathlib import Path
 
 RESULTS = Path(__file__).resolve().parent.parent / "results"
-FAMILIES = ("groot_n1_7", "groot_n1_6", "groot_n1_5", "pi05", "smolvla", "evo_1")
+FAMILIES = ("groot_n1_7", "groot_n1_6", "groot_n1_5", "pi05")
 ARMS = ("float", "w8a8", "w4a4", "w4a4_cascade")
 LABEL = {
     "groot_n1_7": "GR00T N1.7",
     "groot_n1_6": "GR00T N1.6",
     "groot_n1_5": "GR00T N1.5",
     "pi05": "π₀.₅",
-    "smolvla": "SmolVLA",
-    "evo_1": "Evo-1",
 }
 # the per-sample worst backbone position cosine, named per family by what the
 # action module actually consumes
-PREFIX_FIELDS = ("backbone_token_cos_min", "kv_stack_position_cos_min", "fused_tokens_position_cos_min")
+PREFIX_FIELDS = ("backbone_token_cos_min", "kv_stack_position_cos_min")
 # the action module's own timer, named per family by what that module is
 ACTION_COMPONENT = {
     "groot_n1_6": "action_head",
     "groot_n1_5": "action_head",
     "pi05": "denoise_loop",
-    "smolvla": "denoise_loop",
-    "evo_1": "denoise_loop",
 }
 N17_BLOCK = re.compile(
     r"^(PyTorch Eager|torch\.compile|TensorRT \(n17_full_pipeline\)):\s*\n"
@@ -156,7 +152,7 @@ def split_table() -> str:
             f"| float engine | N1.6 action head | {e:.2f} | {fl:.2f} | {w4:.2f} "
             f"| {e - fl:.2f} ({100 * (e - fl) / tot:.0f}%) | {fl - w4:.2f} ({100 * (fl - w4) / tot:.0f}%) |"
         )
-    for fam, record in (("pi05", "benchmark.json"), ("smolvla", "benchmark_compiled.json")):
+    for fam, record in (("pi05", "benchmark.json"),):
         d = _load(RESULTS / fam / record)
         key = next((k for k in (d or {}).get("arms", {}) if "compile" in k), None)
         if key is None:

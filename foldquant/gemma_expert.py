@@ -14,14 +14,14 @@ No fused macro plugin fits this block: the norm is ``GemmaAdaRMSNorm`` —
 RMSNorm-based (no mean subtraction, so the DiT AdaLN plugin's LayerNorm
 prologue does NOT match) modulated by *runtime* ``(1+scale)*normed + shift``
 tensors from ``dense(adarms_cond)``, with an AdaLN-Zero ``x + y*gate``
-residual. So the graph uses the SmolVLA-expert decomposition: the AdaRMS
+residual. So the graph decomposes the block: the AdaRMS
 modulation, RoPE, GQA repeat, SDPA and gated residuals stay BF16 ONNX ops,
 and every projection GEMM runs through ``PerRowInt8LinearResidual`` (with a
 static zeros residual — the suffix length is fixed per build — and the gated
 add applied *outside* the plugin, since the gate multiply must sit between
 GEMM output and residual add).
 
-Unlike SmolVLA there is **no layer alternation**: all 18 layers run full
+There is **no layer alternation**: all 18 layers run full
 attention over ``[prefix_S + suffix]`` keys, consuming the cached prefix K/V
 raw (``kv_stack[i]``, HF-native ``[B, H_kv, S, D]``, K cached post-RoPE) and
 RoPE-ing the fresh suffix K at ABSOLUTE positions (prefix_len + 0..L-1).

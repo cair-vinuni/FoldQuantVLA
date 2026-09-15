@@ -4,11 +4,11 @@
 """The fold has one implementation, and every emitter must reach it.
 
 The action-module emitters are deliberately split — by architecture, and for the
-DiT and Evo-1 head also by bit width, because those two are different designs
+DiT also by bit width, because those are different designs
 rather than one design at two widths. Splitting is what let the INT8 halves stop
 folding: each improvement had to be applied twice and the second time was missed,
-which cost SmolVLA 0.6005 expert cosine and went unnoticed because the family had
-no INT4 arm to compare against.
+which cost one expert 0.6005 cosine and went unnoticed because that family had no
+INT4 arm to compare against.
 
 These tests make that failure mode loud. They do not forbid the split; they
 forbid a second copy of the fold.
@@ -28,9 +28,7 @@ EXPORT = PACKAGE / "export.py"
 #: may carry its own copy of the fold.
 ACTION_EMITTERS = (
     "gemma_expert.py",
-    "smolvla_expert.py",
     "dit_int4.py",
-    "evo1_head_int4.py",
 )
 
 #: Fold primitives that belong to omega_rotation/foldq. An emitter naming one of
@@ -55,9 +53,7 @@ _ROTATION_CONSTRUCTORS = {"build_rotation", "hadamard_blocks"}
 #: the weight the emitter folds have to agree on rotation AND frame.
 CAPTURES = {
     "gemma_expert.py": "compute_gemma_expert_sq_scales",
-    "smolvla_expert.py": "compute_smolvla_expert_sq_scales",
     "dit_int4.py": "compute_dit_sq_scales",
-    "evo1_head_int4.py": "compute_evo1_head_sq_scales",
 }
 
 
@@ -70,7 +66,7 @@ def _source(name: str) -> str:
 
 @pytest.mark.parametrize("name", ACTION_EMITTERS)
 def test_every_action_emitter_offers_both_fold_orders(name: str) -> None:
-    """A site's scale lands on the axis fold_order names; all four must offer it."""
+    """A site's scale lands on the axis fold_order names; every emitter must offer it."""
     assert "fold_order" in _source(name), f"{name} cannot express the fold order"
 
 
@@ -112,7 +108,7 @@ def test_foldq_is_the_only_module_that_packs_for_both_widths() -> None:
 def test_no_emitter_builds_its_own_rotation(name: str) -> None:
     """Which rotation a site gets is foldq's call, not each emitter's.
 
-    This is the check that would have caught the real defect: SmolVLA's capture
+    This is the check that would have caught the real defect: an expert capture
     hardcoded the dense constructor and had no ``fwht`` parameter at all, so the
     butterfly arm asked for a rotation it could not build. It only stayed silent
     because the shipped arms fold BEFORE the rotation, where the measured frame
@@ -152,8 +148,8 @@ def test_no_dispatch_matches_the_dense_w4a4_key_alone() -> None:
     Comparing a module's scheme against the DENSE key alone silently routes the
     butterfly arm to the INT8 emitter while the plugin-library decision has already
     declared the INT4 library — every node then fails TensorRT import with "Plugin
-    not found". This bit the Evo-1 action head after it had already been fixed on
-    the DiT and expert branches, which is why it is pinned rather than reviewed.
+    not found". This bit an action head after it had already been fixed on the
+    DiT and expert branches, which is why it is pinned rather than reviewed.
 
     Comparing against the GPTQ key alone stays legal: that is how a branch asks
     "is this the GPTQ arm?" after the W4A4 set is already inside.
@@ -176,15 +172,16 @@ def test_no_dispatch_matches_the_dense_w4a4_key_alone() -> None:
     )
 
 
-def test_both_expert_builders_get_the_same_fold_kwargs() -> None:
-    """The two expert emitters must be called with the SAME knobs.
+def test_expert_builder_gets_the_capture_fold_kwargs() -> None:
+    """The expert emitter must be called with the SAME knobs as its capture.
 
-    They share one capture-and-dispatch block, so a kwarg dropped on one side is
-    invisible: the capture still measures with it while the emitter falls back to
-    its default. SmolVLA lost ``fold_order`` exactly this way — scales measured
-    in the raw frame, weights folded in the rotated one, expert cosine 0.7837.
+    The capture and the emitter share one dispatch block, so a kwarg dropped on
+    one side is invisible: the capture still measures with it while the emitter
+    falls back to its default. An expert lost ``fold_order`` exactly this way —
+    scales measured in the raw frame, weights folded in the rotated one, expert
+    cosine 0.7837.
 
-    export.py binds both emitters to ONE local name and makes ONE call with
+    export.py binds the emitter to ONE local name and makes ONE call with
     ``**kwargs`` — there is no second call site to drift.
     """
     tree = ast.parse(EXPORT.read_text())
@@ -194,9 +191,9 @@ def test_both_expert_builders_get_the_same_fold_kwargs() -> None:
         for node in ast.walk(fn)
         if isinstance(node, ast.ImportFrom)
         for alias in node.names
-        if alias.name in ("build_gemma_expert_plugin_onnx", "build_smolvla_expert_plugin_onnx")
+        if alias.name == "build_gemma_expert_plugin_onnx"
     }
-    assert bound == {"build"}, f"both expert emitters must be imported under the one name `build`, got {bound}"
+    assert bound == {"build"}, f"the expert emitter must be imported under the one name `build`, got {bound}"
     calls = [
         node
         for node in ast.walk(fn)
@@ -206,7 +203,7 @@ def test_both_expert_builders_get_the_same_fold_kwargs() -> None:
     starred = [k for k in calls[0].keywords if k.arg is None]
     assert starred and all(isinstance(k.value, ast.Name) for k in starred), (
         "the expert emitter must be called with one **kwargs mapping, not a dict rebuilt inline: "
-        "both emitters take the same knobs, or the capture and the fold disagree on rotation or frame."
+        "the emitter and the capture take the same knobs, or they disagree on rotation or frame."
     )
 
 

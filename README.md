@@ -9,7 +9,7 @@
   <img alt="Native INT4 / INT8" src="https://img.shields.io/badge/precision-W4A4%20%7C%20W8A8%20native-B9141A">
   <img alt="Runtime" src="https://img.shields.io/badge/runtime-TensorRT%2010%20%2F%2011-17201C">
   <img alt="Targets" src="https://img.shields.io/badge/GPU-sm__87%20Orin%20%7C%20sm__89%20Ada%20%7C%20sm__90%20Hopper-627067">
-  <img alt="Families" src="https://img.shields.io/badge/VLA%20families-GR00T%20N1.5%2FN1.6%2FN1.7%20%7C%20%CF%80%E2%82%80.%E2%82%85%20%7C%20SmolVLA%20%7C%20Evo--1-78877E">
+  <img alt="Families" src="https://img.shields.io/badge/VLA%20families-GR00T%20N1.5%2FN1.6%2FN1.7%20%7C%20%CF%80%E2%82%80.%E2%82%85-78877E">
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11-DAE3DC">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F2F5F2"></a>
 </p>
@@ -30,7 +30,7 @@ nodes between the plugin and its neighbours.
 
 - **Native low bit, not simulated.** W8A8 and W4A4 run on the device's INT8 / INT4 tensor cores through one fused TensorRT plugin per linear site; no online rotation, no per-token scale search, no extra graph nodes.
 - **One fold, offline.** SmoothQuant scale, block rotation and GPTQ rounding are composed into a single consistent transform `T_v = D^o R D^i` and folded into the weights before export. Every fold is in the weights; the runtime only quantizes rows.
-- **Six VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7, π₀.₅, SmolVLA and Evo-1 — upstream code, evaluation harness and policy server used unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in the precision of the projections.
+- **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ — upstream code, evaluation harness and policy server used unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in the precision of the projections.
 - **Action-referenced calibration.** Presets are selected on decoded actions of the assembled pipeline (fidelity, then closed-loop success), with a floating-point engine of the same scope as the control every latency claim is measured against.
 - **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, a Jetson AGX Orin and a real robot, driven by the family's own upstream client (see [`docs/`](docs)).
 
@@ -47,7 +47,7 @@ INT4, and the action expert's denoising loop reuses one engine for every step.
   </picture>
 </p>
 
-One plugin serves the GR00T DiT, the Evo-1 action head and the SmolVLA / π₀.₅ experts through their own emitters; the LLM backbones use the INT8 per-row path (`w8a8_sr`) or the INT4 path (`w4a4_srg`) with the same weight contract.
+One plugin serves the GR00T DiT and the π₀.₅ expert through their own emitters; the LLM backbones use the INT8 per-row path (`w8a8_sr`) or the INT4 path (`w4a4_srg`) with the same weight contract.
 
 This repository is the paper's artifact. It has two parts:
 
@@ -66,24 +66,23 @@ This repository is the paper's artifact. It has two parts:
 | GR00T N1.6 | NVIDIA Isaac GR00T, `n1.6.1-release` (`5dc80c4a`) | [`models/groot_n1_6`](models/groot_n1_6/foldquant_integration/README.md) | ✓ |
 | GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | ✓ |
 | π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | ✓ |
-| SmolVLA | LeRobot, `v0.6.1` (`7e241bd6`) | [`models/smolvla`](models/smolvla/foldquant_integration/README.md) | ✓ |
-| Evo-1 | MINT-SJTU Evo-1, `main` (`5fd14b01`) | [`models/evo_1`](models/evo_1/foldquant_integration/README.md) | ✓ |
 
 **✓ means the whole chain runs**: export, engine build, held-out drift,
 latency benchmark, a LIBERO rollout and a policy server a real robot can be
-pointed at, for every scheme the family offers. All six are there. π₀.₅ and
-Evo-1 earn it on the same terms, with one difference that is upstream's design
-and not a gap: their LIBERO rollout drives an upstream client from a second
-environment against a running server, where the other four run it in process.
+pointed at, for every scheme the family offers. All four are there. π₀.₅
+earns it on the same terms, with one difference that is upstream's design and
+not a gap: its LIBERO rollout drives an upstream client from a second
+environment against a running server, where the GR00T families run it in
+process.
 
 What has been **measured and committed** is a narrower claim, and it belongs in
 [`results/`](results/README.md) rather than in this table. Held-out drift and
-desktop latency are recorded there for all six. **LIBERO success rate is not**:
+desktop latency are recorded there for all four. **LIBERO success rate is not**:
 those sweeps run on the evaluation cluster, and every success-rate cell reads
 _Pending_ until they land. Jetson AGX Orin latency is pending for the same
 reason — the board is not this machine.
 
-All six families now have a float arm. `--llm-scheme float` traces the module
+All four families now have a float arm. `--llm-scheme float` traces the module
 through the deployed forward and emits an unquantized engine of the same
 scope, so a release shipping no TensorRT path of its own is no longer a
 reason to lack one.
@@ -114,7 +113,7 @@ the precision of the projections and in nothing else.
 
 | target | schemes | plugin library |
 |---|---|---|
-| action expert (DiT / action head / expert) | `w4a4_shg` · `w4a4_sh` · `w4a4_sr` · `w8a8_sh` · `w8a8` | `foldquant_int4_per_row` / `foldquant_int8_per_row` |
+| action expert (DiT / expert) | `w4a4_shg` · `w4a4_sh` · `w4a4_sr` · `w8a8_sh` · `w8a8` | `foldquant_int4_per_row` / `foldquant_int8_per_row` |
 | LLM backbone | `w8a8_sr` · `w8a8_s` · `w4a4_srg` · `w4a4_sg` · `w4a8_srg` | same, by activation width |
 | W4A16 baseline | ModelOpt AWQ groupwise | `foldquant_int4_groupwise` |
 
@@ -133,8 +132,6 @@ models/groot_n1_7/    upstream GR00T N1.7 + foldquant_integration/
 models/groot_n1_6/    upstream GR00T N1.6.1 + foldquant_integration/
 models/groot_n1_5/    upstream GR00T N1.5 + foldquant_integration/
 models/pi05/          upstream openpi (π₀ / π₀.₅ PyTorch path) + foldquant_integration/
-models/smolvla/       upstream LeRobot (SmolVLA + its LIBERO evaluator) + foldquant_integration/
-models/evo_1/         upstream Evo-1 (InternVL3 tower + flow-matching head) + foldquant_integration/
 third_party/          CUTLASS (submodule), vendored TensorRT public headers
 tests/                unit tests for the algorithm, emitters, kernel locator / build
 results/              evaluation protocol and measured results

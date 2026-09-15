@@ -1,1 +1,0 @@
-../../../../docs/source/molmoact2.mdx

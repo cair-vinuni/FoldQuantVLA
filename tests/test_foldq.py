@@ -85,7 +85,7 @@ def test_a_dense_rotation_carries_the_scale_itself() -> None:
 @pytest.mark.parametrize("k_real", [720, 480])
 @pytest.mark.parametrize("fold_order", ["before", "after"])
 def test_the_fold_is_exact_through_zero_padding(k_real: int, fold_order: str) -> None:
-    """SmolVLA's widths are not multiples of the block; padding must stay exact.
+    """Widths that are not multiples of the block are padded; padding must stay exact.
 
     Reproduces the emitter's exact sequence for a padded site: the weight is
     zero-padded, the activation is zero-padded by an ONNX Pad node, and the
@@ -146,7 +146,7 @@ def test_the_padded_site_keeps_the_nominal_block(k_real: int) -> None:
 def test_gptq_rounding_beats_round_to_nearest_at_four_bits() -> None:
     """GPTQ spends the same grid better; it must not change anything else.
 
-    At 4 bits the fold is grid-limited — measured on Evo-1's action head, the
+    At 4 bits the fold is grid-limited — measured on a flow-matching action head, the
     W4A4/W8A8 error ratio came out 18.3x against an ideal 127/7 = 18.14x, so no
     amount of scaling or rotation buys more. GPTQ adds no codes; it propagates
     each column's rounding error into the columns not yet quantized. The packed

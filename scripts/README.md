@@ -22,7 +22,7 @@ The two tuning scripts are GR00T-only (N1.5 / N1.6 / N1.7). The three
 integrations expose the same `calibration.load_policy` / `load_dataset` /
 `sample_observations` / `make_forward_loop` surface and the same
 `export_foldquant._module_paths`, which is all `_groot_family.Loaded` uses;
-openpi, LeRobot and Evo-1 go through `calibration.infer(...)` instead and are
+openpi goes through `calibration.infer(...)` instead and is
 refused with a message rather than half-supported. Run them **from the family
 directory, in its environment** — the loader imports `foldquant_integration`
 from `models/<family>/`, and the upstream `gr00t` package has to resolve:
@@ -78,8 +78,7 @@ that does not survive 32 held-out observations is reported as such.
 
 The tuned arms of the evaluation are the default schemes with explicit knob
 overrides; nothing else changes. Every override is a `--llm-params` /
-`--dit-params` JSON (`--expert-params` on pi and SmolVLA, `--head-params` on
-Evo-1), and cascade calibration is the `--cascade` flag. The values below are
+`--dit-params` JSON (`--expert-params` on pi), and cascade calibration is the `--cascade` flag. The values below are
 the ones the reported arms were built with.
 
 | arm | family | `--llm-scheme` | `--llm-params` | action scheme | action params | `--cascade` |
@@ -92,7 +91,7 @@ the ones the reported arms were built with.
 | arc + fb + res8 | N1.6 | `w4a4_srg` | `{"sq_alpha": 0.6, "act_clip_ratio": 0.85, "site_bits": {"o": 8, "down": 8}}` | `w4a4_sr` | `{"sq_fold_order": "before", "sq_alpha": 0.5}` | no |
 | arc + fb, cascade | N1.6 | `w4a4_srg` | `{"sq_alpha": 0.6, "act_clip_ratio": 0.85}` | `w4a4_sr` | `{"sq_fold_order": "before", "sq_alpha": 0.5}` | yes |
 | W4A8 arc + fb | N1.6 | `w4a8_srg` | `{"sq_alpha": 0.6}` | `w4a4_sr` | `{"sq_fold_order": "before", "sq_alpha": 0.5}` | no / yes |
-| cascade | N1.6, N1.7, Evo-1, pi0.5 | `w4a4_srg` | — | `w4a4_sr` | — | yes |
+| cascade | N1.6, N1.7, pi0.5 | `w4a4_srg` | — | `w4a4_sr` | — | yes |
 | cascade | pi0.5 | `w4a4_srg` | — | `w4a4_sh` | `{"sq_fold_order": "before"}` | yes |
 
 Reading notes:

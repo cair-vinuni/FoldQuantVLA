@@ -82,10 +82,10 @@ def normalized_hadamard(n: int) -> Any:
 def pad_in_dim(t: Any, block_size: int) -> Any:
     """Zero-pad a tensor's last axis up to a multiple of ``block_size``.
 
-    Some experts are not a multiple of the rotation block: SmolVLA's are 480 and
-    720 wide (480 = 2^5*3*5, 720 = 2^4*3^2*5), and 720 additionally fails the INT4
-    GEMM's 128-bit alignment (K % 32 != 0), so a smaller block would not rescue
-    it. Padding is exact for a linear: with the weight's extra columns zero,
+    Some experts are not a multiple of the rotation block: a 480- or 720-wide
+    projection (480 = 2^5*3*5, 720 = 2^4*3^2*5), where 720 additionally fails the
+    INT4 GEMM's 128-bit alignment (K % 32 != 0), so a smaller block would not
+    rescue it. Padding is exact for a linear: with the weight's extra columns zero,
     W_pad·x_pad = W·x, and an orthonormal rotation stays orthonormal on the
     padded space.
 

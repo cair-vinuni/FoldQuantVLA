@@ -152,7 +152,7 @@ def capture_shape_metadata(policy, observation: dict[str, Any], *, seed: int) ->
 
 
 # ---------------------------------------------------------------------------
-# Float engines under the KV-stack contract (see smolvla for the mirror). Pi0.5's
+# Float engines under the KV-stack contract. Pi0.5's
 # prefix seam already receives upstream's 4-D additive mask, so it passes through.
 # ---------------------------------------------------------------------------
 class _Stop(Exception):
@@ -196,7 +196,7 @@ def export_llm_float_pi05(policy, onnx_path, *, forward_loop=None, seen=None, op
     pwe = model.paligemma_with_expert
 
     def call(prefix_embs, attention_mask, position_ids, **_):
-        # upstream's own prefix forward - see smolvla: HF's decoder applies RoPE differently.
+        # upstream's own prefix forward: HF's decoder applies RoPE differently.
         _hidden, cache = pwe.forward(attention_mask=attention_mask, position_ids=position_ids,
                                      past_key_values=None, inputs_embeds=[prefix_embs, None], use_cache=True)
         return stack_cache(cache)

@@ -17,8 +17,8 @@ key, the first call captures ``execute_async_v3`` into a ``torch.cuda.CUDAGraph`
 against stable staging buffers; later calls copy inputs into the staging
 buffers and replay. This removes per-call launch overhead — the same benefit
 NVIDIA's ``openpi_on_thor`` reference gets from ``trtexec --useCudaGraph`` —
-and matters most for engines called many times per action chunk (Evo-1's
-action head runs 50×, Pi0.5's expert 10×). Outputs keep the existing
+and matters most for engines called many times per action chunk (Pi0.5's
+expert runs 10×). Outputs keep the existing
 buffer-reuse contract: callers that hold a result across another call of the
 SAME engine must copy.
 """

@@ -83,10 +83,9 @@ def bias_f32(bias: Any) -> np.ndarray:
 def bf16_initializer(name: str, t: Any) -> onnx.TensorProto:
     """Build a BFLOAT16 ONNX initializer from a torch tensor (raw uint16).
 
-    Casts to bf16 first: a no-op for the bf16 GR00T DiT, but the Evo-1 action
-    head reaches its emitters in fp32 (``prepare_for_quantization`` casts it),
-    and viewing an fp32 tensor as int16 doubled the element count — TensorRT
-    rejected the initializer with a size mismatch.
+    Casts to bf16 first: a no-op for a bf16 module, but a module that reaches its
+    emitter in fp32 would otherwise be viewed as int16 at double the element count,
+    and TensorRT rejects the initializer with a size mismatch.
     """
     import torch
 

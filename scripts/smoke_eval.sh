@@ -11,8 +11,8 @@
 #   scripts/smoke_eval.sh                       # every family that can run it
 #   EVAL_ARM=exports/w8a8/engines scripts/smoke_eval.sh groot_n1_7
 #
-# Only the families whose rollout runs in-process are covered. π₀.₅ and Evo-1
-# drive their upstream client from a second environment against a running
+# Only the families whose rollout runs in-process are covered. π₀.₅ drives
+# its upstream client from a second environment against a running
 # server, which is two processes and a different check; they are skipped with
 # that reason rather than silently.
 
@@ -24,7 +24,7 @@ EPISODES="${EVAL_EPISODES:-1}"
 mkdir -p "$OUT"
 
 FAMILIES=("$@")
-[ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 smolvla)
+[ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5)
 
 . "$(dirname "${BASH_SOURCE[0]}")/_gpu_busy.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/_family_env.sh"
@@ -44,20 +44,19 @@ eval_one () {
   echo "═══ $fam"
   [ -x "$venv" ] || { note SKIP "no .venv"; skip=$((skip+1)); return; }
   case "$fam" in
-    pi05|evo_1) note SKIP "rollout runs from a separate client environment against a server"; skip=$((skip+1)); return ;;
+    pi05)       note SKIP "rollout runs from a separate client environment against a server"; skip=$((skip+1)); return ;;
   esac
   ( cd "$dir" && "$venv" -c "import importlib.util as u,sys; sys.exit(0 if u.find_spec('robosuite') else 1)" ) 2>/dev/null \
     || { note SKIP "LIBERO not installed — see the family's integration README"; skip=$((skip+1)); return; }
 
   # Each family's rollout takes its own upstream loop's arguments, so the flags are
   # not the same set: only N1.7 and N1.6 accept --n-envs, N1.5 wants an embodiment
-  # tag, SmolVLA names its checkpoint --checkpoint and vectorizes elsewhere.
+  # tag.
   local args=()
   case "$fam" in
     groot_n1_7) args=(--model-path "${N17_MODEL:-}" --n-envs 1) ;;
     groot_n1_6) args=(--model-path "${N16_MODEL:-}" --n-envs 1) ;;
     groot_n1_5) args=(--model-path "${N15_MODEL:-}" --embodiment-tag "${N15_TAG:-new_embodiment}") ;;
-    smolvla)    args=(--checkpoint "${SMOLVLA_CKPT:-HuggingFaceVLA/smolvla_libero}") ;;
   esac
   for a in "${args[@]}"; do
     [ -z "$a" ] && { note SKIP "a required path is unset"; skip=$((skip+1)); return; }
@@ -99,22 +98,13 @@ except Exception as exc:  # any unreadable summary is the same failure
     print(f"  FAIL      no readable summary: {exc}")
     raise SystemExit(1)
 
-# The families write two shapes: GR00T counts episodes itself under "per_suite",
-# SmolVLA keeps upstream's percentage under "suites". Either way an empty rollout
+# GR00T counts episodes itself under "per_suite". An empty rollout
 # is a failure -- "0/0 succeeded" is not a pass, it is a check that never ran, and
 # a harness that prints ok for one is worse than no harness.
-if "per_suite" in d:
-    suites = d["per_suite"]
-    n = sum(v["num_episodes"] for v in suites.values())
-    ok = sum(v["successes"] for v in suites.values())
-    what = f"{ok}/{n} episodes succeeded across {len(d.get('tasks', {}))} tasks"
-else:
-    suites = d.get("suites", {})
-    n = sum(v.get("n_episodes") or 0 for v in suites.values())
-    tasks = sum(len(v.get("per_task", [])) for v in suites.values())
-    rates = [v["pc_success"] for v in suites.values() if v.get("pc_success") is not None]
-    pct = f"{sum(rates) / len(rates):.0f}%" if rates else "n/a"
-    what = f"{pct} success over {n} episodes across {tasks} tasks"
+suites = d.get("per_suite", {})
+n = sum(v["num_episodes"] for v in suites.values())
+ok = sum(v["successes"] for v in suites.values())
+what = f"{ok}/{n} episodes succeeded across {len(d.get('tasks', {}))} tasks"
 
 if n == 0:
     print(f"  FAIL      rollout produced no episodes ({what}) -- see the log")

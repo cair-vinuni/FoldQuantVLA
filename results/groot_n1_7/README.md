@@ -52,7 +52,7 @@ sentence should not be quoted:
 
 The two most damaged prefixes do not flip; the worst of them decodes one of
 the cleanest chunks in the arm. Pearson over the 32 is +0.30 — the direction
-the claim assumed, far too weak to carry it, and weak in all six families
+the claim assumed, far too weak to carry it, and weak in all four families
 (+0.08 to +0.31, see the protocol file). The flips are real and both land on
 channel 6; what does not follow is a per-observation link between the two
 depths. Pushed history is left as it is; this note is the correction of record.

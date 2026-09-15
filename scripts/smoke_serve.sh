@@ -20,7 +20,7 @@ R="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${SMOKE_PORT:-5599}"
 WAIT="${SMOKE_SERVE_WAIT:-180}"
 FAMILIES=("$@")
-[ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 pi05 smolvla evo_1)
+[ ${#FAMILIES[@]} -eq 0 ] && FAMILIES=(groot_n1_7 groot_n1_6 groot_n1_5 pi05)
 
 . "$(dirname "${BASH_SOURCE[0]}")/_gpu_busy.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/_family_env.sh"
@@ -47,8 +47,6 @@ serve_one () {
     groot_n1_6) args=(--model-path "${N16_MODEL:-}" --embodiment-tag "${N16_TAG:-libero_panda}") ;;
     groot_n1_5) args=(--model-path "${N15_MODEL:-}" --embodiment-tag "${N15_TAG:-new_embodiment}") ;;
     pi05)       args=(--checkpoint-dir "${PI05_CKPT:-}") ;;
-    evo_1)      args=(--checkpoint-dir "${EVO1_CKPT:-}") ;;
-    smolvla)    args=() ;;   # builds its policy when a client connects; binding is the check
   esac
   for a in "${args[@]}"; do
     [ -z "$a" ] && { note SKIP "a required path is unset"; skip=$((skip+1)); return; }
@@ -66,7 +64,7 @@ serve_one () {
   # words — "listening on", "port %d", "ready", "running at ws://" — and matching
   # those cost a false failure on N1.5, whose server was up and serving while the
   # check looked for a phrase it never prints. A bound port is the thing a client
-  # actually needs, and it reads the same for all six.
+  # actually needs, and it reads the same for all four.
   local up=0
   for _ in $(seq 1 "$WAIT"); do
     ss -ltn 2>/dev/null | grep -q ":$PORT\b" && { up=1; break; }

@@ -56,10 +56,10 @@ def public_path(value: Any) -> Any:
 
     >>> public_path("/home/someone/weights/GR00T-N1.7-LIBERO")
     'GR00T-N1.7-LIBERO'
-    >>> public_path("/home/someone/.cache/huggingface/hub/models--MINT-SJTU--Evo1_LIBERO/snapshots/3ddc6c9c")
-    'MINT-SJTU/Evo1_LIBERO'
-    >>> public_path("HuggingFaceVLA/smolvla_libero")
-    'HuggingFaceVLA/smolvla_libero'
+    >>> public_path("/home/someone/.cache/huggingface/hub/models--nvidia--GR00T-N1.6-3B/snapshots/3ddc6c9c")
+    'nvidia/GR00T-N1.6-3B'
+    >>> public_path("lerobot/pi05_base")
+    'lerobot/pi05_base'
     >>> public_path("exports/w4a4/onnx")
     'exports/w4a4/onnx'
     """

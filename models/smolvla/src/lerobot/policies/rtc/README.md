@@ -1,1 +1,0 @@
-../../../../docs/source/policy_rtc_README.md
