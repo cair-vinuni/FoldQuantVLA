@@ -84,9 +84,12 @@ reason to lack one.
 ## Schemes
 
 A scheme key is `w{W}a{A}` followed by the fold it applies, one letter per pass
-in a fixed order: `s` SmoothQuant scale, then `r` (learned dense block
-rotation) or `h` (fixed Sylvester butterfly, applied as an FWHT), then `g`
-GPTQ rounding. `w8a8` alone is the dynamic per-row baseline and folds nothing.
+in a fixed order: `s` SmoothQuant scale, then a rotation, then `g` GPTQ
+rounding. On the action expert `r` is a learned dense block rotation (the
+matrix ships with the engine) and `h` the fixed Sylvester butterfly, applied as
+an FWHT. On the LLM backbone `r` is the fixed block Hadamard (block 64), also
+applied as an FWHT inside the plugin. `w8a8` alone is the dynamic per-row
+baseline and folds nothing.
 
 `float` is the unquantized engine of a module — the floor of every ladder and
 the compiled control the latency table divides by. It is traced, not emitted:

@@ -4,9 +4,11 @@
 """FoldQuant scheme keys: which fold each name spells, which modules it serves, which plugin library runs it.
 
 A key is ``w{W}a{A}`` followed by the fold it applies, one letter per pass in a
-fixed order: ``s`` SmoothQuant scale, then ``r`` (learned dense rotation) or ``h``
-(fixed Sylvester butterfly), then ``g`` GPTQ rounding. ``w8a8`` alone is the
-dynamic per-row baseline, which folds nothing and needs no calibration.
+fixed order: ``s`` SmoothQuant scale, then a rotation, then ``g`` GPTQ rounding.
+On action modules ``r`` is a learned dense rotation and ``h`` the fixed Sylvester
+butterfly; on LLM keys ``r`` is the fixed block-64 Hadamard applied by the
+plugin's FWHT (:mod:`.llm_rotation_sq`). ``w8a8`` alone is the dynamic per-row
+baseline, which folds nothing and needs no calibration.
 
 Action-module keys (DiT, Pi expert) and LLM keys
 are separate vocabularies: the two graph families are different emitters over

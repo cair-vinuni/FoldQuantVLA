@@ -39,21 +39,24 @@ mean 0.99935 -> 0.99973, min 0.99835 -> 0.99942, prefix KV-stack cosine 0.9665 -
 ## Closed-loop success (protocol P3)
 
 Four suites, ten tasks, twenty initial states per task: 800 episodes per arm, on one H100 MIG
-3g.40gb partition. Paired over the 40 tasks.
+3g.40gb partition. Success rate in percent; paired over the 40 tasks. "W4A4, same preset" is the
+uniform W4A4 arm built on the same calibration preset as the o/d INT8 arm. On N1.5 and π₀.₅ that is
+the printed uniform-W4A4 row; on N1.7 and N1.6 it is the dense-rotation build, so it differs from the
+printed W4A4 row (95.38% and 95.75%).
 
-| checkpoint | W4A4 | W4A4 + o/d INT8 | paired p |
+| checkpoint | W4A4, same preset | W4A4 + o/d INT8 | paired p |
 |---|---:|---:|---:|
-| GR00T N1.7 | 757 | 760 | 0.77 |
-| GR00T N1.6 | 763 | **773** | 0.17 |
-| GR00T N1.5 | 699 | 696 | 0.78 |
-| π₀.₅ | 777 | 781 | 0.42 |
+| GR00T N1.7 | 94.62% | 95.00% | 0.77 |
+| GR00T N1.6 | 95.38% | **96.62%** | 0.17 |
+| GR00T N1.5 | 87.38% | 87.00% | 0.78 |
+| π₀.₅ | 97.12% | 97.62% | 0.42 |
 
 No detectable success-rate cost and no detectable gain in any pair; the offline improvements are
 resolved, the closed-loop differences are not.
 
 Two further campaigns ran through this release's harness rather than the paper's closed-loop one, and pair
-the same way: GR00T N1.7 on NVIDIA's per-suite checkpoints, cap 720 (759 -> 765, p = 0.57;
-`groot_n1_7/HOLOQ_LIBERO.md`), and π₀.₅ with the openpi step profile (778 -> 782, p = 0.42;
+the same way: GR00T N1.7 on NVIDIA's per-suite checkpoints, cap 720 (94.88% -> 95.62%, p = 0.57;
+`groot_n1_7/HOLOQ_LIBERO.md`), and π₀.₅ with the openpi step profile (97.25% -> 97.75%, p = 0.42;
 `pi05/HOLOQ_LIBERO.md`).
 
 ## Latency (E2E medians, ms; head-only in parentheses where the harness reports it)
