@@ -63,7 +63,7 @@ counts and per-episode outcomes are in each arm's `summary.json`.
 checkpoint, so a same-checkpoint comparison on N1.5 is not possible. The HoloQ-style and
 DuQuant-style columns are therefore **our own implementations of those recipes for N1.7**, shipped in
 this release (`foldquant_integration/baselines/`, see that integration's README). The HoloQ-style
-arm was first ported in the authors' Isaac-GR00T fork (branch `duc-quan`, `quant-report.md`); the
+arm was first ported in the authors' own Isaac-GR00T fork; the
 BF16 column comes from that fork's upstream LIBERO harness on an L4 (it is the plain baseline, not a
 quantized arm), and we did not rerun BF16 in our harness. The implementation was traced against the
 Omega-QVLA reference: identical LLM and DiT scope regexes (112 + 192 linears), zigzag weight-energy
