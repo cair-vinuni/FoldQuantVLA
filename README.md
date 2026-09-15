@@ -8,7 +8,7 @@
 <p align="center">
   <img alt="Native INT4 / INT8" src="https://img.shields.io/badge/precision-W4A4%20%7C%20W8A8%20native-B9141A">
   <img alt="Runtime" src="https://img.shields.io/badge/runtime-TensorRT%2010%20%2F%2011-17201C">
-  <img alt="Targets" src="https://img.shields.io/badge/GPU-sm__87%20Orin%20%7C%20sm__89%20Ada%20%7C%20sm__90%20Hopper-627067">
+  <img alt="Targets" src="https://img.shields.io/badge/native%20INT4-sm__87%20Orin%20%7C%20sm__89%20Ada-627067">
   <img alt="Families" src="https://img.shields.io/badge/VLA%20families-GR00T%20N1.5%2FN1.6%2FN1.7%20%7C%20%CF%80%E2%82%80.%E2%82%85-78877E">
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11-DAE3DC">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-F2F5F2"></a>
@@ -17,21 +17,27 @@
 **FoldQuantVLA: Native Low-Bit Quantization of Vision-Language-Action Models
 via Consistent Folding**
 
-Native low-bit — W8A8 and W4A4 executed on the device's INT8 / INT4 tensor
-cores, not simulated — quantization of vision-language-action (VLA)
-models via **consistent offline folding**: the SmoothQuant
-scale, a per-block rotation and the weight rounding are folded into each
-linear site's weights before export, so at inference a single fused TensorRT
-plugin quantizes the activation row, runs the INT4 / INT8 GEMM and
-dequantizes — no online rotation, no per-token scale search, no extra graph
-nodes between the plugin and its neighbours.
+Native low-bit — W8A8 and W4A4 executed on the device's integer tensor cores,
+not simulated — quantization of vision-language-action (VLA) models via
+**consistent offline folding**. Each activation site gets one transform, fixed
+offline from the SmoothQuant scale and a block rotation; every projection that
+consumes the site stores its weights in those coordinates and is rounded once.
+At inference a single fused TensorRT plugin applies the transform to the new
+activation, quantizes it with a dynamic per-token scale, and runs the integer
+GEMM — no separate rotation operator and no extra graph nodes between the
+plugin and its neighbours.
+
+W4A4 runs on native INT4 instructions on Ada (sm_89) and Orin (sm_87). On H100
+(sm_90) the four-bit operands are lowered to the INT8 datapath: the arithmetic
+semantics are kept, native INT4 latency is not.
 
 ## Highlights
 
-- **Native low bit, not simulated.** W8A8 and W4A4 run on the device's INT8 / INT4 tensor cores through one fused TensorRT plugin per linear site; no online rotation, no per-token scale search, no extra graph nodes.
-- **One fold, offline.** SmoothQuant scale, block rotation and GPTQ rounding are composed into a single consistent transform `T_v = D^o R D^i` and folded into the weights before export. Every fold is in the weights; the runtime only quantizes rows.
+- **Native low bit, not simulated.** W8A8 and W4A4 run on integer tensor cores through one fused TensorRT plugin per linear site, which applies the site's transform and quantizes in one prologue; no separate rotation operator, no extra graph nodes. Four-bit is native on Ada and Orin; H100 lowers it to INT8.
+- **One fold, offline.** SmoothQuant scale and block rotation are composed into a single consistent transform `T_v = D^o R D^i` per activation site, its inverse is folded into every consuming weight, and GPTQ rounds in those coordinates. The parameters are fixed at build time; applying `T_v` to each new activation is runtime work, done inside the plugin.
 - **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ — upstream code, evaluation harness and policy server used unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in the precision of the projections.
-- **Action-referenced calibration.** Presets are selected on decoded actions of the assembled pipeline (fidelity, then closed-loop success), with a floating-point engine of the same scope as the control every latency claim is measured against.
+- **Action-referenced calibration.** Presets are screened on decoded-action cosine against the BF16 policy, in a statistics-matched emulation rather than a bitwise replica of the plugin; every selected preset is then rebuilt and checked on the assembled engine, and a floating-point engine of the same scope is the control every latency claim is measured against.
+- **Selective INT8 where four bits are fragile.** Holding `o_proj` and `down_proj` at INT8 inside an otherwise W4A4 language tower (`site_bits`) keeps every projection on the integer GEMM path and recovers most of the four-bit cosine gap; it is the recommended configuration.
 - **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, a Jetson AGX Orin and a real robot, driven by the family's own upstream client (see [`docs/`](docs)).
 
 ## How it works
@@ -75,12 +81,12 @@ not a gap: its LIBERO rollout drives an upstream client from a second
 environment against a running server, where the GR00T families run it in
 process.
 
-What has been **measured and committed** is a narrower claim, and it belongs in
-[`results/`](results/README.md) rather than in this table. Held-out drift and
-desktop latency are recorded there for all four. **LIBERO success rate is not**:
-those sweeps run on the evaluation cluster, and every success-rate cell reads
-_Pending_ until they land. Jetson AGX Orin latency is pending for the same
-reason — the board is not this machine.
+The measurements themselves live in [`results/`](results/README.md) rather
+than in this table: held-out drift and desktop latency for all four families,
+recorded by this release, beside the paper's closed-loop LIBERO campaigns
+(800 episodes per arm) and its Jetson AGX Orin latency. Where a paper figure
+came from a different runtime than this release's `benchmark` — GR00T N1.6 and
+N1.5 latency — `results/README.md` prints both and says which is which.
 
 All four families now have a float arm. `--llm-scheme float` traces the module
 through the deployed forward and emits an unquantized engine of the same
@@ -121,6 +127,24 @@ the precision of the projections and in nothing else.
 modules each is allowed on. GPTQ (`…g`) changes nothing at runtime — same
 kernel, node attributes and byte layout — it only spends the same 16 levels
 better, so every `_shg` engine runs at the `_sh` engine's latency.
+
+### Selective INT8 inside a W4A4 tower
+
+A W4A4 language tower can hold chosen projection sites at INT8 with
+`site_bits`, passed through `--llm-params`:
+
+```bash
+--llm-scheme w4a4_srg --llm-params '{"site_bits": {"o": 8, "down": 8}}'
+```
+
+Valid sites are `qkv`, `o`, `gateup` and `down`. Holding `o_proj` and
+`down_proj` at INT8 ("o/d INT8") is the recommended configuration: those two
+sites have no preceding learned gain for a scale to fold into, and keeping them
+at INT8 rather than in floating point leaves every projection on the integer
+GEMM path and in the same plugin family — a floating-point fallback would put a
+datatype boundary and a separate kernel back into the tower. It recovers most
+of the uniform-W4A4 cosine gap; its cosine still sits below the W8A8 engine's.
+Measurements are in [`results/RES8_SITE_SELECTIVE_INT8.md`](results/RES8_SITE_SELECTIVE_INT8.md).
 
 ## Layout
 

@@ -170,10 +170,16 @@ Two things follow from that, both learned the hard way:
 
 ## What is not here
 
-- **LIBERO success rate** for most arms. Those sweeps run on an evaluation
-  cluster; `results/README.md` carries the one arm measured on this desktop
-  and marks the rest pending. That `eval_libero` runs at all is checked by
+- **Per-episode outcomes of the LIBERO campaigns.** `results/README.md` prints
+  every arm's success rate per suite, but those 800-episode campaigns ran on an
+  H100 partition outside this repository and their per-episode records are not
+  committed here. That `eval_libero` runs at all is checked by
   `scripts/smoke_eval.sh` above, on ten episodes — enough to show the driver
   works, nowhere near enough to rank an arm.
-- **Jetson AGX Orin latency.** See [`deploy/jetson.md`](deploy/jetson.md) for
-  the procedure; the numbers are the paper's, not this repository's.
+- **A re-timing of GR00T N1.6 and N1.5 under the paper's latency protocol.**
+  The paper timed those two families in a different runtime, so `benchmark`
+  reproduces this release's records for them, not the paper's figure;
+  `results/README.md` prints both.
+- **Jetson AGX Orin records.** `results/README.md` carries the paper's Orin
+  figure and [`deploy/jetson.md`](deploy/jetson.md) the procedure; the runs on
+  a board that checked each path completes recorded no number.

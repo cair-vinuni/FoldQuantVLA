@@ -289,24 +289,24 @@ Held-out action cosine per arm, 32 observations, seeded
 under the same seeds in every family, so the deficits below are the arm's, not
 the sampler's.
 
-| family | arm | n | mean | median | min | worst \|Δ\| |
-|---|---|---|---|---|---|---|
-| GR00T N1.7 | `float` | 32 | 0.99977 | 0.99999 | 0.99415 | 0.436 |
-| GR00T N1.7 | `w8a8` | 32 | 0.99965 | 0.99996 | 0.99086 | 0.540 |
-| GR00T N1.7 | `w4a4` | 32 | 0.98575 | 0.99817 | 0.80213 | 1.000 |
-| GR00T N1.7 | `w4a4_cascade` | 32 | 0.98591 | 0.99825 | 0.80649 | 1.000 |
-| GR00T N1.6 | `float` | 32 | 0.99998 | 0.99999 | 0.99971 | 0.026 |
-| GR00T N1.6 | `w8a8` | 32 | 0.99996 | 0.99998 | 0.99948 | 0.049 |
-| GR00T N1.6 | `w4a4` | 32 | 0.97411 | 0.99876 | 0.46067 | 1.000 |
-| GR00T N1.6 | `w4a4_cascade` | 32 | 0.97437 | 0.99874 | 0.46649 | 1.000 |
-| GR00T N1.5 | `float` | 32 | 0.99991 | 0.99999 | 0.99726 | 0.230 |
-| GR00T N1.5 | `w8a8` | 32 | 0.99996 | 0.99999 | 0.99944 | 0.146 |
-| GR00T N1.5 | `w4a4` | 32 | 0.99585 | 0.99885 | 0.96967 | 0.848 |
-| GR00T N1.5 | `w4a4_cascade` | 32 | 0.99598 | 0.99865 | 0.97245 | 0.927 |
-| π₀.₅ | `float` | 32 | 1.00000 | 1.00000 | 1.00000 | 0.004 |
-| π₀.₅ | `w8a8` | 32 | 1.00000 | 1.00000 | 0.99999 | 0.009 |
-| π₀.₅ | `w4a4` | 32 | 0.99450 | 0.99942 | 0.84749 | 1.998 |
-| π₀.₅ | `w4a4_cascade` | 32 | 0.99449 | 0.99945 | 0.84704 | 2.005 |
+| family | arm | n | action cos (median) | median worst \|Δ\| |
+|---|---|---|---|---|
+| GR00T N1.7 | `float` | 32 | 0.99999 | 0.009 |
+| GR00T N1.7 | `w8a8` | 32 | 0.99996 | 0.011 |
+| GR00T N1.7 | `w4a4` | 32 | 0.99817 | 0.099 |
+| GR00T N1.7 | `w4a4_cascade` | 32 | 0.99825 | 0.092 |
+| GR00T N1.6 | `float` | 32 | 0.99999 | 0.005 |
+| GR00T N1.6 | `w8a8` | 32 | 0.99998 | 0.007 |
+| GR00T N1.6 | `w4a4` | 32 | 0.99876 | 0.074 |
+| GR00T N1.6 | `w4a4_cascade` | 32 | 0.99874 | 0.071 |
+| GR00T N1.5 | `float` | 32 | 0.99999 | 0.005 |
+| GR00T N1.5 | `w8a8` | 32 | 0.99999 | 0.007 |
+| GR00T N1.5 | `w4a4` | 32 | 0.99885 | 0.072 |
+| GR00T N1.5 | `w4a4_cascade` | 32 | 0.99865 | 0.067 |
+| π₀.₅ | `float` | 32 | 1.00000 | 0.002 |
+| π₀.₅ | `w8a8` | 32 | 1.00000 | 0.005 |
+| π₀.₅ | `w4a4` | 32 | 0.99942 | 0.054 |
+| π₀.₅ | `w4a4_cascade` | 32 | 0.99945 | 0.054 |
 
 Read the median beside the mean: these distributions have tails, and on the
 families where W4A4 breaks it is a minority of observations that carry the
@@ -344,12 +344,107 @@ The last column is the deployment-path result against upstream's own serving
 configuration, **not** a quantization result — see the graph-versus-precision
 split above, where roughly three quarters of it is the graph.
 
-_Jetson AGX Orin (sm87, JetPack TensorRT 10.3) — pending._
+**These are this release's records, and they are not the paper's figure.** The
+paper times three repeats of sixty iterations after ten warm-ups (five repeats
+for the GR00T eight- and four-bit arms), and re-timed N1.6 and N1.5 in the
+framework runtime with the configurations of its success campaign. N1.7 and
+π₀.₅ agree with it to the digit; N1.6 and N1.5 do not, and the gap is not
+rounding:
 
-### GR00T N1.7 — LIBERO
+| family | eager | torch.compile | TRT bf16 | W8A8 | W4A4 | W4A4 + o/d INT8 | W4A4 vs eager |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| GR00T N1.7 | 67.8 | 58.05 | 41.5 | 36.5 | 32.6 | 34.0 | 2.08× |
+| GR00T N1.6 | 74.2 | 59.85 | 44.1 | 37.7 | 33.9 | 35.3 | 2.19× |
+| GR00T N1.5 | 57.4 | 53.46 | 40.2 | 33.7 | 30.2 | 33.5 | 1.90× |
+| π₀.₅ | 169.4 | 100.3 | 111.8 | 89.9 | 76.6 | 82.3 | 2.21× |
 
-**bf16 PyTorch, the reference arm.** Upstream's `MultiStepWrapper` rollout, all
-four suites, 20 episodes per task, 800 episodes, one RTX 4070 Ti SUPER, 1h54m.
+*The paper's latency figure, RTX 4070 Ti SUPER, batch 1.* The compiled control
+supplies 74.7, 74.5, 63.2 and 74.5% of each eager-to-W4A4 reduction, and W4A4
+removes 10.7, 10.2, 10.5 and 14.8% of the W8A8 latency. N1.7's torch.compile
+bar comes from a runtime whose eager is 71.8 ms and is not used for attribution;
+rebuilds of N1.6 and N1.5 through this release's export path give float
+engines of 44.0 and 41.2 ms. The o/d INT8 bars are a re-timing in this
+release's export path against the uniform W4A4 engine of the same run.
+
+A reproduction of the N1.6 and N1.5 rows through `benchmark` will land on this
+release's records above, not on the paper's, until those two families are
+re-timed here under the paper's protocol.
+
+#### Jetson AGX Orin
+
+The paper's Orin figure: sm87, JetPack TensorRT 10.3, batch 1,
+observation-to-action milliseconds.
+
+| family | eager | torch.compile | TRT bf16 | W8A8 | W4A4 | W4A4 + o/d INT8 | ModelOpt W8A8 SQ | ModelOpt W4A16 AWQ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| GR00T N1.7 | 351 | 231 | 146 | 127 | 119 | 120 | 137 | 167 |
+| GR00T N1.6 | 333 | 217 | 150 | 137 | 125 | 127 | 142 | 177 |
+| GR00T N1.5 | 249 | 199 | 135 | 123 | 111 | 114 | 134 | 174 |
+| π₀.₅ | 861 | 861 | 229 | 226 | 172 | 203 | 211 | 326 |
+
+Uniform W4A4 reaches 1.23, 1.20, 1.22 and 1.33× the float engine, and the
+weight-only four-bit baseline is 13–30% slower than that engine on every
+checkpoint. Holding `o_proj`/`down_proj` at INT8 costs 1–3 ms on GR00T and
+31 ms on π₀.₅. The per-family scripts have been run on an Orin as well —
+`docs/deploy/jetson.md` lists which — but those runs checked that each path
+completes and recorded no number.
+
+### LIBERO success rate — all families
+
+The paper's closed-loop campaigns: one H100 MIG 3g.40gb partition, four suites,
+ten tasks, twenty initial states per task, 800 episodes per arm, seed 7;
+serving-time flow noise unseeded. Success rate in percent; Wilson 95%
+intervals describe each arm on its own and do not establish equivalence.
+
+| family (K) | arm | spatial | object | goal | long | all | 95% CI |
+|---|---|---:|---:|---:|---:|---:|---|
+| GR00T N1.7 (8) | BF16 PyTorch | 97.5 | 100.0 | 97.5 | 90.0 | 96.25 | [94.7, 97.4] |
+| | TRT bf16 | 96.5 | 99.5 | 97.5 | 88.5 | 95.50 | [93.8, 96.7] |
+| | ModelOpt W8A8 SQ | 97.0 | 98.5 | 97.5 | 90.0 | 95.75 | [94.1, 96.9] |
+| | ModelOpt W4A16 AWQ | 98.0 | 99.0 | 98.0 | 90.5 | 96.38 | [94.8, 97.5] |
+| | FQ W8A8 | 97.0 | 99.5 | 98.0 | 87.0 | 95.38 | [93.7, 96.6] |
+| | FQ W4A4 | 96.5 | 99.0 | 97.0 | 89.0 | 95.38 | [93.7, 96.6] |
+| | FQ W4A4 + o/d INT8 | 93.5 | 99.5 | 98.0 | 89.0 | 95.00 | [93.3, 96.3] |
+| GR00T N1.6 (8) | BF16 PyTorch | 97.0 | 100.0 | 97.0 | 91.5 | 96.38 | [94.8, 97.5] |
+| | TRT bf16 | 98.0 | 100.0 | 96.5 | 96.5 | 97.75 | [96.5, 98.6] |
+| | ModelOpt W8A8 SQ | 98.0 | 100.0 | 97.5 | 89.5 | 96.25 | [94.7, 97.4] |
+| | ModelOpt W4A16 AWQ | 94.5 | 99.5 | 96.0 | 95.0 | 96.25 | [94.7, 97.4] |
+| | FQ W8A8 | 95.5 | 100.0 | 94.0 | 93.5 | 95.75 | [94.1, 96.9] |
+| | FQ W4A4 | 95.5 | 96.5 | 96.0 | 95.0 | 95.75 | [94.1, 96.9] |
+| | FQ W4A4 + o/d INT8 | 95.0 | 100.0 | 99.5 | 92.0 | 96.62 | [95.1, 97.7] |
+| GR00T N1.5 (1) | BF16 PyTorch | 92.0 | 95.5 | 89.5 | 68.5 | 86.38 | [83.8, 88.6] |
+| | TRT bf16 | 93.0 | 95.5 | 87.0 | 68.5 | 86.00 | [83.4, 88.2] |
+| | ModelOpt W8A8 SQ | 91.0 | 93.5 | 87.5 | 63.5 | 83.88 | [81.2, 86.3] |
+| | ModelOpt W4A16 AWQ | 91.5 | 96.0 | 85.0 | 72.5 | 86.25 | [83.7, 88.5] |
+| | FQ W8A8 | 90.5 | 98.0 | 88.5 | 71.5 | 87.12 | [84.6, 89.3] |
+| | FQ W4A4 | 92.5 | 96.5 | 88.0 | 72.5 | 87.38 | [84.9, 89.5] |
+| | FQ W4A4 + o/d INT8 | 91.5 | 97.5 | 90.5 | 68.5 | 87.00 | [84.5, 89.2] |
+| π₀.₅ (5) | BF16 PyTorch | 99.5 | 98.0 | 98.0 | 90.5 | 96.50 | [95.0, 97.6] |
+| | TRT bf16 | 100.0 | 100.0 | 99.0 | 93.0 | 98.00 | [96.8, 98.8] |
+| | ModelOpt W8A8 SQ | 98.5 | 98.5 | 97.0 | 93.0 | 96.75 | [95.3, 97.8] |
+| | ModelOpt W4A16 AWQ | 99.5 | 98.5 | 98.5 | 95.5 | 98.00 | [96.8, 98.8] |
+| | FQ W8A8 | 99.5 | 99.5 | 96.5 | 94.0 | 97.38 | [96.0, 98.3] |
+| | FQ W4A4 | 98.5 | 99.0 | 98.0 | 93.0 | 97.12 | [95.7, 98.1] |
+| | FQ W4A4 + o/d INT8 | 98.5 | 99.5 | 98.5 | 94.0 | 97.62 | [96.3, 98.5] |
+
+The FQ W4A4 expert uses GPTQ and a butterfly rotation with fold-before. The N1.6
+and N1.7 o/d INT8 arms were built on the dense-rotation calibration preset, whose
+matched uniform-W4A4 partners scored 95.38% and 94.62%; the N1.5 arm shares the
+preset of its printed W4A4 row. H100 executes four-bit operands through an INT8
+lowering, so these rows are closed-loop outcomes, not native INT4 latency.
+
+Paired over the 40 tasks with a two-sided t test and Holm correction across the
+41 arm-versus-reference comparisons, **no comparison survives**. That states no
+loss is detected at this campaign size; it does not establish equivalence.
+
+Per-episode outcomes behind these rows are not yet in this repository.
+
+#### A release-harness check
+
+GR00T N1.7 BF16 through this release's `eval_libero` (upstream's
+`MultiStepWrapper` rollout), one RTX 4070 Ti SUPER, 1h54m — a different
+harness and GPU from the campaigns above, so it is a check that the release
+path runs end to end, not a row of that table:
 
 | suite | successes | % |
 |---|---|---|
@@ -358,20 +453,3 @@ four suites, 20 episodes per task, 800 episodes, one RTX 4070 Ti SUPER, 1h54m.
 | libero_goal | 194/200 | 97.0 |
 | libero_10 | 172/200 | 86.0 |
 | **all four** | **759/800** | **94.9** |
-
-This is the floor every quantized arm is read against, not a FoldQuant result:
-no engine is installed. The quantized rows are still pending — their engine
-directories were deleted in a disk cleanup and have to be rebuilt before the
-comparison means anything.
-
-### GR00T N1.6 — LIBERO
-
-_Pending: re-measured with the upstream harness (see the integration README)._
-
-### GR00T N1.5 — LIBERO
-
-_Pending: re-measured with the upstream harness (see the integration README)._
-
-### π₀.₅ — LIBERO
-
-_Pending: re-measured with the upstream harness (see the integration README)._
