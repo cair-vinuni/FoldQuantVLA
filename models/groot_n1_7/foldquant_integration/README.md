@@ -349,7 +349,7 @@ Code: `foldquant_integration/baselines/` — `packing.py` (permutation, rotation
 INT4 packing, GPTQ), `scope.py` (the 304-Linear scope), `calibration.py`
 (collector), `builder.py` (pack), `runtime.py` (emulated layers), `context.py`
 (denoising-step context attached from outside the vendored model). Ported from the
-authors' Isaac-GR00T fork (the HoloQ-style port used for the 745/800 result below),
+authors' Isaac-GR00T fork (where the HoloQ-style port was first written),
 with the static per-channel activation path added; the vendored upstream tree is
 untouched.
 
@@ -386,8 +386,8 @@ episodes per suite, `n_action_steps` 8, cap 720; successes of 200):
 | arm | spatial | object | goal | long | total /800 |
 |---|---:|---:|---:|---:|---:|
 | BF16 PyTorch | 197 | 197 | 185 | 187 | 766 |
-| HoloQ-style W4A4 (emulated, authors' fork run) | 195 | 194 | 178 | 178 | 745 |
-| DuQuant-style W4A4 (emulated, this release) | — | — | — | — | to be filled |
+| HoloQ-style W4A4 (emulated, this release) | 188 | 197 | 179 | 180 | 744 |
+| DuQuant-style W4A4 (emulated, this release) | 194 | 195 | 190 | 167 | 746 |
 | FoldQuant W4A4 (INT4 engines) | 197 | 194 | 191 | 177 | 759 |
 | FoldQuant W4A4 + o/d INT8 | 193 | 197 | 188 | 187 | 765 |
 
