@@ -104,7 +104,7 @@ class ExportConfig:
     """JSON overrides for the expert fold (sq_alpha, sq_fold_order)."""
 
     modelopt_opset: int = modelopt_int8.DEFAULT_OPSET
-    """ONNX opset of a ``modelopt_w8a8_smoothquant`` graph (the reference preset exports at 20)."""
+    """ONNX opset of a ``modelopt_w8a8_smoothquant`` graph (the framework preset exports at 20)."""
 
     device: str = "cuda"
 

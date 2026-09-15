@@ -289,7 +289,7 @@ upstream's pipeline swap rather than the framework's runtime.
 Measured on a GR00T N1.7 SO101 checkpoint (Jetson AGX Orin, 64 calibration
 samples, the 32 held-out samples of the `w8a8` arm via `verify --split-from`):
 backbone cosine 0.99974, action cosine mean 0.9986 (min 0.9915). The same
-recipe is close to lossless on this checkpoint. the framework's own `dit.onnx` for
+recipe is close to lossless on this checkpoint. The framework's own `dit.onnx` for
 this preset, renamed to upstream's I/O and built and verified here, scores
 0.9986 as well, and its SmoothQuant vectors match this arm's (cosine >= 0.97
 per layer), so the two graphs agree.
