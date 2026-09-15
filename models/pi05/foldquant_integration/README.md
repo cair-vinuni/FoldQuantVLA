@@ -183,7 +183,7 @@ observation per request.
 
 ## ModelOpt INT8 SmoothQuant baseline
 
-`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It reproduces the VLA-OPT
+`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It reproduces the the reference implementation
 preset `pi05/tensorrt/modelopt_w8a8_smoothquant`, so a FoldQuant arm and the
 ModelOpt baseline can be built, verified and served by the same tools and
 compared on a robot. It needs `nvidia-modelopt==0.45.0` (and `ninja`, for its
@@ -206,7 +206,7 @@ What the arm does, step for step with the preset (`foldquant/modelopt_int8.py`,
 | step | this arm |
 |---|---|
 | calibration data | `--num-calib` observations (the preset uses 64), seeded noise per observation; one bf16 policy replay records every prefix pass and every denoise step before anything is quantized |
-| quantized scopes | LLM: `paligemma.language_model` (VLA-OPT `backbone.model.model.language_model`); expert: `Pi05ExpertView` over the live expert, whose leaf names match VLA-OPT's `action_expert` (`expert_model.model.layers.*`, `action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`) |
+| quantized scopes | LLM: `paligemma.language_model` (the reference implementation `backbone.model.model.language_model`); expert: `Pi05ExpertView` over the live expert, whose leaf names match the reference implementation's `action_expert` (`expert_model.model.layers.*`, `action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`) |
 | calibration replay | LLM: the captured `prefix_embs` / 4-D mask / `position_ids` through `paligemma_with_expert.forward`; expert: the captured `x_t` / `timestep` / `prefix_pad_masks` / KV stack through `denoise_step`; the expert sees float-LLM caches (no cascade) |
 | config | `mtq.INT8_SMOOTHQUANT_CFG`: per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant pre-quant scales |
 | excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*`: on Pi0.5 that is the adaRMS `dense` modulation of every expert norm; `action_in_proj` / `action_out_proj` and the time MLP are quantized, as in the preset |
@@ -222,10 +222,10 @@ scope, for a key-by-key comparison with the same module quantized elsewhere.
 
 Differences that remain: the reference policy keeps upstream openpi's mixed
 precision (the norms, and the projections around the expert, in float32)
-where VLA-OPT casts the whole policy to bf16 before calibration; the
-graphs use the FoldQuant bindings (VLA-OPT's `llm` and `expert` graphs have the
+where the reference implementation casts the whole policy to bf16 before calibration; the
+graphs use the FoldQuant bindings (the reference implementation's `llm` and `expert` graphs have the
 same input and output names, but a dynamic prefix length); the engine directory
-is served by `runtime.install_engines` rather than VLA-OPT's runtime.
+is served by `runtime.install_engines` rather than the reference implementation's runtime.
 
 Measured on the SO101 multitask checkpoint (`pi05_so101`, 64 calibration
 observations, 32 held-out observations shared with the `w8a8_sr` + `w8a8_sh`
@@ -236,10 +236,10 @@ arm through `--split-from`, Jetson AGX Orin, TensorRT 10.3):
 | `modelopt_w8a8_smoothquant` both modules | 0.97719 | 0.595 | 0.99931 / 0.99955 / 0.99624 | 4.15 / 12.55 |
 | `w8a8_sr` LLM + `w8a8_sh` expert | 0.99660 | 0.882 | 0.99997 / 0.99998 / 0.99979 | 0.90 / 1.97 |
 
-Both graphs carry the Q/DQ pairs VLA-OPT's own graphs for the preset carry
+Both graphs carry the Q/DQ pairs the reference implementation's own graphs for the preset carry
 (LLM 242, expert 260, in the same order), with SmoothQuant pre-quant scales
-whose log-profiles agree with VLA-OPT's at a median cosine of 0.989 (LLM) and
-0.983 (expert) despite a different calibration set. VLA-OPT's artifact drifts
+whose log-profiles agree with the reference implementation's at a median cosine of 0.989 (LLM) and
+0.983 (expert) despite a different calibration set. the reference implementation's artifact drifts
 from its own bf16 PyTorch policy by a comparable action cosine (mean 0.9989),
 so the gap to `w8a8` is the recipe (per-tensor static activations), not the
 port.

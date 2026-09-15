@@ -3,10 +3,10 @@
 
 """NVIDIA ModelOpt INT8 SmoothQuant: a Q/DQ baseline arm to compare the FoldQuant folds against.
 
-Nothing here is a FoldQuant fold. The arm reproduces the VLA-OPT presets
+Nothing here is a FoldQuant fold. The arm reproduces the authors' framework presets
 ``groot_n1_7/tensorrt/modelopt_w8a8_smoothquant`` and
 ``pi05/tensorrt/modelopt_w8a8_smoothquant`` step for step, so its engines
-behave like the ones VLA-OPT builds, but it emits graphs under each family's
+behave like the ones the framework builds, but it emits graphs under each family's
 FoldQuant I/O contract that the FoldQuant engine builder, verifier and server
 load unchanged:
 
@@ -49,7 +49,7 @@ from torch import nn
 
 logger = logging.getLogger(__name__)
 
-#: The one algorithm key this module implements (VLA-OPT's key, unchanged).
+#: The one algorithm key this module implements (the framework's key, unchanged).
 MODELOPT_W8A8_SMOOTHQUANT = "modelopt_w8a8_smoothquant"
 
 #: Algorithm key -> attribute of ``modelopt.torch.quantization`` holding its base config.
@@ -362,7 +362,7 @@ def cast_graph_outputs(onnx_path: Path, name: str, elem_type: int) -> List[str]:
     """Cast every floating graph output that is not *elem_type* to it, in place; returns the names cast.
 
     ModelOpt's INT8 Q/DQ pairs dequantize to float32, so the last quantized
-    Linear leaves a bf16 graph with a float32 output. VLA-OPT's runtime casts
+    Linear leaves a bf16 graph with a float32 output. The framework's runtime casts
     that at the next engine's bf16 input; upstream's ``trt_torch.Engine`` asserts
     the dtype instead, so the same cast is placed at the end of the graph.
     Structure-only; no tensor bytes are loaded.

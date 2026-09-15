@@ -62,7 +62,7 @@ class _ExpertLayer(nn.Module):
 
 class _Pi05ExpertTree(nn.Module):
     """The leaf names of Pi0.5's action expert (openpi's module tree seen through ``Pi05ExpertView``,
-    VLA-OPT's ``action_expert``)."""
+    the reference implementation's ``action_expert``)."""
 
     def __init__(self, width: int = 4, action_dim: int = 2) -> None:
         super().__init__()

@@ -158,7 +158,7 @@ than torch expects). The log says so; it only makes calibration slower.
 ### ModelOpt baseline
 
 `modelopt_w8a8_smoothquant` builds the NVIDIA ModelOpt INT8 SmoothQuant arm of
-the VLA-OPT preset `groot_n1_7/tensorrt/modelopt_w8a8_smoothquant` inside this
+the reference preset `groot_n1_7/tensorrt/modelopt_w8a8_smoothquant` inside this
 pipeline, so it is verified and served exactly like a FoldQuant arm. It needs
 no plugin library, but two extra packages (additions only; check with
 `--dry-run` first):

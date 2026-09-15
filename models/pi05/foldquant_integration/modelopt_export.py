@@ -3,7 +3,7 @@
 
 """The ModelOpt INT8 SmoothQuant baseline arm for Pi0.5 (see :mod:`foldquant.modelopt_int8`).
 
-Reproduces the VLA-OPT preset ``pi05/tensorrt/modelopt_w8a8_smoothquant``: the
+Reproduces the reference preset ``pi05/tensorrt/modelopt_w8a8_smoothquant``: the
 PaliGemma language model and the action expert are quantized **in place on the
 live policy**, then traced by the same wrappers as the float arm
 (:func:`.export_foldquant.export_llm_float_pi05` /
@@ -15,19 +15,19 @@ them unchanged.
 Where the quantizers live and what calibrates them follows the preset's
 export plan, in which the capture seam differs from the quantized module:
 
-* ``llm``: quantizers in ``paligemma.language_model`` (VLA-OPT
+* ``llm``: quantizers in ``paligemma.language_model`` (the reference implementation
   ``backbone.model.model.language_model``, the same HF ``GemmaModel``), calibrated
   by replaying every captured prefix pass (``prefix_embs``, the 4-D additive
-  mask, ``position_ids``) through ``paligemma_with_expert.forward`` — VLA-OPT
+  mask, ``position_ids``) through ``paligemma_with_expert.forward`` — the reference implementation
   replays its ``prefix_core`` captures through its prefix wrapper.
 * ``expert``: quantizers in :class:`.runtime.Pi05ExpertView`, which exposes the
-  live expert under VLA-OPT's ``action_expert`` names (``expert_model.model.layers.*``,
+  live expert under the reference implementation's ``action_expert`` names (``expert_model.model.layers.*``,
   ``action_in_proj``, ``action_out_proj``, ``time_mlp_in``, ``time_mlp_out``), so
   the preset's exclusion globs select the same leaves: the adaRMS ``dense``
   modulation layers (``*norm*``) stay float, the action and time projections are
   quantized (none of them contains ``action_proj``). Calibrated by replaying every
   captured denoise step (``x_t``, ``timestep``, ``prefix_pad_masks``, KV stack),
-  the ``denoise_core`` captures VLA-OPT replays.
+  the ``denoise_core`` captures the reference implementation replays.
 
 Both seams are captured in one float replay before anything is quantized, so the
 expert calibrates on float-LLM KV caches, as in the preset (no cascade).
