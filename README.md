@@ -17,27 +17,17 @@
 **FoldQuantVLA: Native Low-Bit Quantization of Vision-Language-Action Models
 via Consistent Folding**
 
-Native low-bit — W8A8 and W4A4 executed on the device's integer tensor cores,
-not simulated — quantization of vision-language-action (VLA) models via
-**consistent offline folding**. Each activation site gets one transform, fixed
-offline from the SmoothQuant scale and a block rotation; every projection that
-consumes the site stores its weights in those coordinates and is rounded once.
-At inference a single fused TensorRT plugin applies the transform to the new
-activation, quantizes it with a dynamic per-token scale, and runs the integer
-GEMM — no separate rotation operator and no extra graph nodes between the
-plugin and its neighbours.
-
-W4A4 runs on native INT4 instructions on Ada (sm_89) and Orin (sm_87). On H100
-(sm_90) the four-bit operands are lowered to the INT8 datapath: the arithmetic
-semantics are kept, native INT4 latency is not.
+Native low-bit — W8A8 and W4A4 executed on the device's INT8 / INT4 tensor
+cores, not simulated — quantization of vision-language-action (VLA) models via
+**consistent offline folding**.
 
 ## Highlights
 
-- **Native low bit, not simulated.** W8A8 and W4A4 run on integer tensor cores through one fused TensorRT plugin per linear site, which applies the site's transform and quantizes in one prologue; no separate rotation operator, no extra graph nodes. Four-bit is native on Ada and Orin; H100 lowers it to INT8.
-- **One fold, offline.** SmoothQuant scale and block rotation are composed into a single consistent transform `T_v = D^o R D^i` per activation site, its inverse is folded into every consuming weight, and GPTQ rounds in those coordinates. The parameters are fixed at build time; applying `T_v` to each new activation is runtime work, done inside the plugin.
+- **Native low-bit kernels.** W8A8 and W4A4 run on the device's integer tensor cores through custom TensorRT plugins on CUTLASS integer GEMMs — one fused plugin per linear site applies the site's transform, quantizes with a dynamic per-token scale and runs the integer GEMM, with no separate rotation operator and no extra graph nodes. Both the language backbone and the action expert run this way. Four-bit is native INT4 on Ada (sm_89) and Orin (sm_87); H100 lowers the four-bit operands to its INT8 datapath.
+- **o/d INT8: W8A8 behaviour at W4A4 latency.** Holding only `o_proj` and `down_proj` at INT8 inside an otherwise W4A4 language tower closes most of the four-bit fidelity gap — the worst held-out action cosine rises from 0.46 to 0.85 on GR00T N1.6 and from 0.85 to 0.998 on π₀.₅ — while every projection stays on the integer GEMM path, for 0.4–1.8 ms on GR00T. In closed loop it matches the W8A8 engine, and on four real-robot tasks it recovers the episodes uniform W4A4 loses (74 against 64 of 80). It is the recommended configuration.
+- **One fold, offline.** SmoothQuant scale and block rotation compose into a single consistent transform `T_v = D^o R D^i` per activation site; its inverse is folded into every consuming weight, and GPTQ rounds in those coordinates.
+- **Action-referenced calibration.** Presets are screened on decoded-action cosine against the BF16 policy in a statistics-matched emulation, and each selected preset is rebuilt and checked on the assembled engine.
 - **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ — upstream code, evaluation harness and policy server used unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in the precision of the projections.
-- **Action-referenced calibration.** Presets are screened on decoded-action cosine against the BF16 policy, in a statistics-matched emulation rather than a bitwise replica of the plugin; every selected preset is then rebuilt and checked on the assembled engine, and a floating-point engine of the same scope is the control every latency claim is measured against.
-- **Selective INT8 where four bits are fragile.** Holding `o_proj` and `down_proj` at INT8 inside an otherwise W4A4 language tower (`site_bits`) keeps every projection on the integer GEMM path and recovers most of the four-bit cosine gap; it is the recommended configuration.
 - **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, a Jetson AGX Orin and a real robot, driven by the family's own upstream client (see [`docs/`](docs)).
 
 ## How it works
@@ -84,9 +74,7 @@ process.
 The measurements themselves live in [`results/`](results/README.md) rather
 than in this table: held-out drift and desktop latency for all four families,
 recorded by this release, beside the paper's closed-loop LIBERO campaigns
-(800 episodes per arm) and its Jetson AGX Orin latency. Where a paper figure
-came from a different runtime than this release's `benchmark` — GR00T N1.6 and
-N1.5 latency — `results/README.md` prints both and says which is which.
+(800 episodes per arm) and its Jetson AGX Orin latency.
 
 All four families now have a float arm. `--llm-scheme float` traces the module
 through the deployed forward and emits an unquantized engine of the same

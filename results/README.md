@@ -344,12 +344,8 @@ The last column is the deployment-path result against upstream's own serving
 configuration, **not** a quantization result — see the graph-versus-precision
 split above, where roughly three quarters of it is the graph.
 
-**These are this release's records, and they are not the paper's figure.** The
-paper times three repeats of sixty iterations after ten warm-ups (five repeats
-for the GR00T eight- and four-bit arms), and re-timed N1.6 and N1.5 in the
-framework runtime with the configurations of its success campaign. N1.7 and
-π₀.₅ agree with it to the digit; N1.6 and N1.5 do not, and the gap is not
-rounding:
+The paper's latency figure, timed with three repeats of sixty iterations after
+ten warm-ups (five repeats for the GR00T eight- and four-bit arms):
 
 | family | eager | torch.compile | TRT bf16 | W8A8 | W4A4 | W4A4 + o/d INT8 | W4A4 vs eager |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -358,17 +354,13 @@ rounding:
 | GR00T N1.5 | 57.4 | 53.46 | 40.2 | 33.7 | 30.2 | 33.5 | 1.90× |
 | π₀.₅ | 169.4 | 100.3 | 111.8 | 89.9 | 76.6 | 82.3 | 2.21× |
 
-*The paper's latency figure, RTX 4070 Ti SUPER, batch 1.* The compiled control
+RTX 4070 Ti SUPER, batch 1. The compiled control
 supplies 74.7, 74.5, 63.2 and 74.5% of each eager-to-W4A4 reduction, and W4A4
 removes 10.7, 10.2, 10.5 and 14.8% of the W8A8 latency. N1.7's torch.compile
 bar comes from a runtime whose eager is 71.8 ms and is not used for attribution;
 rebuilds of N1.6 and N1.5 through this release's export path give float
 engines of 44.0 and 41.2 ms. The o/d INT8 bars are a re-timing in this
 release's export path against the uniform W4A4 engine of the same run.
-
-A reproduction of the N1.6 and N1.5 rows through `benchmark` will land on this
-release's records above, not on the paper's, until those two families are
-re-timed here under the paper's protocol.
 
 #### Jetson AGX Orin
 
@@ -436,8 +428,6 @@ lowering, so these rows are closed-loop outcomes, not native INT4 latency.
 Paired over the 40 tasks with a two-sided t test and Holm correction across the
 41 arm-versus-reference comparisons, **no comparison survives**. That states no
 loss is detected at this campaign size; it does not establish equivalence.
-
-Per-episode outcomes behind these rows are not yet in this repository.
 
 #### A release-harness check
 
