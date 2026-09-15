@@ -1,10 +1,10 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the PolyForm Noncommercial License 1.0.0; see LICENSE.
 
-"""FoldQuant: native low-bit quantization for vision-language-action inference via unified offline folding.
+"""FoldQuant: native low-bit quantization of vision-language-action models via consistent folding.
 
-The artifact of *FoldQuantVLA: Native Low-Bit Quantization for Vision-Language-Action
-Inference on Edge GPUs via Unified Offline Folding*.
+The artifact of *FoldQuantVLA: Native Low-Bit Quantization of Vision-Language-Action
+Models via Consistent Folding*.
 
 The algorithm (:mod:`foldquant.foldq`) folds a SmoothQuant scale, a per-block
 rotation and the weight rounding into each linear site's weights offline; the

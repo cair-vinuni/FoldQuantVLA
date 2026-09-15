@@ -14,12 +14,12 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F2F5F2"></a>
 </p>
 
-**FoldQuantVLA: Native Low-Bit Quantization for Vision-Language-Action
-Inference on Edge GPUs via Unified Offline Folding**
+**FoldQuantVLA: Native Low-Bit Quantization of Vision-Language-Action Models
+via Consistent Folding**
 
 Native low-bit — W8A8 and W4A4 executed on the device's INT8 / INT4 tensor
-cores, not simulated — quantization for vision-language-action (VLA)
-inference on edge GPUs via **unified offline folding**: the SmoothQuant
+cores, not simulated — quantization of vision-language-action (VLA)
+models via **consistent offline folding**: the SmoothQuant
 scale, a per-block rotation and the weight rounding are folded into each
 linear site's weights before export, so at inference a single fused TensorRT
 plugin quantizes the activation row, runs the INT4 / INT8 GEMM and

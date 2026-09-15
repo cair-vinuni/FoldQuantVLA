@@ -8,7 +8,7 @@ version: 0.1.0
 date-released: 2026-09-04
 preferred-citation:
   type: conference-paper
-  title: "FoldQuantVLA: Native Low-Bit Quantization for Vision-Language-Action Inference on Edge GPUs via Unified Offline Folding"
+  title: "FoldQuantVLA: Native Low-Bit Quantization of Vision-Language-Action Models via Consistent Folding"
   authors:
     - name: "The FoldQuant Authors"
   year: 2027

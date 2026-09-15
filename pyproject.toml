@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "foldquant"
 version = "0.1.0"
-description = "FoldQuant: native low-bit (W8A8 / W4A4) quantization for vision-language-action inference on edge GPUs via unified offline folding"
+description = "FoldQuant: native low-bit (W8A8 / W4A4) quantization of vision-language-action models via consistent folding"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
