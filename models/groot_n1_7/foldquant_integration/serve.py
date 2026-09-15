@@ -25,6 +25,8 @@ robot loop points at this server by changing a host and a port and nothing
 else.
 
 Omit ``--engine-dir`` to serve the bf16 PyTorch policy (the reference arm).
+``--baseline-pack`` serves one of the emulated W4A4 comparison arms built by
+:mod:`.baseline_w4a4` (HoloQ-style or DuQuant-style) instead of an engine.
 
 Unlike the other families, the engines are installed by **upstream's own**
 ``trt_model_forward.setup_tensorrt_engines``, not by a ``runtime.install_engines``
@@ -65,6 +67,9 @@ class ServeConfig:
     engine_dir: Optional[str] = None
     """FoldQuant engine directory; omit to serve the bf16 PyTorch policy."""
 
+    baseline_pack: Optional[str] = None
+    """Emulated W4A4 baseline pack (:mod:`.baseline_w4a4`); mutually exclusive with ``--engine-dir``."""
+
     mode: str = "n17_full_pipeline"
     """``trt_model_forward.setup_tensorrt_engines`` mode, as :mod:`.verify` takes it."""
 
@@ -96,7 +101,28 @@ def main(args: ServeConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     policy = calibration.load_policy(args.model_path, args.embodiment_tag, args.device)
 
-    if args.engine_dir:
+    if args.engine_dir and args.baseline_pack:
+        raise ValueError("--engine-dir and --baseline-pack are mutually exclusive")
+    if args.baseline_pack:
+        from .baselines import apply_pack, install_dit_step_context
+
+        device = next(policy.model.parameters()).device
+        summary = apply_pack(policy.model, args.baseline_pack, backend="fake")
+        policy.model.to(device=device)
+        install_dit_step_context(policy.model)
+        manifest = policy.model.baseline_manifest
+        logger.info(
+            "serving the EMULATED %s W4A4 baseline (%d LLM + %d DiT linears; rotation %s, "
+            "LLM activations %s, DiT activations %s) from %s — no INT4 kernel, not a latency arm",
+            manifest.get("method"),
+            summary.llm_linears,
+            summary.dit_linears,
+            manifest.get("rotation_mode"),
+            manifest.get("llm_activation_granularity"),
+            manifest.get("dit_activation_granularity"),
+            args.baseline_pack,
+        )
+    elif args.engine_dir:
         engine_dir = Path(args.engine_dir)
         manifest = _load_manifest(engine_dir)
         if manifest is not None:

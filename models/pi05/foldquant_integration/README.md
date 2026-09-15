@@ -342,3 +342,29 @@ installation check.
 | `eval_libero.py` | LIBERO sweep through upstream's client, per-suite `summary.json` |
 | `benchmark.py` | component and end-to-end timing over the PyTorch arm and engine directories |
 | `_upstream.py` | paths, component table |
+
+## Device memory per arm
+
+`memory.py` measures one arm in one fresh process and reports two quantities
+that must always be read together:
+
+* **as served** (`--keep-replaced-weights`): what `serve` holds today — the
+  checkpoint on the GPU, engines installed by rebinding `forward`, the replaced
+  PyTorch weights still resident;
+* **floor** (default for an engine arm): the engines plus the PyTorch
+  components the runtime still executes (SigLIP and the PaliGemma embedding table). The checkpoint is loaded on
+  the CPU, the engines are installed, the replaced modules' parameters become
+  `meta` tensors and are never materialized on the device, and only the
+  remaining components move to CUDA. Calling a replaced module fails loudly.
+
+The number is `cudaMemGetInfo` (total minus free — CUDA context and every
+allocator included) sampled after each of 60 timed calls following 10
+warm-ups; `steady_used_mib` is the median of that plateau, reported with its
+min/max and the torch allocator's peak, not as a peak. Run the eager arm first
+so the engine arms can report their decoded-action cosine against it:
+
+```bash
+python -m foldquant_integration.memory `--checkpoint-dir <ckpt> --dataset-path <LeRobot LIBERO>` --reference-actions ref.npz
+python -m foldquant_integration.memory `--checkpoint-dir <ckpt> --dataset-path <LeRobot LIBERO>` `--engine-dir exports/<arm>/engines` --reference-actions ref.npz
+python -m foldquant_integration.memory `--checkpoint-dir <ckpt> --dataset-path <LeRobot LIBERO>` `--engine-dir exports/<arm>/engines` --keep-replaced-weights
+```

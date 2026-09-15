@@ -7,9 +7,12 @@ different, four-suite N1.7 fine-tune, so none of the paper's N1.7 rows apply her
 
 ## Arms
 
+Both emulated arms can now be rebuilt from this release: `models/groot_n1_7/foldquant_integration/baseline_w4a4.py` (`--method holoq | duquant`), served or rolled out with `--baseline-pack`; see that integration's README.
+
 | arm | LLM | DiT | how it runs |
 |---|---|---|---|
 | HoloQ-style W4A4 (external) | zigzag + SVD-Hadamard rotation, GPTQ, per-token A4 | same rotation, RTN, static per-step per-channel A4 | fake-quant: dequantise, then `F.linear` in BF16 |
+| DuQuant-style W4A4 (emulated, `baseline_w4a4 --method duquant`) | zigzag + SVD-only rotation (eigvecs of WᵀW), GPTQ, static per-channel q99.9 A4 | same rotation, RTN, static per-channel A4 | fake-quant, same runtime as the row above |
 | FoldQuant W4A4 | `w4a4_srg`: SmoothQuant + block-64 Hadamard, GPTQ | `w4a4_shg`: SmoothRot fold-before, butterfly, GPTQ | native INT4 TensorRT plugins (sm89 s4 tensor cores) |
 | FoldQuant W4A4 + o/d INT8 | as above, `site_bits {o: 8, down: 8}` | as above | native |
 

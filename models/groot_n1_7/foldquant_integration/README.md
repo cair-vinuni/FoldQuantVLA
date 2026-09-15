@@ -248,7 +248,7 @@ path could drift from it silently.
 
 ## ModelOpt INT8 SmoothQuant baseline
 
-`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It reproduces the VLA-OPT
+`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It reproduces the authors' framework
 preset `groot_n1_7/tensorrt/modelopt_w8a8_smoothquant`, so a FoldQuant arm and
 the ModelOpt baseline can be built, verified and served by the same tools and
 compared on a robot. It needs two extra packages in the family environment,
@@ -278,23 +278,23 @@ What the arm does, step for step with the preset (`foldquant/modelopt_int8.py`,
 | excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*` |
 | quantization | `mtq.quantize` on the live module, calibrated by replaying its captured calls; the DiT sees float-LLM activations (no cascade) |
 | export | legacy TorchScript exporter, opset 20 (`--modelopt-opset`), dtype repairs for TensorRT's parser, export refused when no Q/DQ node survived |
-| graph outputs | ModelOpt dequantizes to float32, so `embeddings` / `output` would be float32; a final `Cast` to bf16 keeps upstream's contract (VLA-OPT's engines output float32 and its runtime casts at the next engine's bf16 input, which is the same arithmetic) |
+| graph outputs | ModelOpt dequantizes to float32, so `embeddings` / `output` would be float32; a final `Cast` to bf16 keeps upstream's contract (the framework's engines output float32 and its runtime casts at the next engine's bf16 input, which is the same arithmetic) |
 | engine | strongly-typed network (the provider records `builder_flags: {strongly_typed: true}`), built by upstream's `build_engine` like every other graph; the other five components stay upstream bf16 |
 
-Differences that remain: the graphs use upstream's I/O names (VLA-OPT's own
+Differences that remain: the graphs use upstream's I/O names (the framework's own
 engines do not load into `trt_model_forward`), the LLM wrapper is upstream's
 `LLMForExport` over the live layers, and the engine directory is served by
-upstream's pipeline swap rather than VLA-OPT's runtime.
+upstream's pipeline swap rather than the framework's runtime.
 
 Measured on a GR00T N1.7 SO101 checkpoint (Jetson AGX Orin, 64 calibration
 samples, the 32 held-out samples of the `w8a8` arm via `verify --split-from`):
 backbone cosine 0.99974, action cosine mean 0.9986 (min 0.9915). The same
-recipe is close to lossless on this checkpoint. VLA-OPT's own `dit.onnx` for
+recipe is close to lossless on this checkpoint. the framework's own `dit.onnx` for
 this preset, renamed to upstream's I/O and built and verified here, scores
 0.9986 as well, and its SmoothQuant vectors match this arm's (cosine >= 0.97
 per layer), so the two graphs agree.
 
-When comparing against an engine served from a VLA-OPT artifact, check that
+When comparing against an engine served from a framework artifact, check that
 artifact's `embodiments/<tag>/action_schema.json`: a `clip_range` of
 `[-3.14159, 3.14159]` with `units: rad` is applied to every action channel. On
 a checkpoint whose actions are in degrees (SO101) that clips the joints to
@@ -311,6 +311,86 @@ trace segfaults, so the export fails up front when it cannot be built.
 `foldquant_export.json` records, per module, the config, the excluded leaves,
 the number of enabled quantizers, the Q/DQ node counts and the repairs made.
 
+## W4A4 baselines for comparison (emulated): HoloQ-style and DuQuant-style
+
+Two published W4A4 recipes are shipped as **emulated** arms so the closed-loop
+comparison against the FoldQuant engines can be rerun from this release alone.
+They are post-training fake quantization of the same 112 LLM + 192 DiT
+projection Linears (`self_attn.{q,k,v,o}_proj`, `mlp.{gate,up,down}_proj` in the
+16 language layers; `attn1.{to_q,to_k,to_v,to_out.0}`, `ff.net.{0.proj,2}` in the
+32 DiT blocks): INT4 codes for both operands are dequantised before a BF16
+`F.linear`. No INT4 kernel runs, so these arms carry **no latency claim**; they
+measure what each recipe's rounding does to the policy. AdaLN modulation, the
+`vl_self_attention` blocks and the cross-attention encoder KV stay BF16 (the
+FoldQuant engines quantise those too — see `results/groot_n1_7/HOLOQ_LIBERO.md`).
+
+| | `--method holoq` (HoloQ-VLA style) | `--method duquant` (DuQuant style) |
+|---|---|---|
+| reference | HoloQ-VLA, arXiv 2605.28803 | DuQuant, as the baseline of Omega-QVLA / HoloQ-VLA Table 2 |
+| input permutation | zigzag over input-channel weight energy, blocks of 64 | same |
+| block rotation (64×64) | `U · H_s`: left singular vectors of the weight block ᵀ times a sign-randomised normalised Hadamard | `U` alone: the eigenvectors of `WᵀW` per block (Omega-QVLA `rot_mode=svd`) |
+| LLM weights | GPTQ, block 128, damping 0.01, per-output-channel INT4 | same |
+| DiT weights | RTN, per-output-channel INT4 | same |
+| LLM activations | dynamic per-token INT4 (`max|x|` of the token) | **static per-channel** INT4: q99.9 of each channel over the calibration tokens, running max across observations, frozen |
+| DiT activations | static per-denoising-step per-channel INT4 (q99.9) | static per-channel INT4 (one table, no step dependence) |
+| calibration | 128 seeded dataset observations, seed 0 (same sampler as `export_foldquant`) | same |
+
+The two arms differ **only** in the rotation and in the activation-scale rule;
+solvers, scope, permutation, block sizes and calibration data are identical, so
+the DuQuant row isolates those two choices. The static per-channel rule is what
+Omega-QVLA's DuQuant layers do (`PercentileCalibrator`: per-channel quantile over
+tokens, running max, then `scale = q / 7`); applying a per-token dynamic scale
+after the SVD-only rotation instead collapses the policy to 0 % success on every
+LIBERO suite, because `U` concentrates a token's energy into one channel per block
+and the remaining channels round to zero. DuQuant's output-row rotation
+(`ROW_ROT=restore`) is not ported — it is mathematically weight-only.
+
+Code: `foldquant_integration/baselines/` — `packing.py` (permutation, rotations,
+INT4 packing, GPTQ), `scope.py` (the 304-Linear scope), `calibration.py`
+(collector), `builder.py` (pack), `runtime.py` (emulated layers), `context.py`
+(denoising-step context attached from outside the vendored model). Ported from the
+authors' Isaac-GR00T fork (the HoloQ-style port used for the 745/800 result below),
+with the static per-channel activation path added; the vendored upstream tree is
+untouched.
+
+```bash
+# 1. calibrate + build + 8-observation action-cosine check (one call), per suite checkpoint
+python -m foldquant_integration.baseline_w4a4 --command all --method duquant \
+    --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 --embodiment-tag libero_sim \
+    --dataset-path data/libero_10_no_noops_1.0.0_lerobot --num-calib 128 --seed 0 \
+    --output-dir exports/baseline_duquant_libero_10
+#    -> exports/baseline_duquant_libero_10/{calibration.pt, pack.pt, pack.pt.sha256, check.json}
+#    --method holoq for the HoloQ-style arm.
+
+# 2a. closed loop, in process (the protocol of results/groot_n1_7/HOLOQ_LIBERO.md)
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero \
+    --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 \
+    --baseline-pack exports/baseline_duquant_libero_10/pack.pt \
+    --suites libero_10 --n-episodes 20 --n-envs 1 --n-action-steps 8 --max-episode-steps 720 \
+    --output exports/baseline_duquant_libero_10/libero
+
+# 2b. or serve it to upstream's client
+python -m foldquant_integration.serve --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 \
+    --embodiment-tag libero_sim --baseline-pack exports/baseline_duquant_libero_10/pack.pt
+```
+
+`--baseline-pack` and `--engine-dir` are mutually exclusive. The pack is bound to
+the checkpoint it was calibrated on (`config_sha256` guard) and to its denoising
+step count. `check.json` reports the action cosine of the emulated arm against the
+bf16 policy on held-out observations; a pack whose median is far below 0.99 is not
+worth 800 episodes.
+
+Known results (NVIDIA per-suite `nvidia/GR00T-N1.7-LIBERO` checkpoints, 10 tasks × 20
+episodes per suite, `n_action_steps` 8, cap 720; successes of 200):
+
+| arm | spatial | object | goal | long | total /800 |
+|---|---:|---:|---:|---:|---:|
+| BF16 PyTorch | 197 | 197 | 185 | 187 | 766 |
+| HoloQ-style W4A4 (emulated, authors' fork run) | 195 | 194 | 178 | 178 | 745 |
+| DuQuant-style W4A4 (emulated, this release) | — | — | — | — | to be filled |
+| FoldQuant W4A4 (INT4 engines) | 197 | 194 | 191 | 177 | 759 |
+| FoldQuant W4A4 + o/d INT8 | 193 | 197 | 188 | 187 | 765 |
+
 ## Files
 
 | file | role |
@@ -324,3 +404,32 @@ the number of enabled quantizers, the Q/DQ node counts and the repairs made.
 | `eval_libero.py` | LIBERO sweep over suites × tasks, per-task `summary.json` |
 | `rollout.py`, `benchmark.py` | upstream tools with plugins preloaded |
 | `_upstream.py`, `_runpy.py` | paths, component table, `runpy` hand-off |
+
+
+Batch profile: `build_engines` declares the DiT batch axis with an upper bound of 8 (upstream's default, for vectorised sim clients); a batch-1 deployment should pass `--max-batch 1`, which drops the DiT engine's reserved activation memory from ~3 GB to a few MB without changing its outputs.
+
+## Device memory per arm
+
+`memory.py` measures one arm in one fresh process and reports two quantities
+that must always be read together:
+
+* **as served** (`--keep-replaced-weights`): what `serve` holds today — the
+  checkpoint on the GPU, engines installed by rebinding `forward`, the replaced
+  PyTorch weights still resident;
+* **floor** (default for an engine arm): the engines plus the PyTorch
+  components the runtime still executes (the modules upstream's pipeline swap leaves in PyTorch (embedding table, encoders' glue) plus the seven engines). The checkpoint is loaded on
+  the CPU, the engines are installed, the replaced modules' parameters become
+  `meta` tensors and are never materialized on the device, and only the
+  remaining components move to CUDA. Calling a replaced module fails loudly.
+
+The number is `cudaMemGetInfo` (total minus free — CUDA context and every
+allocator included) sampled after each of 60 timed calls following 10
+warm-ups; `steady_used_mib` is the median of that plateau, reported with its
+min/max and the torch allocator's peak, not as a peak. Run the eager arm first
+so the engine arms can report their decoded-action cosine against it:
+
+```bash
+python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` --reference-actions ref.npz
+python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` `--engine-dir exports/<arm>/engines` --reference-actions ref.npz
+python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` `--engine-dir exports/<arm>/engines` --keep-replaced-weights
+```

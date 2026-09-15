@@ -24,6 +24,9 @@ Example — the W4A4 arm on all four suites, 20 episodes per task::
 
 Engines built by :mod:`.build_engines` pin the batch to the captured batch
 (1), so TensorRT arms run ``--n-envs 1``. PyTorch arms may batch.
+
+``--baseline-pack`` rolls out one of the emulated W4A4 comparison arms of
+:mod:`.baseline_w4a4` (HoloQ-style / DuQuant-style) in place of an engine.
 """
 
 from __future__ import annotations
@@ -57,6 +60,9 @@ class EvalConfig:
 
     engine_dir: Optional[str] = None
     """FoldQuant engine directory. Omit for the bf16 PyTorch arm."""
+
+    baseline_pack: Optional[str] = None
+    """Emulated W4A4 baseline pack (:mod:`.baseline_w4a4`); mutually exclusive with ``--engine-dir``."""
 
     suites: List[str] = field(default_factory=lambda: list(SUITES))
     n_episodes: int = 20
@@ -126,6 +132,7 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         {
             "model_path": public_path(args.model_path),
             "engine_dir": public_path(args.engine_dir),
+            "baseline_pack": public_path(args.baseline_pack),
             "n_episodes": args.n_episodes,
             "n_envs": args.n_envs,
             "max_episode_steps": args.max_episode_steps,
@@ -133,6 +140,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         }
     )
 
+    if args.engine_dir and args.baseline_pack:
+        raise ValueError("--engine-dir and --baseline-pack are mutually exclusive")
     if args.engine_dir:
         # The float arm comes off upstream's pipeline and carries no FoldQuant manifest —
         # it has no plugin nodes to load libraries for. Reading it unconditionally made
@@ -174,6 +183,26 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         trt_engine_path=args.engine_dir or "",
         trt_mode=TrtMode(args.trt_mode),
     )
+    if args.baseline_pack:
+        # The sim wrapper holds the Gr00tPolicy as ``.policy``; the pack replaces the
+        # in-scope Linears of its model with the emulation and the step context feeds
+        # the per-step DiT tables. Same device as the policy was loaded on.
+        from .baselines import apply_pack, install_dit_step_context
+
+        gr00t_policy = policy.policy
+        device = next(gr00t_policy.model.parameters()).device
+        apply_pack(gr00t_policy.model, args.baseline_pack, backend="fake")
+        gr00t_policy.model.to(device=device)
+        install_dit_step_context(gr00t_policy.model)
+        manifest = gr00t_policy.model.baseline_manifest
+        summary["schemes"] = {
+            "baseline": manifest.get("method"),
+            "rotation_mode": manifest.get("rotation_mode"),
+            "llm": f"w4a4-{manifest.get('llm_activation_granularity')}",
+            "dit": f"w4a4-{manifest.get('dit_activation_granularity')}",
+            "execution": "emulated",
+        }
+        logger.info("rolling out the EMULATED %s W4A4 baseline from %s", manifest.get("method"), args.baseline_pack)
     wrapper_configs = WrapperConfigs(
         video=VideoConfig(video_dir=None, max_episode_steps=args.max_episode_steps),
         multistep=MultiStepConfig(

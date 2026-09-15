@@ -314,3 +314,29 @@ one RTX 4070 Ti SUPER (sm89), TensorRT 10.16:
 eager 69 ms (backbone 27, action head 38) → FoldQuant 37 ms (backbone 18,
 action head 14), 1.88× end to end. Paper numbers use 128 calibration
 observations and the server's harness; this is the installation check.
+
+## Device memory per arm
+
+`memory.py` measures one arm in one fresh process and reports two quantities
+that must always be read together:
+
+* **as served** (`--keep-replaced-weights`): what `serve` holds today — the
+  checkpoint on the GPU, engines installed by rebinding `forward`, the replaced
+  PyTorch weights still resident;
+* **floor** (default for an engine arm): the engines plus the PyTorch
+  components the runtime still executes (the vision tower, the LLM embedding table and the action encoders/decoder). The checkpoint is loaded on
+  the CPU, the engines are installed, the replaced modules' parameters become
+  `meta` tensors and are never materialized on the device, and only the
+  remaining components move to CUDA. Calling a replaced module fails loudly.
+
+The number is `cudaMemGetInfo` (total minus free — CUDA context and every
+allocator included) sampled after each of 60 timed calls following 10
+warm-ups; `steady_used_mib` is the median of that plateau, reported with its
+min/max and the torch allocator's peak, not as a peak. Run the eager arm first
+so the engine arms can report their decoded-action cosine against it:
+
+```bash
+python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` --reference-actions ref.npz
+python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` `--engine-dir exports/<arm>/engines` --reference-actions ref.npz
+python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` `--engine-dir exports/<arm>/engines` --keep-replaced-weights
+```

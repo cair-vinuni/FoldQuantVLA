@@ -73,8 +73,28 @@ class BuildConfig:
     workspace_mb: int = 8192
     """TensorRT workspace, MB."""
 
+    max_batch: int = 8
+    """Upper bound of the symbolic batch axis in every optimization profile (upstream's default).
+    The engine reserves activation memory for this bound — the W4A4 DiT graph takes ~3 GB at
+    8 against ~6 MB at 1 — so pass ``--max-batch 1`` for a single-robot, batch-1 deployment."""
+
     verbose: bool = False
     """Full TensorRT builder log (upstream default); off keeps warnings and errors."""
+
+
+def _pin_batch_axis(onnx_path: Path, mins: Dict, opts: Dict, maxs: Dict, max_batch: int):
+    """Give every leading dynamic axis named ``batch`` the profile (1, 1, max_batch)."""
+    import onnx
+
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    for inp in model.graph.input:
+        dims = inp.type.tensor_type.shape.dim
+        if not dims or dims[0].dim_value > 0 or dims[0].dim_param != "batch" or inp.name not in opts:
+            continue
+        mins[inp.name] = (1,) + tuple(mins[inp.name][1:])
+        opts[inp.name] = (1,) + tuple(opts[inp.name][1:])
+        maxs[inp.name] = (max_batch,) + tuple(maxs[inp.name][1:])
+    return mins, opts, maxs
 
 
 def load_manifest(onnx_dir: Path) -> dict:
@@ -155,7 +175,12 @@ def build(args: BuildConfig) -> Dict[str, str]:
             status[name] = f"copied:{eng}"
             continue
         t0 = time.time()
-        mins, opts, maxs = derive_shapes_with_hint(str(src), opt_seq_lens=hints)
+        mins, opts, maxs = derive_shapes_with_hint(str(src), opt_seq_lens=hints, max_batch=args.max_batch)
+        # The FoldQuant DiT graphs declare their batch axis as ``batch``; upstream's profile
+        # derivation only recognises ``batch_size`` and otherwise treats the axis as an unknown
+        # sequence dimension (opt 256, max 512), which makes the engine reserve ~3 GB of
+        # activation memory and optimise for a batch it never sees. Pin it like a batch axis.
+        mins, opts, maxs = _pin_batch_axis(src, mins, opts, maxs, args.max_batch)
         for k in opts:
             logger.info("  %s: min=%s opt=%s max=%s", k, mins[k], opts[k], maxs[k])
         build_engine(
