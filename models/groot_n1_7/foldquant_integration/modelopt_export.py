@@ -137,7 +137,9 @@ class _EagerAttention:
             cfg._attn_implementation = impl
 
 
-def _finish_graph(onnx_path: Path, name: str, *, strip_scatternd_reduction: bool) -> Dict[str, Any]:
+def _finish_graph(
+    onnx_path: Path, name: str, *, strip_scatternd_reduction: bool, algorithm: str
+) -> Dict[str, Any]:
     ensure_deployment_on_path()
     from export_onnx_n1d7 import _consolidate_external_data, _strip_default_scatternd_reduction
     import onnx
@@ -149,8 +151,48 @@ def _finish_graph(onnx_path: Path, name: str, *, strip_scatternd_reduction: bool
     if strip_scatternd_reduction:
         # TensorRT 10.3's parser refuses the (default) attribute; see upstream.
         _strip_default_scatternd_reduction(str(onnx_path))
+    # Counted BEFORE the INT4 surgery: it consumes the weight DQ nodes it rewrites,
+    # so afterwards their absence is the expected state, not a lost bake.
     qdq = modelopt_int8.require_qdq(onnx_path, name)
-    return {"dtype_repairs": repairs, "output_casts_to_bf16": output_casts, "qdq_nodes": qdq}
+    record: Dict[str, Any] = {
+        "dtype_repairs": repairs,
+        "output_casts_to_bf16": output_casts,
+        "qdq_nodes": qdq,
+    }
+    if modelopt_int8.is_weight_only(algorithm):
+        record["int4_groupwise_surgery"] = _int4_surgery(onnx_path, name)
+    return record
+
+
+def _int4_surgery(onnx_path: Path, name: str) -> Dict[str, int]:
+    """Rewrite the INT4 weight-only DQ chains to ``Int4GroupwiseGemmPlugin`` nodes, in place.
+
+    TensorRT 10.3 has no INT4 weight-only kernel, so the graph ModelOpt exports
+    parses but runs dequantized. The surgery is what makes this arm an INT4
+    engine; the plugin library it needs is declared in the export manifest.
+    """
+    from foldquant.int4_groupwise import apply_int4_modelopt_surgery
+
+    staged = onnx_path.with_suffix(".int4.onnx")
+    replaced, materialized = apply_int4_modelopt_surgery(onnx_path, staged)
+    if replaced == 0:
+        raise RuntimeError(
+            f"{name}: INT4 surgery rewrote no weight; the engine would run dequantized"
+        )
+    for old in (onnx_path, Path(str(onnx_path) + ".data")):
+        if old.exists():
+            old.unlink()
+    staged.replace(onnx_path)
+    staged_data = Path(str(staged) + ".data")
+    if staged_data.exists():
+        staged_data.replace(Path(str(onnx_path) + ".data"))
+    logger.info(
+        "%s: INT4 groupwise surgery replaced %d weights (%d constants materialized)",
+        name,
+        replaced,
+        materialized,
+    )
+    return {"replaced": replaced, "materialized": materialized}
 
 
 def export_llm(
@@ -211,7 +253,9 @@ def export_llm(
             dynamic_axes=dynamic_axes,
             opset=opset,
         )
-    record.update(_finish_graph(Path(onnx_path), "llm", strip_scatternd_reduction=True))
+    record.update(
+        _finish_graph(Path(onnx_path), "llm", strip_scatternd_reduction=True, algorithm=algorithm)
+    )
     record["opset"] = opset
     record["calibration_calls"] = len(calls)
     return record
@@ -267,7 +311,9 @@ def export_dit(
             },
             opset=opset,
         )
-    record.update(_finish_graph(Path(onnx_path), "dit", strip_scatternd_reduction=True))
+    record.update(
+        _finish_graph(Path(onnx_path), "dit", strip_scatternd_reduction=True, algorithm=algorithm)
+    )
     record["opset"] = opset
     record["calibration_calls"] = len(calls)
     return record

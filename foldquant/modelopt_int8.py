@@ -1,11 +1,12 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""NVIDIA ModelOpt INT8 SmoothQuant: a Q/DQ baseline arm to compare the FoldQuant folds against.
+"""NVIDIA ModelOpt Q/DQ baseline arms to compare the FoldQuant folds against.
 
-Nothing here is a FoldQuant fold. The arm reproduces the authors' framework presets
-``groot_n1_7/tensorrt/modelopt_w8a8_smoothquant`` and
-``pi05/tensorrt/modelopt_w8a8_smoothquant`` step for step, so its engines
+Nothing here is a FoldQuant fold. The arms reproduce the authors' framework presets
+``groot_n1_7/tensorrt/modelopt_w8a8_smoothquant``,
+``pi05/tensorrt/modelopt_w8a8_smoothquant`` and
+``groot_n1_7/tensorrt/modelopt_w4a16_awq`` step for step, so its engines
 behave like the ones the framework builds, but it emits graphs under each family's
 FoldQuant I/O contract that the FoldQuant engine builder, verifier and server
 load unchanged:
@@ -14,10 +15,13 @@ load unchanged:
    whole bf16 policy replays the calibration observations (seeded per
    observation). All quantized modules are captured in one float pass, so a
    downstream module calibrates on float upstream activations (no cascade).
-2. **Quantize.** ``mtq.INT8_SMOOTHQUANT_CFG`` (per-channel INT8 weights,
-   per-tensor static INT8 activations, SmoothQuant pre-quant scales), with the
-   norm / action-projection leaves excluded, calibrated by replaying the
-   captured calls through the module (:func:`quantize_module`).
+2. **Quantize.** The key's base config (:data:`BASE_CFG`) with the norm /
+   action-projection leaves excluded, calibrated by replaying the captured calls
+   through the module (:func:`quantize_module`): ``mtq.INT8_SMOOTHQUANT_CFG``
+   (per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant
+   pre-quant scales) for ``modelopt_w8a8_smoothquant``; ``mtq.INT4_AWQ_CFG``
+   (INT4 weights in groups of 128, activations untouched, AWQ ``pre_quant_scale``
+   from the ``awq_lite`` search) for ``modelopt_w4a16_awq``.
 3. **Export.** The legacy TorchScript exporter at opset 20, which ModelOpt's
    quantizers export as ``QuantizeLinear`` / ``DequantizeLinear`` pairs, then
    the dtype repairs TensorRT's parser needs (:func:`repair_onnx_dtypes`), a
@@ -25,7 +29,11 @@ load unchanged:
    (:func:`cast_graph_outputs`), one external-data sidecar
    (:func:`consolidate_external_data`) and a check that the Q/DQ nodes survived
    (:func:`require_qdq`).
-4. **Build.** Strongly typed, like every other graph: the ModelOpt provider
+4. **Surgery (weight-only keys only).** TensorRT 10.3 has no INT4 weight-only
+   kernel, so a ``modelopt_w4a16_awq`` graph's ``trt::DequantizeLinear`` weights
+   are rewritten to ``Int4GroupwiseGemmPlugin`` nodes by
+   :mod:`foldquant.int4_groupwise` and the engine loads that plugin library.
+5. **Build.** Strongly typed, like every other graph: the ModelOpt provider
    records ``builder_flags: {strongly_typed: true}`` for its quantized modules,
    so the Q/DQ pairs and the bf16 tensors the graph declares are what TensorRT
    runs. The families' ``build_engines`` already build that way; nothing here.
@@ -49,11 +57,23 @@ from torch import nn
 
 logger = logging.getLogger(__name__)
 
-#: The one algorithm key this module implements (the framework's key, unchanged).
+#: The algorithm keys this module implements (the framework's keys, unchanged).
 MODELOPT_W8A8_SMOOTHQUANT = "modelopt_w8a8_smoothquant"
+#: INT4 weight-only AWQ, group 128, ``awq_lite`` scale search (``INT4_AWQ_CFG``'s
+#: own default — the key has always meant the lite search, so nothing overrides it).
+MODELOPT_W4A16_AWQ = "modelopt_w4a16_awq"
 
 #: Algorithm key -> attribute of ``modelopt.torch.quantization`` holding its base config.
-BASE_CFG: Mapping[str, str] = {MODELOPT_W8A8_SMOOTHQUANT: "INT8_SMOOTHQUANT_CFG"}
+BASE_CFG: Mapping[str, str] = {
+    MODELOPT_W8A8_SMOOTHQUANT: "INT8_SMOOTHQUANT_CFG",
+    MODELOPT_W4A16_AWQ: "INT4_AWQ_CFG",
+}
+
+#: Keys whose weights are quantized and whose activations are not. Their export
+#: carries ``trt::DequantizeLinear`` weights and NO activation Q/DQ, and TensorRT
+#: 10.3 has no INT4 weight-only path of its own — the graph is rewritten to
+#: :mod:`foldquant.int4_groupwise` plugin nodes before the parser sees it.
+WEIGHT_ONLY_ALGORITHMS: frozenset = frozenset({MODELOPT_W4A16_AWQ})
 
 #: ModelOpt version the arm was reproduced with. ``quant_cfg`` changed shape at 0.45.
 MODELOPT_VERSION = "0.45.0"
@@ -117,6 +137,11 @@ def ensure_cuda_ext() -> None:
 
 def is_modelopt_scheme(scheme: Optional[str]) -> bool:
     return scheme in BASE_CFG
+
+
+def is_weight_only(scheme: Optional[str]) -> bool:
+    """Whether *scheme* quantizes weights only (no activation quantizers, INT4 groupwise plugin)."""
+    return scheme in WEIGHT_ONLY_ALGORITHMS
 
 
 # ---------------------------------------------------------------------- capture

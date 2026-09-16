@@ -27,7 +27,7 @@ from .llm_rotation_sq import (
     LLM_INT4_ALGORITHMS,
     LLM_INT8_ALGORITHMS,
 )
-from .modelopt_int8 import MODELOPT_W8A8_SMOOTHQUANT
+from .modelopt_int8 import MODELOPT_W4A16_AWQ, MODELOPT_W8A8_SMOOTHQUANT
 
 # --- dynamic per-row baseline (every module) --------------------------------
 W8A8 = "w8a8"
@@ -73,11 +73,13 @@ Valid for every module, needs no calibration, loads no plugin. ``none`` keeps Py
 ALL_SCHEMES: FrozenSet[str] = frozenset({W8A8}) | ACT_FOLDED_SCHEMES | LLM_FOLDED_SCHEMES
 
 # --- comparison baselines (not FoldQuant graphs) ------------------------------
-#: NVIDIA ModelOpt INT8 SmoothQuant Q/DQ graphs, built strongly typed like every
-#: other graph; see :mod:`.modelopt_int8`. Not in :data:`ALL_SCHEMES`: no emitter
-#: here produces them. The GR00T N1.7 integration routes them for its LLM and DiT,
-#: the Pi0.5 integration for its LLM and action expert.
-MODELOPT_SCHEMES: FrozenSet[str] = frozenset({MODELOPT_W8A8_SMOOTHQUANT})
+#: NVIDIA ModelOpt Q/DQ graphs, built strongly typed like every other graph; see
+#: :mod:`.modelopt_int8`. Not in :data:`ALL_SCHEMES`: no emitter here produces
+#: them. The GR00T N1.7 integration routes them for its LLM and DiT, the Pi0.5
+#: integration for its LLM and action expert. ``modelopt_w4a16_awq`` is INT4
+#: weight-only and its graph carries ``Int4GroupwiseGemmPlugin`` nodes after the
+#: surgery in :mod:`.int4_groupwise`, hence the plugin library below.
+MODELOPT_SCHEMES: FrozenSet[str] = frozenset({MODELOPT_W8A8_SMOOTHQUANT, MODELOPT_W4A16_AWQ})
 MODELOPT_MODULES: FrozenSet[str] = frozenset({"llm", "dit", "expert"})
 
 

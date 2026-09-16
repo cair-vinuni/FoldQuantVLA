@@ -114,6 +114,21 @@ def test_scheme_is_routed_not_validated() -> None:
             schemes.validate(module, key)
 
 
+def test_w4a16_awq_is_weight_only_and_routed() -> None:
+    """The INT4 arm is a ModelOpt key like the INT8 one, and is the weight-only one."""
+    key = modelopt_int8.MODELOPT_W4A16_AWQ
+    assert modelopt_int8.is_modelopt_scheme(key)
+    assert key in schemes.MODELOPT_SCHEMES and key not in schemes.ALL_SCHEMES
+    assert modelopt_int8.BASE_CFG[key] == "INT4_AWQ_CFG"
+    # Weight-only decides two things: the export carries no activation Q/DQ, and
+    # its weights are rewritten to INT4 groupwise plugin nodes before the build.
+    assert modelopt_int8.is_weight_only(key)
+    assert not modelopt_int8.is_weight_only(modelopt_int8.MODELOPT_W8A8_SMOOTHQUANT)
+    for module in ("llm", "dit"):
+        with pytest.raises(ValueError, match="ModelOpt Q/DQ baseline"):
+            schemes.validate(module, key)
+
+
 def _save(model, tmp_path):
     import onnx
 

@@ -10,11 +10,13 @@ Writes, under ``--output-dir``::
     onnx/export_metadata.json upstream shape hints for the engine builder
     onnx/foldquant_export.json what was exported, from which samples, needing which plugins
 
-``--llm-scheme`` / ``--dit-scheme modelopt_w8a8_smoothquant`` export a
-comparison baseline instead of a FoldQuant graph: NVIDIA ModelOpt INT8
-SmoothQuant Q/DQ graphs with the same file names and I/O contract (see
-:mod:`.modelopt_export`). ``build_engines``, ``verify`` and ``serve`` take them
-unchanged.
+``--llm-scheme`` / ``--dit-scheme modelopt_w8a8_smoothquant`` (INT8 SmoothQuant
+Q/DQ) and ``modelopt_w4a16_awq`` (INT4 weight-only AWQ, group 128, rewritten to
+``Int4GroupwiseGemmPlugin`` nodes) export a comparison baseline instead of a
+FoldQuant graph: NVIDIA ModelOpt graphs with the same file names and I/O
+contract (see :mod:`.modelopt_export`). ``build_engines``, ``verify`` and
+``serve`` take them unchanged; the INT4 arm's plugin library is declared in the
+manifest like any other.
 
 The two graphs are drop-in replacements for the files of the same name that
 upstream ``export_onnx_n1d7.py --export-mode full_pipeline`` writes: same
@@ -99,7 +101,7 @@ class ExportConfig:
     """JSON overrides for the DiT fold (sq_alpha, sq_fold_order)."""
 
     modelopt_opset: int = modelopt_int8.DEFAULT_OPSET
-    """ONNX opset of a ``modelopt_w8a8_smoothquant`` graph (the authors' framework preset exports at 20)."""
+    """ONNX opset of a ModelOpt graph (the authors' framework presets export at 20)."""
 
     video_backend: str = "torchcodec"
     """Video decoder for the dataset loader."""
@@ -292,6 +294,14 @@ def main(args: ExportConfig) -> Path:
         for lib in r.plugin_libs:
             if lib not in plugin_libs:
                 plugin_libs.append(lib)
+    # A weight-only ModelOpt arm carries Int4GroupwiseGemmPlugin nodes after the
+    # surgery in modelopt_export; the manifest is what build_engines and serve read
+    # to load a plugin library, so declare it here rather than re-derive it.
+    if any(modelopt_int8.is_weight_only(sch) for sch in modelopt_towers.values()):
+        from foldquant.kernels.locator import INT4_GROUPWISE_LIB
+
+        if INT4_GROUPWISE_LIB not in plugin_libs:
+            plugin_libs.append(INT4_GROUPWISE_LIB)
 
     metadata = {
         "model_version": "n1d7",
