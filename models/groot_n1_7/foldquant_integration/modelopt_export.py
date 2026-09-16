@@ -173,7 +173,14 @@ def _int4_surgery(onnx_path: Path, name: str) -> Dict[str, int]:
     """
     from foldquant.int4_groupwise import apply_int4_modelopt_surgery
 
-    staged = onnx_path.with_suffix(".int4.onnx")
+    # Staged under the SAME basename: the sidecar's name is baked into every
+    # initializer's ``external_data`` location at save time, so writing
+    # "<name>.int4.onnx" and renaming afterwards leaves the graph pointing at a
+    # sidecar that no longer exists, and TensorRT fails the whole parse with
+    # "Failed to import initializer".
+    stage_dir = onnx_path.parent / f".int4_{onnx_path.stem}"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    staged = stage_dir / onnx_path.name
     replaced, materialized = apply_int4_modelopt_surgery(onnx_path, staged)
     if replaced == 0:
         raise RuntimeError(
@@ -186,6 +193,7 @@ def _int4_surgery(onnx_path: Path, name: str) -> Dict[str, int]:
     staged_data = Path(str(staged) + ".data")
     if staged_data.exists():
         staged_data.replace(Path(str(onnx_path) + ".data"))
+    stage_dir.rmdir()
     logger.info(
         "%s: INT4 groupwise surgery replaced %d weights (%d constants materialized)",
         name,
