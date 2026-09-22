@@ -35,37 +35,32 @@ uv pip install -e ../..         # the foldquant package into it
 python -m foldquant.kernels build   # compile the plugin libraries for this GPU / TensorRT
 ```
 
-`foldquant.kernels build` needs `nvcc` and the TensorRT headers; the result
-is cached per `(SM, arch, TensorRT major.minor)` and looked up exactly, so a
-different GPU or TensorRT build compiles its own copy rather than loading an
-ABI-mismatched library.
+`foldquant.kernels build` needs `nvcc` and the TensorRT headers. Binaries are
+cached per `(SM, arch, TensorRT major.minor)` and matched exactly, so another
+GPU or TensorRT version compiles its own copy.
 
 ### LIBERO, for `eval_libero`
 
-The rollout runs in this same environment (there is no separate client
-process), so the simulator has to live beside the model. `pip install -e` on
-the pinned submodule is **not** enough and misleadingly reports success:
-LIBERO declares `install_requires=[]`, and its `libero/` directory carries no
-`__init__.py`, so nothing becomes importable. The integration puts the
-submodule on `sys.path` itself; what has to be installed is the simulator
-stack, and one version pin matters:
+The rollout runs in this environment (no separate client process), so the
+simulator lives beside the model. `pip install -e` on the pinned submodule
+reports success but makes nothing importable (LIBERO declares
+`install_requires=[]` and `libero/` has no `__init__.py`), so the integration
+puts the submodule on `sys.path` itself. Install the simulator stack with these
+pins:
 
 ```bash
 git submodule update --init external_dependencies/LIBERO
 uv pip install "robosuite==1.4.0" "mujoco==2.3.7" bddl easydict hydra-core einops termcolor thop gym
 ```
 
-Both pins are required. `robosuite==1.4.0` is LIBERO's own: 1.5 moved
-`robosuite.environments.manipulation.single_arm_env`, which LIBERO imports.
-`mujoco==2.3.7` is required by that robosuite, which declares only
-`mujoco>=2.3.0` and so resolves to 3.x — where the rollout dies inside
-`robosuite.utils.binding_utils.get_joint_qpos_addr` on an assertion about
-joint types. That one fails at the first `env.reset()`, not at import, so it
-survives any check short of actually rolling an episode.
-Do **not** install LIBERO's `requirements.txt` — it pins `numpy==1.22.4`,
-`transformers==4.21.1` and `robomimic==0.2.0`, which would tear out the stack
-the policy runs on. The list above was resolved against this environment and
-changes nothing else: torch, transformers and numpy are untouched.
+Both pins are required. `robosuite==1.4.0` is LIBERO's own (1.5 moved
+`robosuite.environments.manipulation.single_arm_env`, which LIBERO imports).
+That robosuite declares only `mujoco>=2.3.0`, which resolves to 3.x and fails
+at the first `env.reset()` (an assertion on joint types in
+`robosuite.utils.binding_utils.get_joint_qpos_addr`), not at import.
+Do **not** install LIBERO's `requirements.txt`: it pins `numpy==1.22.4`,
+`transformers==4.21.1` and `robomimic==0.2.0` and would replace the policy's
+stack. The list above leaves torch, transformers and numpy untouched.
 
 ## Workflow
 
@@ -75,7 +70,7 @@ that names several (the LIBERO 4-suite checkpoint lists nine) is refused
 without it, by upstream's loader as much as by these tools.
 
 1. **Float export and engines (upstream).** Everything FoldQuant does not
-   replace — ViT, VL self-attention, state/action encoders, action decoder —
+   replace (ViT, VL self-attention, state/action encoders, action decoder)
    comes from the upstream pipeline:
 
    ```bash
@@ -105,29 +100,28 @@ without it, by upstream's loader as much as by these tools.
    `--llm-scheme none` (or `--dit-scheme none`) to leave a module at the
    float export.
 
-   `--llm-params` / `--dit-params` take the fold's own knobs as JSON —
-   `sq_alpha`, `act_clip_ratio`, `site_bits`, `rot_block_size`,
-   `learned_calib`. The tuned arms built from them (`arc`, `res8`, `w4a8`) and
-   the two scripts that select the values are in
-   [`scripts/README.md`](../../../scripts/README.md). One trap worth knowing
-   before reading a preset: `sq_fold_order` resolves to `before` whenever the
-   scheme carries an FWHT (`_h`, `_sh`, `_shg`) and to `after` otherwise
+   `--llm-params` / `--dit-params` take the fold's knobs as JSON (`sq_alpha`,
+   `act_clip_ratio`, `site_bits`, `rot_block_size`, `learned_calib`). The
+   tuned arms built from them (`arc`, `res8`, `w4a8`) and the two scripts that
+   select the values are in [`scripts/README.md`](../../../scripts/README.md).
+   Note that `sq_fold_order` resolves to `before` whenever the scheme carries an
+   FWHT (`_h`, `_sh`, `_shg`) and to `after` otherwise
    (`foldquant/export.py:100`), so a preset's `sq_fold_order: before` is a
    no-op on the action module's `_h` schemes and only changes an `_r` head.
 
-   The export is reproducible: the sample plan and the flow-matching noise
-   `get_action` starts from are both driven by `--seed`, so the same
-   checkpoint, dataset and arguments emit byte-identical plugin graphs (two
-   `w4a4_shg` exports compared attribute by attribute). Seeding also keeps
-   the GPTQ pass on the very activations the SmoothQuant pass fitted.
+   The export is reproducible: `--seed` drives both the sample plan and the
+   flow-matching noise `get_action` starts from, so the same checkpoint,
+   dataset and arguments emit byte-identical plugin graphs (two `w4a4_shg`
+   exports compared attribute by attribute), and the GPTQ pass sees the same
+   activations the SmoothQuant pass fitted.
 
    Keep `--num-calib` at 128 or more for a GPTQ arm. The DiT's widest site
    (FFN `proj2`, K = 6144) sees 41 action-stream tokens × 4 denoising steps
-   per observation, so 32 observations give a 5248-row Hessian — rank
-   deficient at every block — and the fold then tracks whichever noise it
-   happened to see: two unseeded 32-observation `w4a4_shg` exports differed
-   in 17–37 % of their INT4 weight bytes and by 0.003 in mean action cosine
-   on the same held-out set. 128 observations give 21k rows.
+   per observation, so 32 observations give a 5248-row Hessian, rank deficient
+   at every block, and the fold tracks whatever noise it saw: two unseeded
+   32-observation `w4a4_shg` exports differed in 17-37 % of their INT4 weight
+   bytes and by 0.003 in mean action cosine on the same held-out set. 128
+   observations give 21k rows.
 
 3. **Build the engine directory.**
 
@@ -139,8 +133,8 @@ without it, by upstream's loader as much as by these tools.
 
    Loads the plugin library, compiles each FoldQuant graph with upstream's
    `build_engine` (strongly typed, same shape profiles), and fills the
-   remaining components from the float directory — by building their ONNX
-   when given, or copying their `.engine`. The result is a complete
+   remaining components from the float directory, building their ONNX when
+   given or copying their `.engine`. The result is a complete
    `n17_full_pipeline` directory; `foldquant_export.json` travels with it so
    the runtime tools know which plugin library to load.
 
@@ -162,8 +156,7 @@ without it, by upstream's loader as much as by these tools.
    dir>` scores a float directory on that arm's held-out set. `eval_libero` runs
    the upstream `MultiStepWrapper` rollout over every task of the requested
    suites with a resume-safe `summary.json`. `benchmark` and `rollout` are
-   upstream's own scripts with the plugin library preloaded — the arguments
-   are theirs.
+   upstream's own scripts (and arguments) with the plugin library preloaded.
 
 Plugin graphs are emitted at the batch the calibration captured (1), so
 TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
@@ -171,10 +164,10 @@ TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 ## Smoke check
 
 `eval_libero` installation check (not a suite result): on the `w8a8` engines,
-`--suites libero_spatial --n-episodes 2` completes **20/20**, ten tasks, zero
-task failures, ~12 s per task on one RTX 4070 Ti SUPER. Two episodes per task
-is an installation check — it says the rollout, the engines and the LIBERO
-environment work together end to end, and nothing about success rate. Paper
+`--suites libero_spatial --n-episodes 2` completes **20/20** (ten tasks, zero
+task failures, ~12 s per task on one RTX 4070 Ti SUPER). This shows the
+rollout, the engines and the LIBERO environment work together end to end, and says
+nothing about success rate. Paper
 numbers come from the full sweep.
 
 The chain above, run end to end on the LIBERO 4-suite fine-tune
@@ -182,7 +175,7 @@ The chain above, run end to end on the LIBERO 4-suite fine-tune
 LLM `w8a8_sr`, `--cascade`, 128 calibration observations, scored by
 `verify` on 32 held-out observations from episodes the calibration never
 saw. The float engines are scored on the same observations
-(`--split-from`) — they are the floor of the drift metric, not zero:
+(`--split-from`); they are the floor of the drift metric, not zero:
 
 | engines | backbone cos mean / min | actions cos mean / min | actions max abs |
 |---|---|---|---|
@@ -190,17 +183,16 @@ saw. The float engines are scored on the same observations
 | LLM `w8a8_sr` + DiT `w4a4_sh` | 0.99996 / 0.99990 | 0.99950 / 0.99653 | 0.330 |
 | LLM `w8a8_sr` + DiT `w4a4_shg` | 0.99996 / 0.99990 | 0.99951 / 0.99184 | 0.504 |
 
-Two readings. Quantization costs 0.00026 of mean action cosine over the
-float engines; four Euler steps in bf16 already move single actions by 0.4
-in the float engines themselves, so `max_abs` on a handful of observations
-does not separate the arms. And on this DiT the GPTQ pass (`_shg`) does not
-improve on round-to-nearest (`_sh`) at 128 observations — the means tie and
-its worst observation is worse. Success rate under the upstream LIBERO
-harness (`eval_libero`) is what decides between them.
+Quantization costs 0.00026 of mean action cosine over the float engines.
+Four bf16 Euler steps already move single actions by 0.4 in the float engines,
+so `max_abs` on a few observations does not separate the arms. On this DiT
+the GPTQ pass (`_shg`) does not beat round-to-nearest (`_sh`) at 128
+observations: the means tie and its worst observation is worse. Success rate
+under the upstream LIBERO harness (`eval_libero`) decides between them.
 
 Cost on that GPU: kernels build 30 s; upstream float export + engines
 3.5 min; `export_foldquant` LLM `w8a8_sr` 17 s, DiT `w4a4_sh` 20 s, DiT
-`w4a4_shg` 20 min (the 129 Hessians are accumulated on the host in float64 —
+`w4a4_shg` 20 min (the 129 Hessians are accumulated on the host in float64;
 they do not fit next to the model on 16 GB); `build_engines` 47 s; `verify`
 40 s for 32 observations.
 
@@ -218,11 +210,11 @@ robot loop moves between the bf16 reference and a quantized arm by pointing at
 a different port.
 
 ```bash
-# terminal 1 — the arm under test
+# terminal 1: the arm under test
 python -m foldquant_integration.serve --model-path <ckpt> \
     --embodiment-tag libero_panda --engine-dir exports/w4a4/engines
 
-# terminal 2 — upstream's own client, unchanged
+# terminal 2: upstream's own client, unchanged
 python -c "
 from gr00t.policy.server_client import PolicyClient
 client = PolicyClient(host='127.0.0.1', port=5555)
@@ -235,15 +227,15 @@ The released LIBERO checkpoint carries nine embodiments in its
 `libero_panda` resolves to the checkpoint's `libero_sim` entry. A
 single-embodiment checkpoint needs no tag.
 
-Omit `--engine-dir` to serve the bf16 PyTorch policy — the reference arm, same
-process and same protocol, which is what makes the two comparable on hardware.
+Omit `--engine-dir` to serve the bf16 PyTorch policy: the reference arm, in the
+same process and protocol, so the two are comparable on hardware.
 The release ships no standalone client script; `PolicyClient` is the class its
 real-robot evaluators construct (`gr00t/eval/real_robot/SO100`).
 
 Engines are installed by upstream's own `trt_model_forward.setup_tensorrt_engines`,
-the same call `verify` and `benchmark` use — this family has no `runtime.py`,
-because the release ships the whole pipeline swap itself and a second install
-path could drift from it silently.
+the same call `verify` and `benchmark` use. This family has no `runtime.py`:
+the release ships the whole pipeline swap itself, and a second install path
+could drift from it.
 
 
 ## ModelOpt INT8 SmoothQuant baseline
@@ -322,7 +314,7 @@ projection Linears (`self_attn.{q,k,v,o}_proj`, `mlp.{gate,up,down}_proj` in the
 `F.linear`. No INT4 kernel runs, so these arms carry **no latency claim**; they
 measure what each recipe's rounding does to the policy. AdaLN modulation, the
 `vl_self_attention` blocks and the cross-attention encoder KV stay BF16 (the
-FoldQuant engines quantise those too — see `results/groot_n1_7/HOLOQ_LIBERO.md`).
+FoldQuant engines quantise those too; see `results/groot_n1_7/HOLOQ_LIBERO.md`).
 
 | | `--method holoq` (HoloQ-VLA style) | `--method duquant` (DuQuant style) |
 |---|---|---|
@@ -343,9 +335,9 @@ tokens, running max, then `scale = q / 7`); applying a per-token dynamic scale
 after the SVD-only rotation instead collapses the policy to 0 % success on every
 LIBERO suite, because `U` concentrates a token's energy into one channel per block
 and the remaining channels round to zero. DuQuant's output-row rotation
-(`ROW_ROT=restore`) is not ported — it is mathematically weight-only.
+(`ROW_ROT=restore`) is not ported; it is mathematically weight-only.
 
-Code: `foldquant_integration/baselines/` — `packing.py` (permutation, rotations,
+Code in `foldquant_integration/baselines/`: `packing.py` (permutation, rotations,
 INT4 packing, GPTQ), `scope.py` (the 304-Linear scope), `calibration.py`
 (collector), `builder.py` (pack), `runtime.py` (emulated layers), `context.py`
 (denoising-step context attached from outside the vendored model). Ported from the
@@ -410,26 +402,20 @@ Batch profile: `build_engines` declares the DiT batch axis with an upper bound o
 
 ## Device memory per arm
 
-`memory.py` measures one arm in one fresh process and reports two quantities
-that must always be read together:
+`memory.py` measures one arm in one fresh process and reports two numbers to
+read together:
 
-* **as served** (`--keep-replaced-weights`): what `serve` holds today — the
-  checkpoint on the GPU, engines installed by rebinding `forward`, the replaced
-  PyTorch weights still resident;
+* **as served** (`--keep-replaced-weights`): what `serve` holds, with the
+  replaced PyTorch weights still resident on the GPU;
 * **floor** (default for an engine arm): the engines plus the PyTorch
-  components the runtime still executes (the modules upstream's pipeline swap leaves in PyTorch (embedding table, encoders' glue) plus the seven engines). The checkpoint is loaded on
-  the CPU, the engines are installed, the replaced modules' parameters become
-  `meta` tensors and are never materialized on the device, and only the
-  remaining components move to CUDA. Calling a replaced module fails loudly.
+  components the runtime still executes (what upstream's pipeline swap leaves in PyTorch: embedding table, encoders' glue).
 
-The number is `cudaMemGetInfo` (total minus free — CUDA context and every
-allocator included) sampled after each of 60 timed calls following 10
-warm-ups; `steady_used_mib` is the median of that plateau, reported with its
-min/max and the torch allocator's peak, not as a peak. Run the eager arm first
-so the engine arms can report their decoded-action cosine against it:
+The value is the median `cudaMemGetInfo` plateau (total minus free) over 60
+timed calls after 10 warm-ups; `memory --help` gives the details. Run the eager
+arm first so the engine arms can report their decoded-action cosine against it:
 
 ```bash
-python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` --reference-actions ref.npz
-python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` `--engine-dir exports/<arm>/engines` --reference-actions ref.npz
-python -m foldquant_integration.memory `--model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib>` `--engine-dir exports/<arm>/engines` --keep-replaced-weights
+python -m foldquant_integration.memory --model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib> --reference-actions ref.npz
+python -m foldquant_integration.memory --model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib> --engine-dir exports/<arm>/engines --reference-actions ref.npz
+python -m foldquant_integration.memory --model-path <ckpt> --embodiment-tag libero_panda --dataset-path <LIBERO calib> --engine-dir exports/<arm>/engines --keep-replaced-weights
 ```

@@ -16,7 +16,7 @@ are kept with their outputs cleared.
 
 Dropped, to keep the tree small and text-only:
 
-- `media/` (README images and clips — their links in `README.md` are broken
+- `media/` (README images and clips; their links in `README.md` are broken
   by design), `reference_architecture/*.png`,
   `examples/SO-100/tictac_bot_setup.jpg`,
 - `demo_data/` entirely (the tools under `foldquant_integration/` take
@@ -36,7 +36,7 @@ at the checkout the N1.7 folder pins
 
 None. The release's `pyproject.toml` resolves as shipped
 (`uv pip install -e ".[base]"`, then the `flash-attn` wheel and
-`tensorrt-cu12` pin from its `deploy` extra — see the integration README).
+`tensorrt-cu12` pin from its `deploy` extra; see the integration README).
 
 ## Re-syncing
 

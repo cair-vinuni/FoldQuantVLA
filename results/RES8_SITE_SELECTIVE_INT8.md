@@ -30,7 +30,7 @@ observation's largest coordinate discrepancy.
 
 The selective-INT8 arm raises the minimum from 0.461 to 0.850 on N1.6, 0.802 to 0.912 on N1.7,
 0.970 to 0.973 on N1.5 and 0.847 to 0.998 on π₀.₅, and halves the median worst-coordinate
-discrepancy on N1.6 and N1.7, while the medians stay at 0.9993–0.9998. Its cosine remains below
+discrepancy on N1.6 and N1.7, while the medians stay at 0.9993-0.9998. Its cosine remains below
 the W8A8 engine's on every checkpoint; what it recovers is most of the four-bit gap.
 
 A release-harness check on 16 observations of π₀.₅ (a different sample from P2) moved the same way:
@@ -64,9 +64,9 @@ the same way: GR00T N1.7 on NVIDIA's per-suite checkpoints, cap 720 (94.88% -> 9
 | checkpoint | eager | torch.compile | TRT bf16 | W4A4 | W4A4 + o/d INT8 | INT8 cost |
 |---|---:|---:|---:|---:|---:|---|
 | GR00T N1.7, nvidia `libero_10` fine-tune, `shg` head | 69.5 (39.1) | 55.7 (25.0) | 40.8 (21.4) | 32.3 (15.9) | 32.9 (15.9) | +0.6 ms, backbone |
-| GR00T N1.7, four-suite fine-tune, `sr` fold-before head (the paper's closed-loop recipe) | 68 (38) | — | — | — | 34 (17) | head `sr` is 1.1 ms slower than `shg` |
-| GR00T N1.5, four-suite fine-tune, 4 steps, K=1 | 54.2 (20.5) | — | — | 32.7 (12.1) | 33.3 (12.1) | +0.6 ms, backbone |
-| pi0.5, 10 steps | 168.6--170.8 | 100.5 | — | 77.3--78.6 | 82.3--84.4 | +4--6 ms, prefix LLM |
+| GR00T N1.7, four-suite fine-tune, `sr` fold-before head (the paper's closed-loop recipe) | 68 (38) | - | - | - | 34 (17) | head `sr` is 1.1 ms slower than `shg` |
+| GR00T N1.5, four-suite fine-tune, 4 steps, K=1 | 54.2 (20.5) | - | - | 32.7 (12.1) | 33.3 (12.1) | +0.6 ms, backbone |
+| pi0.5, 10 steps | 168.6--170.8 | 100.5 | - | 77.3--78.6 | 82.3--84.4 | +4--6 ms, prefix LLM |
 
 Engine bytes for the LLM: N1.7 442 -> 577 MB, pi0.5 948 -> 1269 MB (+34% in both); action-module
 engines unchanged. The paper's latency figure carries the canonical controls (torch.compile / TRT bf16);

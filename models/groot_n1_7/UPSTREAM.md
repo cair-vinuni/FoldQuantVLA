@@ -14,7 +14,7 @@ FAQ, ATTRIBUTIONS and CONTRIBUTING files.
 
 Dropped, to keep the tree small and text-only:
 
-- `media/` (README images — their links in `README.md` are broken by design),
+- `media/` (README images; their links in `README.md` are broken by design),
 - the 405 MB prebuilt aarch64 `flash_attn` wheel under
   `scripts/deployment/dgpu/wheels` (the small `torchcodec` aarch64 wheels the
   Orin and Spark installers look for are kept; the per-device `uv.lock` files
@@ -33,7 +33,7 @@ pins, `8f1084e3132a39270c3a13ebe37270a43ece2a01`.
 
 `pyproject.toml`: `[tool.uv] environments` / `required-environments` are
 x86_64 Linux only and the aarch64 `flash-attn`/`torchcodec` path sources are
-removed — they referenced the
+removed: they referenced the
 dropped wheel, and `uv sync` refuses to resolve a path source it cannot read
 even on another platform. `uv.lock` is re-locked accordingly. Nothing else
 under upstream paths is modified.

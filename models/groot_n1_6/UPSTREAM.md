@@ -14,7 +14,7 @@ README and CONTRIBUTING files.
 
 Dropped, to keep the tree small and text-only:
 
-- `media/` (README images and clips — their links in `README.md` are broken
+- `media/` (README images and clips; their links in `README.md` are broken
   by design),
 - `demo_data/` entirely (every dataset there is LFS-only in this release;
   the tools under `foldquant_integration/` take `--dataset-path`),
@@ -28,7 +28,7 @@ Dropped, to keep the tree small and text-only:
 
 The LIBERO submodule is declared at the repository top level (`.gitmodules`,
 path `models/groot_n1_6/external_dependencies/LIBERO`) at the commit upstream
-pins, `8f1084e3132a39270c3a13ebe37270a43ece2a01` — the same commit the N1.7
+pins, `8f1084e3132a39270c3a13ebe37270a43ece2a01`, the same commit the N1.7
 folder uses, so `git submodule update --init --reference` against that
 checkout avoids a second download.
 

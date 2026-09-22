@@ -2,7 +2,7 @@
 
 The unquantized engine of every module, traced from the live policy under the runtime's
 binding names and built weakly typed with no plugins. It is the floor of each ladder and the
-compiled control the paper's latency table divides by — and, since it comes off the same
+compiled control the paper's latency table divides by. Since it comes off the same
 `export_foldquant` → `build_engines` → `install_engines` path as W8A8 and W4A4, the arms
 differ in nothing but the precision of the projections.
 
@@ -13,7 +13,7 @@ one RTX 4070 Ti SUPER (sm_89), batch 1:
 |---|---|---|---|---|---|---|
 | GR00T N1.6 | 0.99987 / 0.99950 | 69 | **44** | 41 | 36 | framework runtime measured 44.1 |
 | GR00T N1.5 | 0.9951 / 0.981 | 54.6 | **41.2** | 37.3 | 33.1 | framework runtime measured 40.2 |
-| GR00T N1.7 | see `groot_n1_7/float` | 70.0 | **41.5** | — | — | upstream full-pipeline export, `build_engines --float-onnx-dir` |
+| GR00T N1.7 | see `groot_n1_7/float` | 70.0 | **41.5** | - | - | upstream full-pipeline export, `build_engines --float-onnx-dir` |
 | π₀.₅ | 0.99037 / 0.91556 (kv_stack 0.99279) | 166.5 | **111.8** | 89.9 | 76.5 | `torch.compile` reaches 100.7 here: on this family the compiled-PyTorch control is the stronger one, which is what the paper's table uses |
 
 One of these needed more than a plain trace, recorded where it bit: **π₀.₅** runs its

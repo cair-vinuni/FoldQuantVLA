@@ -17,24 +17,24 @@
 **FoldQuantVLA: Native Low-Bit Quantization of Vision-Language-Action Models
 via Consistent Folding**
 
-Native low-bit — W8A8 and W4A4 executed on the device's INT8 / INT4 tensor
-cores, not simulated — quantization of vision-language-action (VLA) models via
+W8A8 and W4A4 quantization of vision-language-action (VLA) models, executed
+natively on the device's INT8 / INT4 tensor cores (not simulated), via
 **consistent offline folding**.
 
 ## Highlights
 
-- **Native low-bit kernels.** W8A8 and W4A4 run on the device's integer tensor cores through custom TensorRT plugins on CUTLASS integer GEMMs — one fused plugin per linear site applies the site's transform, quantizes with a dynamic per-token scale and runs the integer GEMM, with no separate rotation operator and no extra graph nodes. Both the language backbone and the action expert run this way. Four-bit is native INT4 on Ada (sm_89) and Orin (sm_87); H100 lowers the four-bit operands to its INT8 datapath.
-- **o/d INT8: W8A8 behaviour at W4A4 latency.** Holding only `o_proj` and `down_proj` at INT8 inside an otherwise W4A4 language tower closes most of the four-bit fidelity gap — the worst held-out action cosine rises from 0.46 to 0.85 on GR00T N1.6 and from 0.85 to 0.998 on π₀.₅ — while every projection stays on the integer GEMM path, for 0.4–1.8 ms on GR00T. In closed loop it matches the W8A8 engine, and on four real-robot tasks it recovers the episodes uniform W4A4 loses (74 against 64 of 80). It is the recommended configuration.
-- **Fold offline, keep online work minimal.** SmoothQuant scale and block rotation compose into a single consistent transform `T_v = D^o R D^i` per activation site; its inverse is folded into every consuming weight, GPTQ rounds in those coordinates, and scales absorb into normalization gains where a learned gain precedes the site. Every parameter is fixed at build time. What stays online is only what cannot be precomputed — applying `T_v` to each new activation and its dynamic per-token quantization — and that runs as one fused prologue shared by all of the site's projections.
-- **Action-referenced calibration.** Presets are screened on decoded-action cosine against the BF16 policy in a statistics-matched emulation, and each selected preset is rebuilt and checked on the assembled engine.
-- **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ — upstream code, evaluation harness and policy server used unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in the precision of the projections.
-- **Deployable.** Engines install into the upstream release's own policy server; the same arm serves LIBERO, a Jetson AGX Orin and a real robot, driven by the family's own upstream client (see [`docs/`](docs)).
+- **Native low-bit kernels.** Custom TensorRT plugins on CUTLASS integer GEMMs run W8A8 and W4A4 on the integer tensor cores. One fused plugin per linear site applies the site's transform, quantizes with a dynamic per-token scale and runs the GEMM, with no separate rotation operator or extra graph nodes. Both the language backbone and the action expert run this way. Four-bit is native INT4 on Ada (sm_89) and Orin (sm_87); H100 lowers the four-bit operands to its INT8 datapath.
+- **o/d INT8: W8A8 behaviour at W4A4 latency.** Holding only `o_proj` and `down_proj` at INT8 in a W4A4 language tower raises the worst held-out action cosine from 0.46 to 0.85 on GR00T N1.6 and from 0.85 to 0.998 on π₀.₅, keeps every projection on the integer GEMM path, and costs 0.4-1.8 ms on GR00T. In closed loop it matches the W8A8 engine; on four real-robot tasks it recovers the episodes uniform W4A4 loses (74 against 64 of 80). This is the recommended configuration.
+- **Fold offline, keep online work minimal.** SmoothQuant scale and block rotation compose into one transform `T_v = D^o R D^i` per activation site. Its inverse is folded into every consuming weight, GPTQ rounds in those coordinates, and scales absorb into a preceding learned normalization gain where there is one. Only applying `T_v` to each new activation and its dynamic per-token quantization stay online, as one fused prologue shared by the site's projections.
+- **Action-referenced calibration.** Presets are screened on decoded-action cosine against the BF16 policy in a statistics-matched emulation, then rebuilt and checked on the assembled engine.
+- **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ use their upstream code, evaluation harness and policy server unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in projection precision.
+- **Deployable.** Engines install into the upstream policy server; the same arm serves LIBERO, a Jetson AGX Orin and a real robot through the family's own upstream client (see [`docs/`](docs)).
 
 ## How it works
 
 Only the projection GEMMs change precision. The vision encoder and the decoder
 stay floating point; the language backbone and the action expert run INT8 or
-INT4, and the action expert's denoising loop reuses one engine for every step.
+INT4, and the expert's denoising loop reuses one engine for every step.
 
 <p align="center">
   <picture>
@@ -45,16 +45,16 @@ INT4, and the action expert's denoising loop reuses one engine for every step.
 
 One plugin serves the GR00T DiT and the π₀.₅ expert through their own emitters; the LLM backbones use the INT8 per-row path (`w8a8_sr`) or the INT4 path (`w4a4_srg`) with the same weight contract.
 
-This repository is the paper's artifact. It has two parts:
+This repository is the paper's artifact, in two parts:
 
-- **[`foldquant/`](foldquant)** — the algorithm, the ONNX emitters and the
+- **[`foldquant/`](foldquant)**: the algorithm, the ONNX emitters and the
   TensorRT plugin kernels. Model-agnostic; installed as a Python package into
   each model's own environment.
-- **`models/<family>/`** — one directory per VLA release, a trimmed copy of
-  the upstream repository at a pinned commit plus a `foldquant_integration/`
-  folder. Upstream code, data path, evaluation harness and deployment tools
-  are used **unchanged**; the integration only emits the FoldQuant graphs for
-  the modules it quantizes and slots them into the upstream TensorRT pipeline.
+- **`models/<family>/`**: a trimmed copy of each upstream VLA release at a
+  pinned commit, plus a `foldquant_integration/` folder. Upstream code, data
+  path, evaluation harness and deployment tools are used **unchanged**; the
+  integration only emits the FoldQuant graphs for the modules it quantizes and
+  slots them into the upstream TensorRT pipeline.
 
 | family | upstream | integration | support |
 |---|---|---|---|
@@ -63,50 +63,44 @@ This repository is the paper's artifact. It has two parts:
 | GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | ✓ |
 | π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | ✓ |
 
-**✓ means the whole chain runs**: export, engine build, held-out drift,
-latency benchmark, a LIBERO rollout and a policy server a real robot can be
-pointed at, for every scheme the family offers. All four are there. π₀.₅
-earns it on the same terms, with one difference that is upstream's design and
-not a gap: its LIBERO rollout drives an upstream client from a second
-environment against a running server, where the GR00T families run it in
-process.
+**✓ means the whole chain runs** for every scheme the family offers: export,
+engine build, held-out drift, latency benchmark, a LIBERO rollout and a policy
+server a real robot can use. The one difference on π₀.₅ is upstream's design:
+its LIBERO rollout drives an upstream client from a second environment against
+a running server, where the GR00T families run it in process.
 
-The measurements themselves live in [`results/`](results/README.md) rather
-than in this table: held-out drift and desktop latency for all four families,
-recorded by this release, beside the paper's closed-loop LIBERO campaigns
-(800 episodes per arm) and its Jetson AGX Orin latency.
+Measurements live in [`results/`](results/README.md): held-out drift and
+desktop latency for all four families, recorded by this release, beside the
+paper's closed-loop LIBERO campaigns (800 episodes per arm) and its Jetson AGX
+Orin latency.
 
-All four families now have a float arm. `--llm-scheme float` traces the module
-through the deployed forward and emits an unquantized engine of the same
-scope, so a release shipping no TensorRT path of its own is no longer a
-reason to lack one.
+Every family has a float arm: `--llm-scheme float` traces the module through
+the deployed forward and emits an unquantized engine of the same scope, even
+where the upstream release ships no TensorRT path of its own.
 
 ## Schemes
 
-A scheme key is `w{W}a{A}` followed by the fold it applies, one letter per pass
-in a fixed order: `s` SmoothQuant scale, then a rotation, then `g` GPTQ
-rounding. On the action expert `r` is a learned dense block rotation (the
-matrix ships with the engine) and `h` the fixed Sylvester butterfly, applied as
-an FWHT. On the LLM backbone `r` is the fixed block Hadamard (block 64), also
-applied as an FWHT inside the plugin. `w8a8` alone is the dynamic per-row
-baseline and folds nothing.
+A scheme key is `w{W}a{A}` followed by its folds, one letter per pass in a
+fixed order: `s` SmoothQuant scale, then a rotation, then `g` GPTQ rounding. On
+the action expert `r` is a learned dense block rotation (the matrix ships with
+the engine) and `h` the fixed Sylvester butterfly, applied as an FWHT. On the
+LLM backbone `r` is the fixed block Hadamard (block 64), also applied as an
+FWHT inside the plugin. `w8a8` alone is the dynamic per-row baseline and folds
+nothing.
 
-`float` is the unquantized engine of a module — the floor of every ladder and
-the compiled control the latency table divides by. It is traced, not emitted:
-`foldquant/float_export.py` captures the module's real call and exports it
-under the runtime's binding names, so `build_engines` compiles it and
-`install_engines` serves it like any other arm. `none` keeps the module in
-PyTorch instead. On GR00T N1.7 the FoldQuant graphs share upstream's
-full-pipeline I/O contract, so `float` there takes upstream's own export
+`float` is a module's unquantized engine: the floor of every ladder and the
+compiled control the latency table divides by. `foldquant/float_export.py`
+traces the module's real call and exports it under the runtime's binding names,
+so `build_engines` and `install_engines` treat it like any other arm. `none`
+keeps the module in PyTorch. On GR00T N1.7, whose FoldQuant graphs share
+upstream's full-pipeline I/O contract, `float` is upstream's own export
 (`build_engines --float-onnx-dir`).
 
-The float engine is built **strongly typed**, like every quantized arm, and
-with no plugins. That is not a detail: a weakly-typed network picks a precision
-per layer, and the layers TensorRT then chooses to run in fp32 are *more* exact
-than the bf16 reference the arm is scored against — which once made a float
-engine drift further from PyTorch than its own INT8 engine did. Honouring the
-ONNX's own dtypes keeps float a control that differs from the quantized arms in
-the precision of the projections and in nothing else.
+The float engine is built **strongly typed** and without plugins, like every
+quantized arm. A weakly-typed network lets TensorRT run some layers in fp32,
+which is *more* exact than the bf16 reference and once made a float engine
+drift further from PyTorch than its INT8 engine. Strong typing keeps float a
+control that differs from the quantized arms only in projection precision.
 
 | target | schemes | plugin library |
 |---|---|---|
@@ -114,10 +108,10 @@ the precision of the projections and in nothing else.
 | LLM backbone | `w8a8_sr` · `w8a8_s` · `w4a4_srg` · `w4a4_sg` · `w4a8_srg` | same, by activation width |
 | W4A16 baseline | ModelOpt AWQ groupwise | `foldquant_int4_groupwise` |
 
-`foldquant/schemes.py` is the single source of these names and of which
-modules each is allowed on. GPTQ (`…g`) changes nothing at runtime — same
-kernel, node attributes and byte layout — it only spends the same 16 levels
-better, so every `_shg` engine runs at the `_sh` engine's latency.
+`foldquant/schemes.py` is the single source of these names and of the modules
+each is allowed on. GPTQ (`…g`) changes nothing at runtime (same kernel, node
+attributes and byte layout); it only spends the same 16 levels better, so every
+`_shg` engine runs at the `_sh` engine's latency.
 
 ### Selective INT8 inside a W4A4 tower
 
@@ -129,13 +123,12 @@ A W4A4 language tower can hold chosen projection sites at INT8 with
 ```
 
 Valid sites are `qkv`, `o`, `gateup` and `down`. Holding `o_proj` and
-`down_proj` at INT8 ("o/d INT8") is the recommended configuration: those two
-sites have no preceding learned gain for a scale to fold into, and keeping them
-at INT8 rather than in floating point leaves every projection on the integer
-GEMM path and in the same plugin family — a floating-point fallback would put a
-datatype boundary and a separate kernel back into the tower. It recovers most
-of the uniform-W4A4 cosine gap; its cosine still sits below the W8A8 engine's.
-Measurements are in [`results/RES8_SITE_SELECTIVE_INT8.md`](results/RES8_SITE_SELECTIVE_INT8.md).
+`down_proj` at INT8 ("o/d INT8") is the recommended configuration. These two
+sites have no preceding learned gain for a scale to fold into, and INT8 (rather
+than floating point) keeps every projection on the integer GEMM path in one
+plugin family, with no datatype boundary or extra kernel in the tower. It
+recovers most of the uniform-W4A4 cosine gap, though its cosine stays below the
+W8A8 engine's. Measurements are in [`results/RES8_SITE_SELECTIVE_INT8.md`](results/RES8_SITE_SELECTIVE_INT8.md).
 
 ## Layout
 
@@ -165,18 +158,17 @@ python -m foldquant.kernels build      # compiles the plugin .so for this GPU / 
 python -m foldquant.kernels status
 ```
 
-Each integration README lists the family's own environment (GR00T N1.6 / N1.5
-pin older torch and flash-attn wheels; openpi pins Python 3.11 and copies its
-patched `transformers` files over the installed package) and which submodule
-it needs — the LIBERO harness is pinned per family
-(`models/groot_n1_{7,6}/external_dependencies/LIBERO`,
-`models/pi05/third_party/libero`; the N1.5 release pins none, so its README
-points at upstream's install steps).
+Each integration README lists the family's environment (GR00T N1.6 / N1.5 pin
+older torch and flash-attn wheels; openpi pins Python 3.11 and copies its
+patched `transformers` files over the installed package) and its LIBERO
+submodule (`models/groot_n1_{7,6}/external_dependencies/LIBERO`,
+`models/pi05/third_party/libero`; N1.5 pins none, so its README points at
+upstream's install steps).
 
 Kernels build with `nvcc`, the CUTLASS submodule and the vendored TensorRT
-headers; binaries are cached per `(SM, machine, TensorRT major.minor)` under
-`~/.cache/foldquant` and matched exactly at load, never approximately. Unit
-tests need only the package:
+headers. Binaries are cached per `(SM, machine, TensorRT major.minor)` under
+`~/.cache/foldquant` and matched exactly at load. Unit tests need only the
+package:
 
 ```bash
 pip install -e ".[dev]" && pytest tests -q
@@ -193,38 +185,35 @@ export/engines with the upstream pipeline → `export_foldquant` → `build_engi
 harnesses, held-out drift, LIBERO success rate, latency on RTX 4070 Ti SUPER
 and Jetson AGX Orin) and holds the measured numbers per family and arm.
 
-[`docs/REPRODUCING.md`](docs/REPRODUCING.md) says what can be checked and at
+[`docs/REPRODUCING.md`](docs/REPRODUCING.md) lists what can be checked, and at
 what cost, from a clone upwards:
 
-- `python scripts/check_records.py` — no GPU, no checkpoint: asserts the
+- `python scripts/check_records.py`: no GPU, no checkpoint; asserts the
   invariants every record has to satisfy.
-- `scripts/smoke_family.sh` — one family's export → build → verify chain on
+- `scripts/smoke_family.sh`: one family's export → build → verify chain on
   eight observations.
-- `scripts/smoke_serve.sh` — each family's policy server starts and binds,
+- `scripts/smoke_serve.sh`: each family's policy server starts and binds,
   over bf16 or over a built arm.
-- `scripts/smoke_eval.sh` — one LIBERO suite at one episode per task, through
+- `scripts/smoke_eval.sh`: one LIBERO suite at one episode per task, through
   the same `eval_libero` the sweeps use.
 
 A smoke pass means the chain runs, not that a published number reproduces.
-Reproducing a number needs the checkpoint and dataset that number's record
-names, which every record now carries.
+That needs the checkpoint and dataset named in the number's record.
 
 ## Deploying
 
 Engines install into the **upstream release's own policy server**, so an
 unmodified upstream client drives a quantized policy by changing a host and a
-port. Each family's own repository documents its client and its real-robot
-examples; nothing here replaces them.
+port. Each family's repository documents its client and real-robot examples.
 
-One rule governs all of it: quantization changes the arithmetic, not the
-policy. An engine built from a LIBERO checkpoint emits LIBERO actions on any
-robot, so a real deployment starts from a checkpoint fine-tuned for that
-embodiment.
+Quantization changes the arithmetic, not the policy: an engine built from a
+LIBERO checkpoint emits LIBERO actions on any robot, so a real deployment
+starts from a checkpoint fine-tuned for that embodiment.
 
 [`docs/deploy/jetson.md`](docs/deploy/jetson.md) covers the edge target the
-paper measures: what has to be built on the board itself — the plugin library
-and the engines, because neither is portable across `(SM, TensorRT)` — versus
-what crosses from a workstation as ONNX.
+paper measures: the plugin library and the engines are built on the board
+(neither is portable across `(SM, TensorRT)`), while ONNX crosses from a
+workstation.
 [`docs/deploy/jetson_serve.md`](docs/deploy/jetson_serve.md) builds and serves
 GR00T N1.7 entirely on an Orin, step by step or through
 [`scripts/deploy_groot_n17_jetson.sh`](scripts/deploy_groot_n17_jetson.sh).

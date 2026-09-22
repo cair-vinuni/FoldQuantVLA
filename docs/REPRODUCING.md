@@ -22,7 +22,7 @@ python scripts/results_tables.py --table drift
 true of any honest set of arms: a float engine no less faithful to the bf16
 reference than the INT8 engine built from the same graph; a stated scope; a
 held-out split; no operator filesystem in the records. Each rule is there
-because breaking it produced a plausible-looking wrong number — the history is
+because breaking it produced a plausible-looking wrong number; the history is
 in the file.
 
 `results_tables.py` regenerates the tables in
@@ -34,11 +34,11 @@ shows up as a diff rather than as a discrepancy nobody notices.
 Each family runs in **its own virtualenv, from its own directory**. They pin
 different Python and torch versions and share nothing but the `foldquant`
 package, so there is no single environment that runs all four. Install one
-family by following its integration README —
+family by following its integration README:
 [N1.7](../models/groot_n1_7/foldquant_integration/README.md),
 [N1.6](../models/groot_n1_6/foldquant_integration/README.md),
 [N1.5](../models/groot_n1_5/foldquant_integration/README.md),
-[π₀.₅](../models/pi05/foldquant_integration/README.md) — then:
+[π₀.₅](../models/pi05/foldquant_integration/README.md). Then:
 
 ```bash
 git submodule update --init third_party/cutlass
@@ -60,7 +60,7 @@ unset, so holding two of four checkpoints still gives a useful report. The
 environment variables it reads are listed in the script's header.
 
 A smoke pass means the chain runs and emits a record. It does **not** mean the
-paper's numbers reproduce — 8 observations is far below the 128 a GPTQ arm
+paper's numbers reproduce: 8 observations is far below the 128 a GPTQ arm
 needs, and the docstring in `export_foldquant` says what happens below that.
 
 **Give it the GPU.** The script refuses to start when another process is on the
@@ -82,15 +82,15 @@ All four pass on one RTX 4070 Ti SUPER:
 Those are the default schemes on eight calibration observations, so they are
 not the arms in `results/` and should not be compared with them. What they show
 is that each family's export, engine build and verify run on this machine and
-agree with its own **PyTorch** bf16 policy to the digits above — the reference
+agree with its own **PyTorch** bf16 policy to the digits above. The reference
 pass runs before any engine is installed, so a float engine is an arm in the
 table like any other, not the thing the others are measured against.
 
 The figure is the median, here and in `results/`; the mean and the minimum stay
 in each `verify.json` and are not the number to read. A clipped action space
-makes the per-observation distribution bimodal — a chunk railed on every
+makes the per-observation distribution bimodal: a chunk railed on every
 channel scores 1.000 by construction, one with a couple of channels railed lets
-a small absolute error swing the cosine to near zero — so a mean moves with how
+a small absolute error swing the cosine to near zero, so a mean moves with how
 often the policy was railed rather than with how faithful the engine is.
 `results/README.md` has the measurement behind that.
 
@@ -101,8 +101,8 @@ ask about sit outside it, and each has its own script.
 
 **The server.** `scripts/smoke_serve.sh` starts each family's `serve.py` on a
 spare port, waits for the socket to bind, and kills it. That is the half a
-robot depends on — the policy assembled, the engines installed if asked, the
-port open — and it needs no simulator:
+robot depends on (the policy assembled, the engines installed if asked, the
+port open), and it needs no simulator:
 
 ```bash
 scripts/smoke_serve.sh                                  # bf16 policies
@@ -114,7 +114,7 @@ Readiness is decided by the socket, not by the log: each family announces
 itself in its own words and matching those cost a false failure here.
 
 **The rollout.** `scripts/smoke_eval.sh` runs one LIBERO suite at one episode
-per task — ten episodes, two to nine minutes a family — through the same
+per task (ten episodes, two to nine minutes a family) through the same
 `eval_libero` the sweeps use:
 
 ```bash
@@ -134,7 +134,7 @@ published sweeps are 800 episodes. π₀.₅ is skipped with that
 reason: its rollout drives an upstream client from a second environment
 against a running server, which is two processes and a different check.
 
-The N1.5 release pins no LIBERO checkout — it is the operator's to supply — so
+The N1.5 release pins no LIBERO checkout (it is the operator's to supply), so
 the script borrows a sibling's pinned copy and says so. `FOLDQUANT_LIBERO_DIR`
 overrides.
 
@@ -156,7 +156,7 @@ PY
 
 Then run `verify` with those arguments against the arm's engines. The held-out
 plan is seeded, but it is drawn from whatever episodes the dataset offers, so
-the same seed over a different slice gives a different set — which is why the
+the same seed over a different slice gives a different set. That is why the
 record carries the dataset and the range and not only the seed.
 
 Two things follow from that, both learned the hard way:

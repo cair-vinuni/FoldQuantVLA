@@ -18,7 +18,7 @@ Dropped, to keep the tree small and text-only:
 
 - repository automation and editor settings (`.github/`, `.vscode/`,
   `.pre-commit-config.yaml`, `.dockerignore`),
-- the ALOHA simulator submodule (`third_party/aloha`) — not used here.
+- the ALOHA simulator submodule (`third_party/aloha`), not used here.
 
 The LIBERO submodule is kept and re-pinned at the top level of this
 repository (`models/pi05/third_party/libero`,

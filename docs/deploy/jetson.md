@@ -12,7 +12,7 @@ test on the board.
 > The per-family scripts (`scripts/smoke_family.sh`, `smoke_serve.sh`,
 > `smoke_eval.sh`, `bench_all.sh`) have been run on a Jetson AGX Orin
 > (JetPack 6.2, CUDA 12.6, TensorRT 10.3, Python 3.10) for GR00T N1.7, N1.6,
-> N1.5 and π₀.₅ — see [Status on Orin](#status-on-orin). No latency or accuracy figure from those runs
+> N1.5 and π₀.₅ (see [Status on Orin](#status-on-orin)). No latency or accuracy figure from those runs
 > is recorded: they check that each path completes, not what it measures.
 
 ## 1. Export, on the workstation
@@ -26,7 +26,7 @@ cd models/groot_n1_7 && source .venv/bin/activate
 CK=<checkpoint directory>      # a local path: a hub id would record its org
 DS=<LeRobot dataset>
 
-# the upstream float graphs — every arm shares them
+# the upstream float graphs: every arm shares them
 python scripts/deployment/build_trt_pipeline.py \
     --model-path "$CK" --dataset-path "$DS" --embodiment-tag <TAG> \
     --output-dir exports/float --steps export
@@ -50,10 +50,10 @@ rsync -avP exports/w8a8/onnx   orin:<repo>/models/groot_n1_7/exports/w8a8/
 ```
 
 Copy whole directories: a large graph keeps its weights in a sibling
-`.onnx.data` file and the `.onnx` alone is useless without it. Budget ~15–20 GB
+`.onnx.data` file and the `.onnx` alone is useless without it. Budget ~15-20 GB
 free for one arm (W8A8 engines are 4.5 GB, their ONNX 2.0 GB).
 
-**The checkpoint and the dataset have to be on the board too** — `serve` builds
+**The checkpoint and the dataset have to be on the board too**: `serve` builds
 the upstream policy around the engines, and step 5 opens the dataset to score
 against it.
 
@@ -74,7 +74,7 @@ comes from PyPI and does not run on the Orin's GPU. The full no-sudo setup is in
 [`jetson_serve.md`](jetson_serve.md), which also covers building everything on
 the board and serving it in one script.
 
-`status` must print an Orin slug — `sm87-aarch64-trt10.3`, or whatever
+`status` must print an Orin slug (`sm87-aarch64-trt10.3`, or whatever
 TensorRT JetPack installed. An x86 slug means you are on the wrong machine.
 Headers are picked from the **installed** TensorRT major
 (`third_party/tensorrt-headers/include-trt10/` for TensorRT 10); compiling
@@ -101,7 +101,7 @@ python -m foldquant_integration.verify \
 
 Not optional on a new board. An engine built against the wrong headers, or from
 a graph whose `.onnx.data` did not transfer, loads without complaint and
-returns wrong actions — there is no error to catch. `verify` scores the engines
+returns wrong actions, with no error to catch. `verify` scores the engines
 against the bf16 policy on the same board, so a bad build shows up as a number
 before any hardware moves.
 
@@ -115,24 +115,24 @@ python -m foldquant_integration.serve \
 ```
 
 Drop `--engine-dir` for the bf16 reference arm. The wire protocol is upstream's
-— a robot client points at the Orin by changing a host and a port; each
+(a robot client points at the Orin by changing a host and a port); each
 family's own repository documents its client.
 
-`FOLDQUANT_TRT_CUDA_GRAPH=1` enables CUDA-graph replay — **but not on this
+`FOLDQUANT_TRT_CUDA_GRAPH=1` enables CUDA-graph replay, **but not on this
 family.** The flag is read by `foldquant.runtime.engine.TensorRTEngine`, and
 GR00T N1.7 is the one integration that does not use it: the release ships its
 own seven-component pipeline swap, so `serve`, `verify` and `benchmark` all go
 through upstream's `trt_model_forward` / `trt_torch.Engine`, which enqueues
-directly. Setting the variable here is inert — no graph is captured and the
+directly. Setting the variable here is inert: no graph is captured and the
 latency is unchanged (measured on a served SO101 W8A8 arm: 43.5 ms median round
 trip either way).
 
 The other three families do route through the runtime, and there the flag pays
-most for engines called many times per chunk — π₀.₅'s expert runs 10×. Launch overhead is relatively larger on an Orin than on x86, so it
+most for engines called many times per chunk (π₀.₅'s expert runs 10×). Launch overhead is relatively larger on an Orin than on x86, so it
 is worth measuring there even where it did not pay on a workstation
 (`results/FLOAT_ARMS.md` has the x86 numbers).
 
-Absolute latency will be higher than a workstation's — the ordering between
+Absolute latency will be higher than a workstation's; the ordering between
 arms should hold, the magnitudes will not. Measure, do not extrapolate.
 
 ## Failure modes

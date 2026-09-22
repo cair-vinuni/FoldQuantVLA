@@ -1,10 +1,10 @@
-# GR00T N1.7 — records
+# GR00T N1.7 records
 
 Four arms (`float`, `w8a8`, `w4a4`, `w4a4_cascade`) under the protocol in
 [`../README.md`](../README.md). Each arm directory holds `verify.json` (drift),
 `benchmark.log` (latency) and, for the quantized arms, `foldquant_export.json`.
 `w4a4/positions.json` additionally records the sixteen worst prefix positions
-per observation — a depth of detail only this family has.
+per observation, a depth of detail only this family has.
 
 ## Drift
 
@@ -22,7 +22,7 @@ is 1.000000, so these deficits are the arm's.
 
 RTX 4070 Ti SUPER, 20 timed chunks after 5 warm-up, e2e median ms. Upstream's
 `benchmark_inference.py` re-times eager and `torch.compile` inside every
-invocation, so each row carries its own baseline — pair an arm with the eager
+invocation, so each row carries its own baseline. Pair an arm with the eager
 on its own row, not across rows.
 
 | arm | eager | `torch.compile` | TensorRT | TRT vs eager |
@@ -40,7 +40,7 @@ carries that split and the reasoning.
 
 The W4A4 arm carries two full gripper flips, samples 18 and 21. The commit
 message of `a73ebea` calls these "the same two observations `positions.json`
-shows taking the worst prefix damage" — **the files do not say that**, and the
+shows taking the worst prefix damage", but **the files do not say that**, and the
 sentence should not be quoted:
 
 | sample | ep/step | worst-position cos | rank of 32 | action cos | worst channel |
@@ -51,7 +51,7 @@ sentence should not be quoted:
 | 21 | 100/107 | 0.7813 | 14 | 0.8714 | **gripper, \|Δ\| 1.000** |
 
 The two most damaged prefixes do not flip; the worst of them decodes one of
-the cleanest chunks in the arm. Pearson over the 32 is +0.30 — the direction
+the cleanest chunks in the arm. Pearson over the 32 is +0.30: the direction
 the claim assumed, far too weak to carry it, and weak in all four families
 (+0.08 to +0.31, see the protocol file). The flips are real and both land on
 channel 6; what does not follow is a per-observation link between the two

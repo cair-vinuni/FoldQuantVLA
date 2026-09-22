@@ -12,11 +12,11 @@ they either drive several families in turn or tune the knobs the per-family
 | `smoke_serve.sh` | as above | starts each family's server on a spare port and checks it binds (a bound port, not a served request) |
 | `smoke_eval.sh` | the LIBERO simulator stack in the family `.venv` | one LIBERO episode per task through `eval_libero`: does the rollout run |
 | `deploy_groot_n17_jetson.sh` | a Jetson AGX Orin, GR00T N1.7 `.venv` | plugins, float pipeline, export, engines, verify and serve in one resumable run; see [`docs/deploy/jetson_serve.md`](../docs/deploy/jetson_serve.md) |
-| `_gpu_busy.sh`, `_family_env.sh` | — | sourced helpers: which processes hold the GPU (Tegra-aware), and the `PYTHONPATH` a family's CLI needs |
+| `_gpu_busy.sh`, `_family_env.sh` | - | sourced helpers: which processes hold the GPU (Tegra-aware), and the `PYTHONPATH` a family's CLI needs |
 | `results_tables.py` | `results/` only | regenerates the tables in `results/README.md` from the records |
 | `sweep_llm_quant_knobs.py` | a GR00T `.venv`, GPU | RTN grid then GPTQ rescoring over the LLM fold's `sq_alpha` × `act_clip_ratio` |
 | `llm_learn_calib.py` | a GR00T `.venv`, GPU | learns per-layer SmoothQuant scales, activation clips and weight clips for the INT4 LLM fold |
-| `_groot_family.py` | — | loader shared by the two tuning scripts (policy, decoder, calibration and held-out samples) |
+| `_groot_family.py` | - | loader shared by the two tuning scripts (policy, decoder, calibration and held-out samples) |
 
 The two tuning scripts are GR00T-only (N1.5 / N1.6 / N1.7). The three
 integrations expose the same `calibration.load_policy` / `load_dataset` /
@@ -24,7 +24,7 @@ integrations expose the same `calibration.load_policy` / `load_dataset` /
 `export_foldquant._module_paths`, which is all `_groot_family.Loaded` uses;
 openpi goes through `calibration.infer(...)` instead and is
 refused with a message rather than half-supported. Run them **from the family
-directory, in its environment** — the loader imports `foldquant_integration`
+directory, in its environment**: the loader imports `foldquant_integration`
 from `models/<family>/`, and the upstream `gr00t` package has to resolve:
 
 ```bash
@@ -40,16 +40,16 @@ The shipped W4A4 defaults (`sq_alpha 0.4`, `act_clip_ratio 1.0`, rotation
 block 64) were chosen on one family. The sweep asks whether another point of
 the same two knobs does better on a given checkpoint, and does so cheaply:
 
-1. **RTN stage** — every `(alpha, clip)` of the grid (default 5 × 4) is scored
+1. **RTN stage**: every `(alpha, clip)` of the grid (default 5 × 4) is scored
    with round-to-nearest weights on `--max-samples` observations (default 16),
    without GPTQ, so the grid costs seconds per cell.
-2. **GPTQ stage** — the top `--top` RTN cells plus the shipped point are
+2. **GPTQ stage**: the top `--top` RTN cells plus the shipped point are
    re-scored with the real GPTQ rounding; the Hessian is what the final export
    uses, so this stage ranks the way the deployed engine will behave.
 
 Two objectives: `seam` (cosine of the decoder's output hidden state against
-BF16 — the LLM's own damage) and `actions` (cosine of the decoded action chunk
-— what the policy does with it). `--per-site` adds a coordinate descent over
+BF16, the LLM's own damage) and `actions` (cosine of the decoded action chunk,
+what the policy does with it). `--per-site` adds a coordinate descent over
 per-site clip ratios after the grid. The result records both stages, the best
 cell, the gain over the shipped point, and a ready-to-paste `llm_params`.
 
@@ -83,16 +83,16 @@ the ones the reported arms were built with.
 
 | arm | family | `--llm-scheme` | `--llm-params` | action scheme | action params | `--cascade` |
 |---|---|---|---|---|---|---|
-| arc | N1.5 | `w4a4_srg` | `{"sq_alpha": 0.5, "act_clip_ratio": 0.85}` | `w4a4_sr` | — | no |
-| arc | N1.6 | `w4a4_srg` | `{"sq_alpha": 0.6, "act_clip_ratio": 0.85}` | `w4a4_sr` | — | no |
-| arc | N1.7 | `w4a4_srg` | `{"sq_alpha": 0.5, "act_clip_ratio": 0.85}` | `w4a4_sr` | — | no |
+| arc | N1.5 | `w4a4_srg` | `{"sq_alpha": 0.5, "act_clip_ratio": 0.85}` | `w4a4_sr` | - | no |
+| arc | N1.6 | `w4a4_srg` | `{"sq_alpha": 0.6, "act_clip_ratio": 0.85}` | `w4a4_sr` | - | no |
+| arc | N1.7 | `w4a4_srg` | `{"sq_alpha": 0.5, "act_clip_ratio": 0.85}` | `w4a4_sr` | - | no |
 | arc + fb | N1.6 | `w4a4_srg` | `{"sq_alpha": 0.6, "act_clip_ratio": 0.85}` | `w4a4_sr` / `w4a4_sh` / `w4a4_shg` | `{"sq_fold_order": "before", "sq_alpha": 0.5}` | no |
 | arc + fb | N1.7 | `w4a4_srg` | `{"sq_alpha": 0.5, "act_clip_ratio": 0.85}` | `w4a4_sr` / `w4a4_sh` / `w4a4_shg` | `{"sq_fold_order": "before", "sq_alpha": 0.5}` | no |
 | arc + fb + res8 | N1.6 | `w4a4_srg` | `{"sq_alpha": 0.6, "act_clip_ratio": 0.85, "site_bits": {"o": 8, "down": 8}}` | `w4a4_sr` | `{"sq_fold_order": "before", "sq_alpha": 0.5}` | no |
 | arc + fb, cascade | N1.6 | `w4a4_srg` | `{"sq_alpha": 0.6, "act_clip_ratio": 0.85}` | `w4a4_sr` | `{"sq_fold_order": "before", "sq_alpha": 0.5}` | yes |
 | W4A8 arc + fb | N1.6 | `w4a8_srg` | `{"sq_alpha": 0.6}` | `w4a4_sr` | `{"sq_fold_order": "before", "sq_alpha": 0.5}` | no / yes |
-| cascade | N1.6, N1.7, pi0.5 | `w4a4_srg` | — | `w4a4_sr` | — | yes |
-| cascade | pi0.5 | `w4a4_srg` | — | `w4a4_sh` | `{"sq_fold_order": "before"}` | yes |
+| cascade | N1.6, N1.7, pi0.5 | `w4a4_srg` | - | `w4a4_sr` | - | yes |
+| cascade | pi0.5 | `w4a4_srg` | - | `w4a4_sh` | `{"sq_fold_order": "before"}` | yes |
 
 Reading notes:
 
@@ -107,7 +107,7 @@ Reading notes:
 - **Private fine-tunes: pass a local path, not the hub id.** Every record
   runs its paths through `foldquant.provenance.public_path`, which strips an
   absolute path to its basename but passes an `org/name` hub id through
-  verbatim — the point, for upstream releases. For a personal or institutional
+  verbatim, which is the point for upstream releases. For a personal or institutional
   fine-tune the org half of that id is an identity, and it would be committed
   with the record.
 - **fb** = fold-before on the action module. Butterfly arms (`sh`, `shg`)
