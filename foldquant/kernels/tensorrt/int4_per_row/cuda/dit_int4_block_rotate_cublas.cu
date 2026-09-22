@@ -3,7 +3,7 @@
 // xr[m, blk*bs + c] = Σ_i xp[m, blk*bs + i] · R[blk, i, c]      (per block blk)
 //
 // This is `nb` batches of (M, bs)·(bs, bs). cuBLAS stages each R block once into
-// shared memory and reuses it across all M rows — replacing the naive per-row
+// shared memory and reuses it across all M rows, replacing the naive per-row
 // global re-read of R (which was 74% of the W4A4 runtime). R is BF16 (nb,bs,bs)
 // row-major; xp/xr are BF16 (M, K) row-major; accumulation is FP32.
 //

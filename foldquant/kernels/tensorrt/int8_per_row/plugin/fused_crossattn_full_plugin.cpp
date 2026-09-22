@@ -1,4 +1,4 @@
-// FusedCrossAttnFull — AdaLN + Q INT8 GEMM + KV INT8 GEMM (from pre-quantized
+// FusedCrossAttnFull: AdaLN + Q INT8 GEMM + KV INT8 GEMM (from pre-quantized
 // encoder) + cuBLAS BF16 SDPA (optionally masked) + INT8 attn_O + bias +
 // residual collapsed into one plugin call.
 
@@ -293,7 +293,7 @@ int32_t FusedCrossAttnFullPlugin::enqueue(PluginTensorDesc const* inputDesc,
         // otherwise use the next workspace slice.
         void*   kv_bf16  = (mEmitKV ? outputs[1]
                                     : static_cast<void*>(static_cast<uint8_t*>(q_bf16) + q_bf16_sz));
-        // The downstream scores/attn buffers still need to come from workspace —
+        // The downstream scores/attn buffers still need to come from workspace;
         // skip the KV slice in workspace if we're emitting to outputs[1] (same size,
         // but cleaner to keep the layout fixed).
         void*   kv_ws_skip = static_cast<void*>(static_cast<uint8_t*>(q_bf16) + q_bf16_sz);
@@ -306,7 +306,7 @@ int32_t FusedCrossAttnFullPlugin::enqueue(PluginTensorDesc const* inputDesc,
         int rc;
         if (mRotBlockSize > 0) {
             // FoldQuant: adaLN, raw-frame divide, butterfly, then the per-row
-            // amax — taken on the rotated row, which is what INT8 stores.
+            // amax, taken on the rotated row, which is what INT8 stores.
             rc = fused_adaln_fwht_quant_bf16_to_int8(
                 inputs[0], inputs[1], inputs[2], mScalePreInDevice,
                 x_i8, x_sc,

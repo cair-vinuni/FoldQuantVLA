@@ -3,7 +3,7 @@
 
 """The fold has one implementation, and every emitter must reach it.
 
-The action-module emitters are deliberately split — by architecture, and for the
+The action-module emitters are deliberately split by architecture, and for the
 DiT also by bit width, because those are different designs
 rather than one design at two widths. Splitting is what let the INT8 halves stop
 folding: each improvement had to be applied twice and the second time was missed,
@@ -43,7 +43,7 @@ _FOLD_PRIMITIVES = {
 
 #: Rotation constructors. Choosing between the butterfly and the learned dense
 #: rotation is a fold decision, so it is made in foldq.site_rotation and nowhere
-#: else — an emitter that calls a constructor directly can only build ONE of the
+#: else. An emitter that calls a constructor directly can only build ONE of the
 #: two, and a capture stuck on the dense rotation measures the scale in a frame
 #: the engine never enters.
 _ROTATION_CONSTRUCTORS = {"build_rotation", "hadamard_blocks"}
@@ -93,7 +93,7 @@ def test_no_emitter_reaches_past_foldq_into_the_fold_primitives(name: str) -> No
     } | {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id in _FOLD_PRIMITIVES}
     assert not used, (
         f"{name} derives the fold itself: {sorted(used)}. Call foldq.fold_site (weights) or "
-        "foldq.fold_rotation (a baked matrix) — which axis the SmoothQuant scale lands on is "
+        "foldq.fold_rotation (a baked matrix); which axis the SmoothQuant scale lands on is "
         "decided in one place, and a second copy is how the INT8 halves stopped folding."
     )
 
@@ -147,7 +147,7 @@ def test_no_dispatch_matches_the_dense_w4a4_key_alone() -> None:
 
     Comparing a module's scheme against the DENSE key alone silently routes the
     butterfly arm to the INT8 emitter while the plugin-library decision has already
-    declared the INT4 library — every node then fails TensorRT import with "Plugin
+    declared the INT4 library, and every node then fails TensorRT import with "Plugin
     not found". This bit an action head after it had already been fixed on the
     DiT and expert branches, which is why it is pinned rather than reviewed.
 
@@ -177,12 +177,12 @@ def test_expert_builder_gets_the_capture_fold_kwargs() -> None:
 
     The capture and the emitter share one dispatch block, so a kwarg dropped on
     one side is invisible: the capture still measures with it while the emitter
-    falls back to its default. An expert lost ``fold_order`` exactly this way —
+    falls back to its default. An expert lost ``fold_order`` exactly this way:
     scales measured in the raw frame, weights folded in the rotated one, expert
     cosine 0.7837.
 
     export.py binds the emitter to ONE local name and makes ONE call with
-    ``**kwargs`` — there is no second call site to drift.
+    ``**kwargs``, so there is no second call site to drift.
     """
     tree = ast.parse(EXPORT.read_text())
     fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "export_expert")
@@ -212,7 +212,7 @@ def test_every_scheme_is_also_routed() -> None:
 
     This is the general shape of the bug family this file guards: a scheme is
     added to the vocabulary and to an emitter branch, the validator learns it,
-    and the dispatch is never updated — so the arm passes every check and then
+    and the dispatch is never updated, so the arm passes every check and then
     fails at export time. ``w8a8_sh`` hid from every family this way.
     """
     import foldquant.schemes as S
@@ -236,8 +236,8 @@ def test_every_foldquant_scheme_name_follows_the_grammar() -> None:
 
     ``_s`` scale, ``_r`` dense rotation, ``_h`` butterfly, ``_g`` GPTQ, in that
     order, with ``_h`` and ``_r`` mutually exclusive. The butterfly arm was
-    originally keyed ``_hr``, which reads as "butterfly AND dense rotation" —
-    impossible — and hid the fact that it applies SmoothQuant too. Same fold,
+    originally keyed ``_hr``, which reads as "butterfly AND dense rotation"
+    (impossible) and hid the fact that it applies SmoothQuant too. Same fold,
     two widths, one name: w4a4_sh and w8a8_sh.
     """
     import re

@@ -1,4 +1,4 @@
-// PerRowInt8LinearResidual — per-row INT8 quant + INT8 Linear (no bias)
+// PerRowInt8LinearResidual: per-row INT8 quant + INT8 Linear (no bias)
 // + residual add, all in one IPluginV3.
 //
 // Generic LLM building block for post-some-op linears with residual:
@@ -14,8 +14,8 @@
 // Plugin name:      "PerRowInt8LinearResidual"
 //
 // Inputs (runtime):
-//   0: x        [B, S, K]  BF16  — pre-linear activation
-//   1: residual [B, S, N]  BF16  — added to GEMM output
+//   0: x        [B, S, K]  BF16  - pre-linear activation
+//   1: residual [B, S, N]  BF16  - added to GEMM output
 //
 // Plugin fields (baked):
 //   "weight_i8"            INT8 (N*K)
@@ -25,7 +25,7 @@
 //   "K"                    INT32 scalar
 //
 // Outputs:
-//   0: y        [B, S, N]  BF16  — INT8 GEMM result + residual
+//   0: y        [B, S, N]  BF16  - INT8 GEMM result + residual
 #pragma once
 
 #include <NvInferRuntime.h>
@@ -108,7 +108,7 @@ private:
     // quantizer. 0/1 = disabled. Must be serialized: configurePlugin does NOT
     // re-run on deserialize and the weights are baked folded with W·Hᵀ, so
     // losing this at deserialize would silently produce garbage.
-    // SmoothQuant vectors for the butterfly path — the fold the scheme's _s
+    // SmoothQuant vectors for the butterfly path: the fold the scheme's _s
     // suffix promises. A fixed rotation cannot absorb them the way a dense
     // matrix does, so they ship beside the weights. At most one is set.
     std::vector<float> mScalePreHost;

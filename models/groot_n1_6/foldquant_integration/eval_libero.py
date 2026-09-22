@@ -10,7 +10,7 @@ has no TensorRT hook in its policy factory, so this tool builds the
 ``Gr00tPolicy`` itself, swaps the FoldQuant engines in through
 :func:`.runtime.install_engines` and wraps it in ``Gr00tSimPolicyWrapper``
 exactly as ``create_gr00t_sim_policy`` would. Around that it adds what a
-paper sweep needs — every task of every requested suite is visited, and one
+paper sweep needs: every task of every requested suite is visited, and one
 ``summary.json`` per output directory records per-task successes so an
 interrupted run resumes where it stopped.
 
@@ -18,7 +18,7 @@ Videos are not recorded (upstream's ``run_gr00t_sim_policy`` writes a video
 of every episode under ``/tmp``; ``run_rollout_gymnasium_policy`` is called
 directly with ``video_dir=None`` instead).
 
-Example — the W4A4 arm on all four suites, 20 episodes per task::
+Example:  the W4A4 arm on all four suites, 20 episodes per task::
 
     MUJOCO_GL=egl python -m foldquant_integration.eval_libero \\
         --model-path checkpoints/GR00T-N1.6-LIBERO \\

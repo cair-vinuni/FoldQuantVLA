@@ -1,4 +1,4 @@
-// FusedCrossAttnFullInt4 — INT4 cross-attn + FoldQuant rotation. Clone of
+// FusedCrossAttnFullInt4: INT4 cross-attn + FoldQuant rotation. Clone of
 // fused_crossattn_full_plugin.cpp. Encoder arrives pre-rotated+int4-quantized
 // (EncoderPreQuantInt4); Q and O prologues rotate in-plugin.
 

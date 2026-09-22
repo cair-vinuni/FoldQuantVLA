@@ -20,7 +20,7 @@ only bakes what it is handed.
 
 Passing ``sq_scales=None`` still builds the uncalibrated **dynamic** variant
 (``w4a4``, activation amax computed per row at runtime). No build path
-does — it measurably loses accuracy (see the kernel notes in ``kernels/tensorrt/int4_per_row``) — and it is kept
+does (it measurably loses accuracy, see the kernel notes in ``kernels/tensorrt/int4_per_row``), and it is kept
 only so the rotation/packing math can be exercised without a calibration set.
 
 AdaLN modulation is INT4 weight-only (``AdaLNModInt4``); with ``adaln_act_bits``
@@ -200,7 +200,7 @@ def _build_w4a4_graph(
     # Shared encoder rotation from the stacked cross-attn KV weights, emitted once.
     # EncoderPreQuantInt4 outputs the INT4-rotated encoder shared by all cross
     # blocks. Under SmoothQuant the shared per-channel encoder scale is folded into
-    # the encoder rotation (rotation_enc is FP32 — the encoder kernel reads FP32).
+    # the encoder rotation (rotation_enc is FP32; the encoder kernel reads FP32).
     kv_stacked = _cross_kv_weights(w)
     assert kv_stacked.shape[1] % block_size == 0, (
         f"kv_dim {kv_stacked.shape[1]} not divisible by block_size {block_size}"
@@ -208,7 +208,7 @@ def _build_w4a4_graph(
     enc_perm, enc_R = foldq.site_rotation(kv_stacked, block_size, fwht)
     # The encoder rotation is the one bake site NOT produced by fold_macro_site
     # (EncoderPreQuantInt4 shares it across all cross blocks), so it must fold
-    # by the SAME order the KV weights pack with — a mismatch here breaks every
+    # by the SAME order the KV weights pack with. A mismatch here breaks every
     # cross-attention KV product (measured: dit cosine 0.9996 -> 0.9923).
     enc_R_use = foldq.fold_rotation(
         enc_R, enc_perm, sq_scales["encoder"] if sq_scales is not None else None, sq_fold_order
@@ -487,7 +487,7 @@ def compute_dit_sq_scales(
     # A plain DiT's forward may declare no mask parameters at all (N1.5).
     pass_masks = dit_accepts_masks(dit)
 
-    # Rotations identical to the builder's — same constructor, same fwht flag. A
+    # Rotations identical to the builder's: same constructor, same fwht flag. A
     # capture that builds a dense rotation while the builder bakes a butterfly
     # measures the scale in a frame the engine never enters.
     # The shared encoder site goes through the same accumulator as every block
@@ -617,7 +617,7 @@ def build_dit_plugin_onnx_int4(
     if sq_fold_order not in ("after", "before"):
         raise ValueError(f"sq_fold_order must be 'before' or 'after', got {sq_fold_order!r}")
     if sq_fold_order == "before" and sq_scales is None:
-        # The uncalibrated dynamic graph has no scale to fold — silently
+        # The uncalibrated dynamic graph has no scale to fold; silently
         # accepting the knob would build an arm that ignores it.
         raise ValueError("sq_fold_order='before' requires sq_scales (the raw-frame SmoothRot scales)")
     attend_n = resolve_attend_n(dit_module)

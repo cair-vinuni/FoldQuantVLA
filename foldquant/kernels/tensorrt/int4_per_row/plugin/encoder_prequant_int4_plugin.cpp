@@ -1,4 +1,4 @@
-// EncoderPreQuantInt4 — shared-rotation + per-row INT4 quant of the encoder, once.
+// EncoderPreQuantInt4: shared-rotation + per-row INT4 quant of the encoder, once.
 // Clone of encoder_prequant_plugin.cpp.
 
 #include "plugin_field_util.h"
@@ -110,7 +110,7 @@ int32_t EncoderPreQuantInt4Plugin::getOutputDataTypes(DataType* outputTypes, int
 int32_t EncoderPreQuantInt4Plugin::getOutputShapes(DimsExprs const* inputs, int32_t /*nbInputs*/,
     DimsExprs const* /*shapeInputs*/, int32_t /*nbShapeInputs*/,
     DimsExprs* outputs, int32_t /*nbOutputs*/, IExprBuilder& exprBuilder) noexcept {
-    // output 0: int4-packed (B, S_enc, K_enc/8 int32) — K_enc/2 bytes per row.
+    // output 0: int4-packed (B, S_enc, K_enc/8 int32), K_enc/2 bytes per row.
     outputs[0].nbDims = inputs[0].nbDims;
     for (int32_t i = 0; i < inputs[0].nbDims - 1; ++i) outputs[0].d[i] = inputs[0].d[i];
     outputs[0].d[inputs[0].nbDims - 1] = exprBuilder.constant(mKEnc / 8);
@@ -154,7 +154,7 @@ int32_t EncoderPreQuantInt4Plugin::enqueue(PluginTensorDesc const* inputDesc,
         if (mRotBlockSize > 0) {
             // Butterfly: one kernel, no matrix read. The dense kernel this
             // replaces launches grid(MEnc) blocks and walks the rotation out of
-            // global memory twice per row — it is the single most expensive node
+            // global memory twice per row; it is the single most expensive node
             // in the DiT profile.
             return dit_int4_per_row_quant_fwht_bf16(
                 inputs[0], mScalePreEncDevice, /*act_scale_ch=*/nullptr,

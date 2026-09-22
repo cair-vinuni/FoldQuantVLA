@@ -1,5 +1,5 @@
 // IPluginV3 wrapper: RMSNorm + FWHT + per-row INT4 quant + INT4 Linear (no bias).
-// LLM W4A4 merged-GEMM block — used for Q+K+V and gate+up.
+// LLM W4A4 merged-GEMM block: used for Q+K+V and gate+up.
 
 #include "plugin_field_util.h"
 #include "fused_rmsnorm_linear_int4_plugin.h"
@@ -23,7 +23,7 @@ constexpr char const* kPLUGIN_NAMESPACE{"gr00t::v1"};
 
 // Workspace: [packed INT4 act (M*K/2 bytes)] + [per-row scale (M*4 bytes)].
 // enqueue() slices the same buffer, so both must agree on where the scale
-// starts — hence one definition of the offset rather than two.
+// starts, hence one definition of the offset rather than two.
 inline size_t actBytes(int32_t M, int32_t K) {
     return (static_cast<size_t>(M) * (K / 2) + 127) & ~static_cast<size_t>(127);
 }
@@ -202,14 +202,14 @@ int32_t FusedRmsNormLinearInt4Plugin::enqueue(PluginTensorDesc const* inputDesc,
         float*  actScale = reinterpret_cast<float*>(ws + aBytes);
 
         // Step 1: RMSNorm + optional block-Hadamard + per-row INT4 quant.
-        // Dynamic only — see the header for why static scales are absent here.
+        // Dynamic only; see the header for why static scales are absent here.
         int rc = rmsnorm_fwht_per_row_quant_bf16_to_int4(
             inputs[0], mGammaDevice,
             actI4, actScale,
             B, S, K, mEps, mRotBlockSize, mActClipRatio, stream);
         if (rc != 0) return rc;
 
-        // Step 2: INT4 GEMM — native s4 tensor-core path
+        // Step 2: INT4 GEMM, native s4 tensor-core path
         // (mma.sync.m16n8k64.s4.s4.s32), per-row act scale x per-col weight
         // scale. The bias operand is a zero vector: Qwen3 has no bias here and
         // the no-bias entry point in dit_int4_rowwise.h has no implementation
@@ -245,12 +245,12 @@ PluginFieldCollection const* FusedRmsNormLinearInt4Plugin::getFieldsToSerialize(
     mDataToSerialize.emplace_back(PluginField("N", &mN, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("K", &mK, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("eps", &mEps, PluginFieldType::kFLOAT32, 1));
-    // MUST be serialized — configurePlugin does not re-run on deserialize, and
+    // MUST be serialized: configurePlugin does not re-run on deserialize, and
     // the baked weights are already folded with W·Hᵀ.
     mDataToSerialize.emplace_back(
         PluginField("rot_block_size", &mRotBlockSize, PluginFieldType::kINT32, 1));
     // A lost clip ratio silently changes the activation grid the GPTQ weights
-    // were rounded against — serialize it like rot_block_size.
+    // were rounded against, so serialize it like rot_block_size.
     mDataToSerialize.emplace_back(
         PluginField("act_clip_ratio", &mActClipRatio, PluginFieldType::kFLOAT32, 1));
     mFCToSerialize.nbFields = static_cast<int32_t>(mDataToSerialize.size());

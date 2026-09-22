@@ -4,7 +4,7 @@
 """Compile an N1.5 engine directory from FoldQuant graphs.
 
 The graphs are compiled with :func:`foldquant.runtime.builder.build_engine`
-(STRONGLY_TYPED — the plugin nodes declare their own dtypes), after the plugin
+(STRONGLY_TYPED; the plugin nodes declare their own dtypes), after the plugin
 libraries the export manifest names are loaded (built for this device when no
 cached binary matches). Shape profiles come from the ONNX value infos plus the
 captured shapes the export recorded in ``export_metadata.json``: the state +
@@ -132,7 +132,7 @@ def build(args: BuildConfig) -> Path:
         # weakly typed with no plugins, like upstream's float DiT, and let TensorRT insert casts.
         # A traced float graph carries no plugin nodes, but it is still built STRONGLY_TYPED:
         # a weakly-typed network picks a precision per layer, and the layers TensorRT then
-        # runs in fp32 are *more* exact than the bf16 reference the arm is scored against —
+        # runs in fp32 are *more* exact than the bf16 reference the arm is scored against,
         # which showed up as the float engine drifting further from PyTorch than the INT8 one.
         # Strongly typed honours the ONNX's own bf16 dtypes, so this arm differs from the
         # quantized arms in the precision of the projections and in nothing else.

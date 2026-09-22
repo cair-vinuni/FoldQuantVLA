@@ -1,4 +1,4 @@
-# foldquant_int8_per_row — INT8 dynamic per-row DiT/LLM macro plugins.
+# foldquant_int8_per_row: INT8 dynamic per-row DiT/LLM macro plugins.
 #
 # Weights INT8 with a per-row scale; activation amax is computed at runtime
 # inside each plugin, so this scheme needs no calibration.

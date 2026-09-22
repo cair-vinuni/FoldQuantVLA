@@ -1,4 +1,4 @@
-// Phase 3 — Fused LayerNorm + AdaLN modulation + per-row INT8 quantization.
+// Phase 3: Fused LayerNorm + AdaLN modulation + per-row INT8 quantization.
 //
 // Replaces the Phase B prologue sequence (LayerNorm → mul(1+scale) → add(shift)
 // → per_row_quant) with a single CUDA kernel. Each block handles one [b, s]
@@ -26,14 +26,14 @@ extern "C" {
 
 // Inputs:
 //   x_bf16:    (B, S, K) BF16 row-major (i.e. flattened (B*S, K))
-//   scale_bf16:(B, K)    BF16 — per-batch broadcast across S
-//   shift_bf16:(B, K)    BF16 — per-batch broadcast across S
+//   scale_bf16:(B, K)    BF16 - per-batch broadcast across S
+//   shift_bf16:(B, K)    BF16 - per-batch broadcast across S
 //   B, S, K:   shape dimensions (M := B*S)
 //   eps:       LayerNorm epsilon
 //   stream:    CUDA stream
 // Outputs:
 //   out_i8:    (B, S, K) INT8 row-major
-//   out_scale: (B*S,)    FP32 — per-row quantization scale
+//   out_scale: (B*S,)    FP32 - per-row quantization scale
 //
 // Returns 0 on success, CUDA error code otherwise.
 int fused_adaln_quant_bf16_to_int8(
@@ -50,7 +50,7 @@ int fused_adaln_quant_bf16_to_int8(
 
 // FoldQuant variant: adaLN modulation, then the RAW-frame SmoothQuant divide
 // (act_scale_pre, NULL for the unfolded arm) and a block-diagonal Sylvester
-// butterfly of width rot_bs, and only then the per-row amax — the quantizer must
+// butterfly of width rot_bs, and only then the per-row amax; the quantizer must
 // see the rotated row. Returns cudaErrorInvalidValue if rot_bs cannot tile K.
 int fused_adaln_fwht_quant_bf16_to_int8(
     void const* x_bf16,
@@ -78,9 +78,9 @@ int fused_adaln_static_quant_bf16_to_int8(
     void const* x_bf16,
     void const* scale_bf16,
     void const* shift_bf16,
-    void const* static_scale,  // (B*S,) FP32 — pre-computed per-row scale
+    void const* static_scale,  // (B*S,) FP32 - pre-computed per-row scale
     void* out_i8,
-    void* out_scale_copy,      // (B*S,) FP32 — optional; writes static_scale through
+    void* out_scale_copy,      // (B*S,) FP32 - optional; writes static_scale through
     int B,
     int S,
     int K,

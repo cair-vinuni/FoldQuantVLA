@@ -6,12 +6,12 @@
 // it for free (pure offline weight prep), but the residual channel spread needs
 // an actual rotation, and a rotation cannot be folded anywhere: it mixes
 // channels, so it survives neither RMSNorm's elementwise gamma nor SiLU. It has
-// to run between the norm/SiLU and the quantizer — hence this kernel.
+// to run between the norm/SiLU and the quantizer, hence this kernel.
 // Simulated payoff (validated against measured engines to within 2%):
 //   per-row 0.1446 → +SQ 0.0999 → +SQ+rot(bs=64) 0.0451.
 //
 // Why Hadamard and not the DiT's SVD·Hadamard: the Sylvester Hadamard is a FIXED
-// matrix, so the kernel needs only an integer block size — no R tensor to bake,
+// matrix, so the kernel needs only an integer block size: no R tensor to bake,
 // upload, or serialize (the DiT's rotation field cost 252 MB of engine until it
 // was folded to BF16). And it is O(bs log bs) in-register butterflies instead of
 // a cuBLAS batched GEMM.
@@ -41,7 +41,7 @@ __device__ __forceinline__ void block_fwht_smem(float* y, int K, int bs) {
     const int half = bs >> 1;
     const int npairs = K >> 1;   // every stage touches K/2 disjoint pairs
     // bs, half, and each stage width h are powers of two, so every div/mod in
-    // the index math is a shift/mask — do it explicitly (runtime operands defeat
+    // the index math is a shift/mask; do it explicitly (runtime operands defeat
     // the compiler's strength reduction, leaving true IDIVs on the hot path).
     const int log_bs = __ffs(bs) - 1;
     const int log_half = __ffs(half) - 1;   // half >= 1 (bs >= 2)

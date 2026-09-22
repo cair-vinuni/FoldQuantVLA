@@ -41,20 +41,20 @@ int dit_int4_per_row_quant_bf16(
 // SVD·Hadamard variant below instead.
 //
 // The caller MUST have folded the weight side offline (W' = W·Hᵀ, same
-// orthonormal Sylvester Hadamard — see int8_per_row/fwht.cuh) or the result is
+// orthonormal Sylvester Hadamard; see int8_per_row/fwht.cuh) or the result is
 // wrong with no visible symptom.
 //
 //   rot_bs <= 1        → delegates to dit_int4_per_row_quant_bf16 (no shared mem,
 //                        previous behaviour bit-for-bit)
 //   rot_bs power of 2, K % rot_bs == 0 → rotation applied (costs K floats shared)
 //   anything else      → cudaErrorInvalidValue (never a silent skip)
-//   act_scale_pre: (K,) FP32 pre-rotation SmoothQuant scale, or nullptr — the
+//   act_scale_pre: (K,) FP32 pre-rotation SmoothQuant scale, or nullptr. The
 //                 SmoothRot / fold-before order, matching fold_rotation_sq_before.
 //                 Note this order has no BF16 hazard here: the dense path bakes
 //                 R/s as BF16 and loses mantissa past alpha 0.6, while a
 //                 butterfly bakes no matrix at all.
 //   act_scale_ch: (K,) FP32 post-rotation SmoothQuant scale, or nullptr. The
-//                 rotated value is divided by it before amax/quant — the same
+//                 rotated value is divided by it before amax/quant, the same
 //                 effect the dense Ω path gets from folding s_ch into its baked
 //                 matrix (fold_rotation_sq). Requires rot_bs > 1.
 int dit_int4_per_row_quant_fwht_bf16(

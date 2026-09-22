@@ -13,7 +13,7 @@ Writes, under ``--output-dir``::
 The DiT graph keeps the I/O contract of the ``dit_model.onnx`` upstream's
 ``export_onnx_n1d6.py`` writes (same input / output names and dtypes, batch
 pinned to 1). The LLM graph is FoldQuant's: ``inputs_embeds`` and
-``attention_mask`` in, the decoder's ``hidden_states`` out — what the Eagle
+``attention_mask`` in, the decoder's ``hidden_states`` out, i.e. what the Eagle
 wrapper hands the Qwen3 tower and what the backbone reads back as
 ``hidden_states[-1]``. Whether that last entry is the post-norm stream is
 decided by the transformers release upstream pins, not by this code: the
@@ -109,8 +109,8 @@ def _module_paths(policy) -> Dict[str, torch.nn.Module]:
 def capture_shape_metadata(policy, observation: Dict[str, Any]) -> Dict[str, Any]:
     """One forward with hooks: the tensor shapes the engine builder profiles, and where the backbone reads.
 
-    ``final_norm`` records whether ``hidden_states[-1]`` of the Qwen3 decoder —
-    the entry the Eagle backbone consumes — is the post-final-norm stream
+    ``final_norm`` records whether ``hidden_states[-1]`` of the Qwen3 decoder
+    (the entry the Eagle backbone consumes) is the post-final-norm stream
     (``last_hidden_state``) under the installed transformers, so the emitted
     graph ends where the PyTorch tower's output does.
     """

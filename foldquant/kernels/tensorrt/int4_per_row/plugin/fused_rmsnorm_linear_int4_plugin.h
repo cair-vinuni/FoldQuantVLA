@@ -1,4 +1,4 @@
-// FusedRmsNormLinearInt4 — RMSNorm + FWHT + per-row INT4 quant + INT4 Linear.
+// FusedRmsNormLinearInt4: RMSNorm + FWHT + per-row INT4 quant + INT4 Linear.
 //
 // INT4 sibling of FusedRmsNormLinearInt8, for the LLM W4A4 path
 // (`w4a4_srg`). Replaces:
@@ -21,24 +21,24 @@
 // Plugin name:      "FusedRmsNormLinearInt4"
 //
 // Inputs (runtime):
-//   0: x      [B, S, K]  BF16  — hidden_states
+//   0: x      [B, S, K]  BF16  - hidden_states
 //
 // Plugin fields (baked at engine build):
-//   "weight_i4"        INT8 (N*K/2)   — packed INT4, row-major (N, K),
+//   "weight_i4"        INT8 (N*K/2)   - packed INT4, row-major (N, K),
 //                                       element i -> byte i/2, even i = low nibble
-//   "weight_scale"     FP32 (N,)      — per-output-channel scale
-//   "gamma"            BF16 (K,)      — RMSNorm.weight (per-channel)
-//   "N"                INT32 scalar   — output dim
-//   "K"                INT32 scalar   — input  dim (= hidden_size)
-//   "eps"              FP32 scalar    — RMSNorm epsilon (Qwen3: 1e-6)
-//   "rot_block_size"   INT32 scalar   — block-Hadamard size (0/1 = disabled)
+//   "weight_scale"     FP32 (N,)      - per-output-channel scale
+//   "gamma"            BF16 (K,)      - RMSNorm.weight (per-channel)
+//   "N"                INT32 scalar   - output dim
+//   "K"                INT32 scalar   - input  dim (= hidden_size)
+//   "eps"              FP32 scalar    - RMSNorm epsilon (Qwen3: 1e-6)
+//   "rot_block_size"   INT32 scalar   - block-Hadamard size (0/1 = disabled)
 //
 // Outputs:
 //   0: y      [B, S, N]  BF16
 //
 // Underlying kernels (both in dit_int4_rowwise.h):
 //   - rmsnorm_fwht_per_row_quant_bf16_to_int4
-//   - dit_int4_rowwise_gemm_bias_bf16out, fed a zero bias — the no-bias entry
+//   - dit_int4_rowwise_gemm_bias_bf16out, fed a zero bias; the no-bias entry
 //     point is declared in that header but has no implementation. See
 //     mZeroBiasDevice below.
 #pragma once
@@ -120,7 +120,7 @@ private:
     void* mWeightScaleDevice{nullptr};
     void* mGammaDevice{nullptr};
     // Qwen3 q/k/v/gate/up have no bias, but the int4 GEMM family only ships the
-    // bias and bias+residual EVT epilogues — `dit_int4_rowwise_gemm_bf16out` is
+    // bias and bias+residual EVT epilogues; `dit_int4_rowwise_gemm_bf16out` is
     // declared in dit_int4_rowwise.h and never defined. Rather than compile a
     // third CUTLASS instantiation for a case that is one fp32 add of zero, this
     // holds an N-vector of zeros. Exact, and N floats is at most 48 KB.

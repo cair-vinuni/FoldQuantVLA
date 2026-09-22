@@ -11,13 +11,13 @@ does the same for the two modules FoldQuant quantizes:
   ``backbone.eagle_model.language_model.forward`` (``inputs_embeds`` in,
   ``hidden_states`` out). The Eagle2.5 wrapper around it keeps splicing the
   vision features into the embeddings in PyTorch and the backbone keeps
-  reading ``hidden_states[select_layer]`` — the entry the engine's output is
+  reading ``hidden_states[select_layer]``, the entry the engine's output is
   placed at;
 * the DiT engine takes the place of ``action_head.model.forward``; the flow-
   matching loop, the state / action encoders, the future-token bank and the
   action decoder stay in PyTorch.
 
-Everything else — processor, ViT, collation, action decoding — is untouched,
+Everything else (processor, ViT, collation, action decoding) is untouched,
 so the policy's public behaviour is exactly upstream's with two modules
 swapped underneath.
 """

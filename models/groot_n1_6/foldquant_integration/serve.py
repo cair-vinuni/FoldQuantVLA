@@ -10,11 +10,11 @@ engines in. The wire protocol, endpoints and observation / action dictionaries
 are upstream's ``PolicyServer``, so an unmodified client talks to a FoldQuant
 arm exactly as it talks to the bf16 policy::
 
-    # terminal 1 — the arm under test
+    # terminal 1:  the arm under test
     python -m foldquant_integration.serve --model-path <ckpt> \\
         --embodiment-tag libero_panda --engine-dir exports/w4a4/engines
 
-    # terminal 2 — upstream's own client, unchanged
+    # terminal 2:  upstream's own client, unchanged
     from gr00t.policy.server_client import PolicyClient
     client = PolicyClient(host="127.0.0.1", port=5555)
     action = client.get_action(observation)
@@ -32,7 +32,7 @@ flat ``video.*`` / ``state.*`` observations.
 The N1.5 release exposes this as ``scripts/inference_service.py`` around a
 ``RobotInferenceServer``; this release renamed both, so the entry point here is
 ``PolicyServer`` and the few lines around it are reproduced rather than
-imported — upstream's ``main`` builds the policy and starts the server in one
+imported: upstream's ``main`` builds the policy and starts the server in one
 call, with nowhere to install engines in between.
 """
 

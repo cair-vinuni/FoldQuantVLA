@@ -7,13 +7,13 @@
 Per decoder layer, three fold-compatible parameter sets are learned by block-wise
 reconstruction against the float layer under the deployed W4A4 numerics (STE):
 
-* ``s``    — the SmoothQuant per-channel scales of the qkv / gateup / down sites
+* ``s``:     the SmoothQuant per-channel scales of the qkv / gateup / down sites
              (learnable equivalent transform; folded into gamma / up rows exactly
              as ``apply_sq_fold`` does), initialised from the ARC ``sq_alpha``.
-* ``clip`` — the per-(layer, site) activation clip ratio (the plugin's
+* ``clip``:  the per-(layer, site) activation clip ratio (the plugin's
              ``act_clip_ratio`` attribute, one value per node), initialised from
              the ARC global value.
-* ``gamma``— a per-output-row weight clipping (LWC) of the INT4 weight scale —
+* ``gamma``: a per-output-row weight clipping (LWC) of the INT4 weight scale;
              any per-row scale is what the plugin's ``weight_scale`` epilogue
              consumes, so it deploys unchanged.
 
@@ -255,7 +255,7 @@ def main() -> None:
 
             return hook
 
-        # teacher outputs (float layer, float inputs) — BEFORE the quantization hooks go on
+        # teacher outputs (float layer, float inputs), BEFORE the quantization hooks go on
         with torch.no_grad():
             teach = []
             for j in range(n_cal):

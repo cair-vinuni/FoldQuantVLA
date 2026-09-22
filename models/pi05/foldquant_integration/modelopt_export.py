@@ -18,7 +18,7 @@ export plan, in which the capture seam differs from the quantized module:
 * ``llm``: quantizers in ``paligemma.language_model`` (the framework
   ``backbone.model.model.language_model``, the same HF ``GemmaModel``), calibrated
   by replaying every captured prefix pass (``prefix_embs``, the 4-D additive
-  mask, ``position_ids``) through ``paligemma_with_expert.forward`` — the framework
+  mask, ``position_ids``) through ``paligemma_with_expert.forward``, as the framework
   replays its ``prefix_core`` captures through its prefix wrapper.
 * ``expert``: quantizers in :class:`.runtime.Pi05ExpertView`, which exposes the
   live expert under the framework's ``action_expert`` names (``expert_model.model.layers.*``,

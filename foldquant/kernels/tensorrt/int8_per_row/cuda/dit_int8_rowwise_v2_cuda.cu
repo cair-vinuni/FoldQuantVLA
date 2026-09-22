@@ -1,4 +1,4 @@
-// Step B.1 — DiT INT8 rowwise GEMM v2 (CUTLASS-wrapped, port of FlashRT-orin
+// Step B.1: DiT INT8 rowwise GEMM v2 (CUTLASS-wrapped, port of FlashRT-orin
 // csrc/gemm/cutlass_sm80_int8_rowwise.cu).
 //
 // SM80/87 INT8 IMMA m16n8k32 via CUTLASS OpClassTensorOp.

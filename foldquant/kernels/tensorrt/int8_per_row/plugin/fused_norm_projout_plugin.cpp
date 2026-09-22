@@ -1,8 +1,8 @@
-// FusedNormProjOut — norm_out + AdaLN + per-row INT8 quant + INT8 proj_out_2 GEMM + bias.
+// FusedNormProjOut: norm_out + AdaLN + per-row INT8 quant + INT8 proj_out_2 GEMM + bias.
 //
 // Reuses existing kernels:
-//   fused_adaln_static_quant_bf16_to_int8 / fused_adaln_quant_bf16_to_int8 — for LN+AdaLN+quant
-//   dit_int8_rowwise_gemm_bias_bf16out — for the proj_out_2 INT8 GEMM with bias
+//   fused_adaln_static_quant_bf16_to_int8 / fused_adaln_quant_bf16_to_int8, for LN+AdaLN+quant
+//   dit_int8_rowwise_gemm_bias_bf16out, for the proj_out_2 INT8 GEMM with bias
 
 #include "plugin_field_util.h"
 #include "fused_norm_projout_plugin.h"
@@ -124,7 +124,7 @@ int32_t FusedNormProjOutPlugin::getOutputShapes(DimsExprs const* inputs, int32_t
     DimsExprs* outputs, int32_t nbOutputs,
     IExprBuilder& exprBuilder) noexcept {
     assert(nbInputs == 3 && nbOutputs == 1);
-    // out: [B, S, output_dim] — preserve leading dims, replace last with output_dim.
+    // out: [B, S, output_dim]; preserve leading dims, replace last with output_dim.
     outputs[0].nbDims = inputs[0].nbDims;
     for (int32_t i = 0; i < inputs[0].nbDims - 1; ++i) outputs[0].d[i] = inputs[0].d[i];
     outputs[0].d[inputs[0].nbDims - 1] = exprBuilder.constant(mOutputDim);

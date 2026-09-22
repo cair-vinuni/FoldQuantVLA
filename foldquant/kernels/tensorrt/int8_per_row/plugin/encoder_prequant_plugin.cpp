@@ -1,4 +1,4 @@
-// EncoderPreQuant — runs the per-row INT8 quant of the cross-attn encoder
+// EncoderPreQuant: runs the per-row INT8 quant of the cross-attn encoder
 // once per forward; emits (int8_enc, scale_enc) shared by all 16 downstream
 // FusedAdaLnQuantCrossAttnPrequantized / FusedCrossAttnFull blocks.
 
@@ -85,7 +85,7 @@ IPluginV3* EncoderPreQuantPlugin::clone() noexcept {
         auto* p = new EncoderPreQuantPlugin(mLayerName, mKEnc);
         p->mStaticActScaleEncHost = mStaticActScaleEncHost;
         // The clone is the object TensorRT actually runs. A member left behind
-        // here is not a crash — it is a plugin that quietly stops rotating.
+        // here is not a crash; it is a plugin that quietly stops rotating.
         p->mRotBlockSize = mRotBlockSize;
         p->mScalePreEncHost = mScalePreEncHost;
         p->setPluginNamespace(mNamespace.c_str());
@@ -104,7 +104,7 @@ int32_t EncoderPreQuantPlugin::getOutputDataTypes(DataType* outputTypes, int32_t
     DataType const* /*inputTypes*/, int32_t /*nbInputs*/) const noexcept {
     assert(nbOutputs == 2);
     // INT8 payload is declared as INT32 packed (4 INT8 bytes per INT32 element)
-    // to bypass TRT 10.3's INT8 BuilderFlag requirement — without this the
+    // to bypass TRT 10.3's INT8 BuilderFlag requirement; without this the
     // builder cascades dynamic-range requirements onto every BF16 tensor in
     // the graph (~1.5× E2E slowdown).
     outputTypes[0] = DataType::kINT32;   // encoder_i8 packed (B, S_enc, K_enc/4)
@@ -117,11 +117,11 @@ int32_t EncoderPreQuantPlugin::getOutputShapes(DimsExprs const* inputs, int32_t 
     DimsExprs* outputs, int32_t nbOutputs,
     IExprBuilder& exprBuilder) noexcept {
     assert(nbInputs == 1 && nbOutputs == 2);
-    // output 0: encoder packed (B, S_enc, K_enc / 4) — K_enc is static (=mKEnc).
+    // output 0: encoder packed (B, S_enc, K_enc / 4); K_enc is static (=mKEnc).
     outputs[0].nbDims = inputs[0].nbDims;
     for (int32_t i = 0; i < inputs[0].nbDims - 1; ++i) outputs[0].d[i] = inputs[0].d[i];
     outputs[0].d[inputs[0].nbDims - 1] = exprBuilder.constant(mKEnc / 4);
-    // output 1: (B, S_enc) per-row scale — drop last dim
+    // output 1: (B, S_enc) per-row scale, drop last dim
     outputs[1].nbDims = inputs[0].nbDims - 1;
     for (int32_t i = 0; i < inputs[0].nbDims - 1; ++i) outputs[1].d[i] = inputs[0].d[i];
     return 0;
@@ -165,7 +165,7 @@ int32_t EncoderPreQuantPlugin::enqueue(PluginTensorDesc const* inputDesc,
         int rc;
         if (mRotBlockSize > 0) {
             // FoldQuant: rotate then quantize, in one launch. The amax is taken on
-            // the rotated row inside the kernel — measuring it before the
+            // the rotated row inside the kernel; measuring it before the
             // rotation would scale every channel from the wrong basis.
             rc = dit_int8_per_row_quant_fwht_bf16(
                 inputs[0], mScalePreEncDevice, /*act_scale_ch=*/nullptr,

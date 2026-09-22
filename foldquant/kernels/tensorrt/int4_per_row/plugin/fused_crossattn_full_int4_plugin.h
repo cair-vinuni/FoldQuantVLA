@@ -1,4 +1,4 @@
-// FusedCrossAttnFullInt4 — INT4 cross-attention block + FoldQuant rotation.
+// FusedCrossAttnFullInt4: INT4 cross-attention block + FoldQuant rotation.
 // Clone of FusedCrossAttnFull (INT8). The Q and attn_O prologues fold their
 // rotation in-plugin; the KV path consumes the encoder that EncoderPreQuantInt4
 // already permuted+block-rotated+int4-quantized once (shared encoder rotation),

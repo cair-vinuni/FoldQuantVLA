@@ -88,7 +88,7 @@ def _reshape_target_nk(chain: list) -> Tuple[int, int] | None:
 def _materialize_dq_constant_inputs(graph: Any, gs: Any) -> int:
     """Turn ``trt::DequantizeLinear`` inputs produced by ``Constant`` nodes into ``gs.Constant``.
 
-    Walks through ``Identity`` chains. Touches nothing else — in particular it
+    Walks through ``Identity`` chains. Touches nothing else; in particular it
     never evaluates or re-serializes unrelated (e.g. bf16) constants the way a
     whole-graph ``fold_constants()`` would.
 
@@ -136,12 +136,12 @@ def rewrite_int4_modelopt_dq(graph: Any, *, plugin_namespace: str = "") -> Tuple
     # fold_constants is LOAD-BEARING for the pattern matcher: the DQ inputs and
     # the Reshape target shapes arrive as Constant-NODE outputs, and
     # _reshape_target_nk/_walk_dq_to_matmul only see them once folded to
-    # gs.Constant (removing the fold sent EVERY DQ — GR00T's 196 included — to
+    # gs.Constant (removing the fold sent EVERY DQ, GR00T's 196 included, to
     # the no_reshape_target bypass). But an *unrestricted* fold corrupts bf16
     # constants: numpy has no bf16, so graphsurgeon's forced value access
     # re-wrote Pi0.5's bf16 [1, 512] time-embedding table into an initializer
     # the TensorRT parser rejects ("Failed to import initializer"). Exclude
-    # bf16 Constant nodes from folding — they pass through verbatim (TensorRT
+    # bf16 Constant nodes from folding; they pass through verbatim (TensorRT
     # parses bf16 Constant nodes fine; the float pi05_flex graph is full of
     # them) while the int64 shape chains and fp16/fp32 scales still fold.
     _materialize_dq_constant_inputs(graph, gs)
@@ -153,7 +153,7 @@ def rewrite_int4_modelopt_dq(graph: Any, *, plugin_namespace: str = "") -> Tuple
           re-serializes it corrupted.
         - f64 (DOUBLE): the TensorRT parser imports a DOUBLE Constant NODE
           (demoting to f32 with a warning) but its weights importer REFUSES a
-          DOUBLE initializer ("Failed to import initializer" — measured on
+          DOUBLE initializer ("Failed to import initializer", measured on
           Pi0.5's f64 [1, 512] time-embedding table; the un-surgered flex
           graph, where the table stays a node, parses fine).
 
@@ -225,18 +225,18 @@ def rewrite_int4_modelopt_dq(graph: Any, *, plugin_namespace: str = "") -> Tuple
         if not np.all(np.isfinite(sb)) or np.any(sb == 0):
             raise RuntimeError(
                 f"int4_groupwise surgery: weight {dq.name!r} carries {int(np.sum(sb == 0))} zero and "
-                f"{int(np.sum(~np.isfinite(sb)))} non-finite block scale(s) — the quantization search "
+                f"{int(np.sum(~np.isfinite(sb)))} non-finite block scale(s); the quantization search "
                 "produced a degenerate block (awq_clip's zero-initialised best_clip_val is the known "
                 "producer). Refusing to pack garbage nibbles."
             )
         q = np.rint(wb / sb).astype(np.int32)
-        # Clamp to the int4 range — this is PART of the quantization being
+        # Clamp to the int4 range. This is PART of the quantization being
         # exported, not a repair: ModelOpt's fake-quant computes
         # clamp(round(w/s), -8, 7), and awq_clip *deliberately* chooses scales
         # below the raw weight amax (best_clip_val in [0.5, 1.0]*amax), so the
         # clipped-away outliers land outside [-8, 7] here by design. Packing
         # them un-clamped wrapped the nibble encoding (q+8 went negative) and
-        # produced garbage weights — measured as the 0.68-0.78 cosine of every
+        # produced garbage weights, measured as the 0.68-0.78 cosine of every
         # awq_full arm before this fix.
         n_clamped = int(np.sum((q < -8) | (q > 7)))
         if n_clamped:
@@ -433,7 +433,7 @@ def _fix_strongly_typed_mismatches(model: Any) -> int:
             continue
         target: Any
         if _on_softmax_path(node):
-            target = fp32  # mask add / Softmax / probs-V stay FP32 — see docstring
+            target = fp32  # mask add / Softmax / probs-V stay FP32, see docstring
         else:
             target = Counter(dt for _, _, dt in float_inputs).most_common(1)[0][0]
         assert target is not None  # float_inputs filtered to known float dtypes
@@ -526,7 +526,7 @@ def apply_int4_modelopt_surgery(
     # NODES into graph INITIALIZERS. For DOUBLE that changes parseability: the
     # TensorRT ONNX parser demotes an f64 `Constant` node to f32 with a
     # warning, but its weights importer REFUSES an f64 initializer ("Failed to
-    # import initializer" — Pi0.5's f64 [1, 512] time-embedding table). Restore
+    # import initializer", Pi0.5's f64 [1, 512] time-embedding table). Restore
     # every DOUBLE initializer to the Constant-node form the parser accepts
     # (the un-surgered graphs ship exactly that form and parse fine).
     _restore_double_initializers_as_constants(out_model)

@@ -3,23 +3,21 @@
 
 """Locate the largest action error, so a drift cell can name it.
 
-A low action cosine with a max-abs near the width of a channel's range is
-almost always one channel saturating rather than the chunk degrading, and the
-two call for different responses. The summary carries the magnitude already;
-what it cannot say is *where*, which leaves the reader inferring "gripper flip"
-from a number. These helpers answer that from the same tensors the cosine is
+A low action cosine with a max-abs near a channel's range is usually one
+channel saturating, not the whole chunk degrading. The summary already carries
+the magnitude; these helpers add *where*, from the same tensors the cosine is
 computed on.
 
 Two layouts occur across the families and they index oppositely:
 
-* **channel-major** — the action arrives as a dict of named channels, each a
+* **channel-major**: the action arrives as a dict of named channels, each a
   whole chunk, concatenated in key order (GR00T). Element ``i`` belongs to
   channel ``i // steps``.
-* **step-major** — the action is a ``(steps, width)`` chunk flattened (pi).
+* **step-major**: the action is a ``(steps, width)`` chunk flattened (pi).
   Element ``i`` belongs to channel ``i % width``.
 
-Getting that backwards names the wrong channel while still looking plausible,
-which is why the caller states the layout rather than the helper guessing it.
+Getting it backwards names a plausible but wrong channel, so the caller states
+the layout instead of the helper guessing it.
 """
 
 from __future__ import annotations
@@ -40,7 +38,7 @@ def worst_channel(
 
     Args:
         delta: 1-D engine-minus-reference over one flattened action chunk.
-        order: ``"channel_major"`` or ``"step_major"`` — see the module
+        order: ``"channel_major"`` or ``"step_major"``; see the module
             docstring; the two index oppositely.
         width: channels per step (step-major), or steps per channel
             (channel-major). Inferred from *labels* when omitted.

@@ -109,7 +109,7 @@ def resolve_attend_n(dit_module: Any) -> Optional[int]:
     graph that builds and runs at full speed while attending to the wrong tokens.
 
     A plain non-alternating ``DiT`` (GR00T N1.5) has no schedule because it has
-    no split — every cross block attends the whole encoder sequence, and its
+    no split: every cross block attends the whole encoder sequence, and its
     forward is called with no mask at all. ``None`` says exactly that, and the
     emitters give those blocks :func:`emit_attend_all_mask`'s all-zero additive
     mask rather than either half of a split that does not exist.
@@ -129,7 +129,7 @@ ATTEND_ALL_MASK = "all_mask_add"
 
 
 def emit_attend_all_mask(nodes: list, inits: list) -> None:
-    """Emit :data:`ATTEND_ALL_MASK` — a broadcastable all-zero additive mask.
+    """Emit :data:`ATTEND_ALL_MASK`, a broadcastable all-zero additive mask.
 
     Shaped ``(1, 1, 1, 1)`` so it broadcasts over any (B, H, S_q, S_kv) score
     block. Zeros, not ``backbone_attention_mask``: the plain-DiT reference

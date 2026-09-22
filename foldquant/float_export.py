@@ -1,8 +1,8 @@
-"""Float (unquantized) engine export — the floor arm of every ladder.
+"""Float (unquantized) engine export: the floor arm of every ladder.
 
 A module is traced with ``torch.onnx.export`` under the *runtime's* engine
 binding names, so :mod:`build_engines` compiles it and ``install_engines``
-serves it exactly like a plugin graph — with ``plugin_libs`` empty. Nothing
+serves it exactly like a plugin graph, with ``plugin_libs`` empty. Nothing
 downstream distinguishes the arms except the precision of the projections,
 which is the property the paper's latency table relies on.
 
@@ -11,7 +11,7 @@ forward pre-hook during one iteration of the same ``forward_loop`` the
 quantized exports calibrate on, so shapes, dtypes and every non-tensor kwarg
 (``output_hidden_states``, ``return_all_hidden_states``, ...) are the deployed
 ones. Each family declares only the mapping from engine binding name to the
-module's keyword — the same mapping its ``runtime.py`` applies in reverse.
+module's keyword, the same mapping its ``runtime.py`` applies in reverse.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ class Binding:
     passthrough: bool = False
     #: Rewrites the bound tensor before it reaches the module, e.g. to hand a decoder a
     #: prebuilt 4-D additive mask instead of the 2-D padding mask it would otherwise promote
-    #: through an implicit ``int64 + bf16`` add — the op whose dynamic dtype the TorchScript
+    #: through an implicit ``int64 + bf16`` add, the op whose dynamic dtype the TorchScript
     #: exporter mis-maps to COMPLEX128. Receives ``(tensor, module_kwargs)``.
     transform: Optional[Callable[[torch.Tensor, Dict[str, Any]], torch.Tensor]] = None
 
@@ -163,7 +163,7 @@ def export_with_example(
 
     For modules whose deployed step is not their ``forward`` (a head that runs its Euler loop
     inside a sampling method, with the engine being one step of it), the caller assembles the
-    example kwargs itself and may pass ``call`` — a function taking the same kwargs — in place
+    example kwargs itself and may pass ``call`` (a function taking the same kwargs) in place
     of ``module(**kwargs)``.
     """
     kw = dict(example_kwargs)
@@ -180,7 +180,7 @@ def export_with_example(
     fixed = {k: v for k, v in kw.items() if k not in {b.kwarg for b in bindings}}
     # A passthrough kwarg is not a module keyword: never forward it.
     fixed = {k: v for k, v in fixed.items() if k not in passthrough}
-    # Tensors we do not bind must be constants of the trace; keep them, but warn — a
+    # Tensors we do not bind must be constants of the trace; keep them, but warn: a
     # tensor the engine cannot receive is a tensor the deployed call cannot vary.
     for k, v in fixed.items():
         if isinstance(v, torch.Tensor):

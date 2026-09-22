@@ -1,4 +1,4 @@
-// Phase 4 — Fused GELU(tanh) + per-row INT8 quantization kernel.
+// Phase 4: Fused GELU(tanh) + per-row INT8 quantization kernel.
 //
 // Two-pass algorithm per row:
 //   Pass 1: read x_row, apply GELU(tanh) in fp32, store fp32 in shared mem,
@@ -109,7 +109,7 @@ __global__ void gelu_quant_kernel(
 // per-row amax.
 //
 // The order is the whole point. The rotation mixes channels, so it cannot be
-// folded into anything elementwise that precedes it — not GELU, not a norm's
+// folded into anything elementwise that precedes it: not GELU, not a norm's
 // gamma. It has to run between the activation and the quantizer, and the amax
 // has to be taken AFTER it, on the rotated values the INT8 grid will actually
 // hold. Measuring before the rotation and quantizing after is the silent-garbage
@@ -118,7 +118,7 @@ __global__ void gelu_quant_kernel(
 // `act_scale_pre` is the fold-before (SmoothRot) vector: the scale lands on the
 // RAW channel, so it divides here, before the butterfly, and the matching weight
 // fold multiplied the weight's raw columns offline. Pass nullptr for the
-// unfolded arm — the butterfly alone is still a valid rotation.
+// unfolded arm; the butterfly alone is still a valid rotation.
 __global__ void gelu_fwht_quant_kernel(
     __nv_bfloat16 const* __restrict__ in,
     float const* __restrict__ act_scale_pre,   // (K,) or nullptr
@@ -142,7 +142,7 @@ __global__ void gelu_fwht_quant_kernel(
     float* y_buf = smem;
     float* warp_partials = smem + K;
 
-    // Pass 1: GELU, then the raw-frame channel divide. No amax yet — it belongs
+    // Pass 1: GELU, then the raw-frame channel divide. No amax yet; it belongs
     // after the rotation.
     for (int k = tid; k < K; k += blockDim.x) {
         float y = gelu_tanh(__bfloat162float(in_row[k]));

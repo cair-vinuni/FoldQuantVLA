@@ -4,8 +4,8 @@
 """Held-out drift of a FoldQuant engine directory against the bf16 PyTorch policy.
 
 Upstream N1.5 ships an fp16 TensorRT path and no drift check of its own. This
-tool scores two seams — ``backbone_features`` (what the LLM engine hands the
-action head) and the decoded action chunk — on ``--num-samples`` observations
+tool scores two seams, ``backbone_features`` (what the LLM engine hands the
+action head) and the decoded action chunk, on ``--num-samples`` observations
 drawn from episodes the calibration never saw (read off the export manifest),
 reporting per-seam cosine mean / min and the action max-abs error. Both
 passes integrate from the same flow-matching noise (``torch.manual_seed(seed
@@ -69,7 +69,7 @@ class VerifyConfig:
     """``torch.manual_seed(seed + i)`` before observation ``i``'s get_action, both passes."""
 
     allow_calibration_episodes: bool = False
-    """Sample from every episode, calibration ones included — for datasets too small to hold any out.
+    """Sample from every episode, calibration ones included, for datasets too small to hold any out.
     The report then measures fit, not generalisation, and says so."""
 
     split_from: str | None = None

@@ -11,12 +11,12 @@ mathematically exact folds sit on top of the plain dynamic-per-row scheme:
   * **SmoothQuant per-channel fold** (:func:`apply_sq_fold`): migrates a static
     per-channel activation scale ``s_ch = amax_act^α / amax_w^(1-α)`` into the
     RMSNorm gamma (qkv/gateup) or the up_proj rows (down), compensated on the
-    weight columns. Pure weight prep — the runtime path is unchanged, no plugin
+    weight columns. Pure weight prep: the runtime path is unchanged, no plugin
     attribute, no kernel work.
   * **Block-diagonal Hadamard fold** (:func:`apply_rot_fold`): folds ``W' = W·Hᵀ``
     with the orthonormal Sylvester Hadamard so the runtime FWHT rotation
     (``rot_block_size`` plugin attribute → ``fwht.cuh::block_fwht_smem``) cancels:
-    ``W'·(H·x) = W·x``. Unlike SQ this needs the kernel — the rotation mixes
+    ``W'·(H·x) = W·x``. Unlike SQ this needs the kernel: the rotation mixes
     channels, so it folds through neither the RMSNorm gamma nor SiLU.
 
 Per-row (per-token) INT8 covers the TOKEN axis and is blind to the CHANNEL axis;
@@ -46,17 +46,17 @@ from typing import Any, Callable, Dict, Optional
 # ``sq_alpha`` drives :func:`apply_sq_fold`; ``rot_block_size`` (0 = disabled) drives
 # :func:`apply_rot_fold` and the plugins' ``rot_block_size`` attribute. The plain
 # no-fold per-row scheme is retired (it fails accuracy on the real robot), so it is
-# absent — every entry here folds SmoothQuant and needs calibration.
+# absent; every entry here folds SmoothQuant and needs calibration.
 LLM_INT8_ALGORITHMS: Dict[str, Dict[str, float]] = {
     "w8a8_s": {"sq_alpha": 0.4, "rot_block_size": 0},
     "w8a8_sr": {"sq_alpha": 0.4, "rot_block_size": 64},
 }
 
 # The LLM has a single deployable scheme, so omitting ``algorithm`` selects it. It
-# is the strongest (SmoothQuant + Hadamard rotation) — the one validated on the robot.
+# is the strongest (SmoothQuant + Hadamard rotation), the one validated on the robot.
 DEFAULT_LLM_INT8_ALGORITHM = "w8a8_sr"
 
-# LLM W4A4 (per-row dynamic INT4 activations, GPTQ-rounded INT4 weights — the
+# LLM W4A4 (per-row dynamic INT4 activations, GPTQ-rounded INT4 weights; the
 # ``gptq`` token in the key is what tells this apart from the *preset arm* name
 # ``act_w4a4_sr_llm_w8a8_sr``, which means "W4A4 action module + INT8 rotsq LLM").
 # ``ablation: True`` marks the rotation-off variant as a measurement arm only:
@@ -65,7 +65,7 @@ DEFAULT_LLM_INT8_ALGORITHM = "w8a8_sr"
 LLM_INT4_ALGORITHMS: Dict[str, Dict[str, Any]] = {
     "w4a4_sg": {"sq_alpha": 0.4, "rot_block_size": 0, "ablation": True},
     "w4a4_srg": {"sq_alpha": 0.4, "rot_block_size": 64},
-    # W4A8: INT4 weights (GPTQ, per-row) served by the INT8 plugins — the packed
+    # W4A8: INT4 weights (GPTQ, per-row) served by the INT8 plugins; the packed
     # nibbles are unpacked to INT8 at engine load, activations stay INT8
     # per-token. Held-out emulation on N1.6 recovered 90% of W4A4's action error.
     "w4a8_srg": {"sq_alpha": 0.4, "rot_block_size": 64, "act_bits": 8},
@@ -88,7 +88,7 @@ def resolve_llm_plugin_params(
     """Fold parameters for an LLM plugin module at *bits*: ``{"sq_alpha", "rot_block_size"}``.
 
     ``algorithm=None`` selects the width's default (the deployable rot+SQ scheme).
-    A named algorithm must belong to the registry of its OWN width — an INT8 key
+    A named algorithm must belong to the registry of its OWN width: an INT8 key
     under bits=4 (or vice versa) would silently build the wrong plugin pair, so it
     raises here even though the build-config parser also guards it. At bits=4 a
     rotation-less scheme without the ``ablation`` flag is refused: W4A4 without the
@@ -105,7 +105,7 @@ def resolve_llm_plugin_params(
     if int(bits) == 4 and int(params.get("rot_block_size", 0)) <= 1 and not params.pop("ablation", False):
         raise ValueError(
             f"LLM W4A4 scheme {key!r} disables the Hadamard rotation without the ablation "
-            "flag — rotation-less W4A4 measured cosine 0.014 and must be opted into explicitly."
+            "flag; rotation-less W4A4 measured cosine 0.014 and must be opted into explicitly."
         )
     params.pop("ablation", None)
     params.setdefault("act_bits", int(bits))
@@ -175,7 +175,7 @@ def resolve_llm_plugin_params(
 # Sites that get a SmoothQuant channel fold. ``o`` is deliberately absent: it is
 # the mildest site in the model and its activation channel traces back to V
 # through GQA's repeat_kv (KV_GROUPS heads share one V channel), so a free fold
-# would require s_ch constant within each KV group — not worth it for the mildest
+# would require s_ch constant within each KV group, not worth it for the mildest
 # site.
 SQ_SITES = ("qkv", "gateup", "down")
 
@@ -247,7 +247,7 @@ def compute_sq_scales_llm(
     # The merged QKV / gate-up plugins concatenate weights along the OUTPUT rows,
     # and the SQ scale needs the per-INPUT-channel amax (a reduce over those rows).
     # max-of-concat-rows == elementwise-max of the per-weight amaxes, so reduce
-    # each weight and combine — no giant merged/fp32 temporary per layer.
+    # each weight and combine; no giant merged/fp32 temporary per layer.
     site_weights = {
         "qkv": ("self_attn.q_proj.weight", "self_attn.k_proj.weight", "self_attn.v_proj.weight"),
         "gateup": ("mlp.gate_proj.weight", "mlp.up_proj.weight"),
@@ -260,7 +260,7 @@ def compute_sq_scales_llm(
             key = f"L{i}_{site}"
             if key not in act_amax:
                 raise RuntimeError(
-                    f"SQ calibration produced no activation amax for {key} — the forward hook never fired."
+                    f"SQ calibration produced no activation amax for {key}; the forward hook never fired."
                 )
             a = act_amax[key].float().clamp(min=1e-8)
             w = None
@@ -285,7 +285,7 @@ def apply_sq_fold(layer_state: dict, s_qkv: Any, s_gu: Any, s_dn: Any) -> dict:
             from x BEFORE gamma (kernel: y = xv*rstd*g), so gamma_pre[c] /= s[c]
             gives h'[c] = h[c]/s[c] exactly. Compensate: W_qkv[:, c] *= s[c].
     gateup  Same, via post_attention_layernorm's gamma (does NOT touch post_attn,
-            which is also down_proj's residual input — only the norm output moves).
+            which is also down_proj's residual input; only the norm output moves).
     down    x[c] = silu(gate[c]) * up[c] is elementwise in c and LINEAR in up, so
             W_up[c, :] /= s[c] gives x'[c] = x[c]/s[c] exactly, leaving SiLU
             untouched. Compensate: W_down[:, c] *= s[c]. Scaling up's rows is
@@ -373,7 +373,7 @@ def _rot_last(t: Any, H: Any) -> Any:
 def apply_rot_fold(layer_state: dict, rot_bs: int) -> dict:
     """Fold ``W' = W·Hᵀ`` so the runtime rotation ``H·x`` cancels: ``W'·(H·x) = W·x``.
 
-    H is orthonormal, so this is exact. Applied AFTER the SQ fold — SQ is a
+    H is orthonormal, so this is exact. Applied AFTER the SQ fold: SQ is a
     per-channel scale, the rotation then mixes those already-scaled channels,
     the order the simulator measured. Every rotated Linear (see :data:`ROT_WEIGHTS`)
     is served by the plugin FWHT, so all of them fold.

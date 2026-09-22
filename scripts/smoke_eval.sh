@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 #
-# Does the LIBERO rollout run? One suite, one episode per task — ten episodes,
+# Does the LIBERO rollout run? One suite, one episode per task: ten episodes,
 # two to four minutes a family. It answers whether eval_libero drives the
 # family's upstream loop on this machine and writes a summary, and nothing about
 # success rate: ten episodes ranks nothing, and the published sweeps are 800.
@@ -47,7 +47,7 @@ eval_one () {
     pi05)       note SKIP "rollout runs from a separate client environment against a server"; skip=$((skip+1)); return ;;
   esac
   ( cd "$dir" && "$venv" -c "import importlib.util as u,sys; sys.exit(0 if u.find_spec('robosuite') else 1)" ) 2>/dev/null \
-    || { note SKIP "LIBERO not installed — see the family's integration README"; skip=$((skip+1)); return; }
+    || { note SKIP "LIBERO not installed; see the family's integration README"; skip=$((skip+1)); return; }
 
   # Each family's rollout takes its own upstream loop's arguments, so the flags are
   # not the same set: only N1.7 and N1.6 accept --n-envs, N1.5 wants an embodiment

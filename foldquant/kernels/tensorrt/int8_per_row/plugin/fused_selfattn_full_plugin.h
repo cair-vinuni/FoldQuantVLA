@@ -1,4 +1,4 @@
-// FusedSelfAttnFull — full self-attention block collapsed into one plugin call:
+// FusedSelfAttnFull: full self-attention block collapsed into one plugin call:
 // AdaLN + per-row quant + INT8 merged QKV GEMM + SDPA + per-row quant +
 // INT8 attn_O GEMM + bias + residual.
 //
@@ -11,9 +11,9 @@
 // Plugin name: "FusedSelfAttnFull", namespace "gr00t::v1", version "1".
 //
 // Inputs:
-//   0: x       [B, S, K]   BF16 — hidden state (also reused as residual)
-//   1: scale   [B, K]      BF16 — AdaLN scale (per-batch broadcast across S)
-//   2: shift   [B, K]      BF16 — AdaLN shift
+//   0: x       [B, S, K]   BF16 - hidden state (also reused as residual)
+//   1: scale   [B, K]      BF16 - AdaLN scale (per-batch broadcast across S)
+//   2: shift   [B, K]      BF16 - AdaLN shift
 //
 // Plugin fields:
 //   "weight_qkv_i8"              INT8 length = 3 * inner_dim * K
@@ -31,7 +31,7 @@
 //   "eps"                        FP32
 //
 // Outputs:
-//   0: out     [B, S, K]   BF16 — post-attn block output (residual added)
+//   0: out     [B, S, K]   BF16 - post-attn block output (residual added)
 #pragma once
 
 #include <NvInferRuntime.h>
@@ -107,7 +107,7 @@ private:
     std::vector<float>  mStaticActScalePostSdpaHost;
 
     // FoldQuant: block-diagonal butterfly plus the RAW-frame SmoothQuant vectors for
-    // the block's two GEMM inputs — the post-adaLN X into the Q/QKV projection,
+    // the block's two GEMM inputs: the post-adaLN X into the Q/QKV projection,
     // and the post-SDPA context into the output projection. Zero block size is
     // the unrotated path; there is no third state and no silent skip.
     int32_t mRotBlockSize{0};

@@ -1,4 +1,4 @@
-// FusedCrossAttnFullCached — cached-KV variant. KV cache provided as input
+// FusedCrossAttnFullCached: cached-KV variant. KV cache provided as input
 // (from FusedCrossAttnFull at step 0 with emit_kv=1). Internally:
 //   AdaLN + per-row INT8 quant on x → x_i8
 //   Q INT8 GEMM → q_bf16 (M, inner_dim)
@@ -37,7 +37,7 @@ constexpr char const* kPLUGIN_NAMESPACE{"gr00t::v1"};
 
 inline size_t alignUp(size_t v) { return (v + 127) & ~static_cast<size_t>(127); }
 
-// Workspace (no kv_bf16 — that's provided as input):
+// Workspace (no kv_bf16; that's provided as input):
 //   x_i8 (M*K) | x_scale (M*4) | Q_bf16 (M*inner*2) | scores (B*H*S*M_enc*2)
 //   | attn_buf (M*inner*2) | attn_i8 (M*inner) | attn_scale (M*4)
 inline size_t workspaceBytes(int32_t M, int32_t K, int32_t MEnc, int32_t innerDim,
@@ -240,7 +240,7 @@ int32_t FusedCrossAttnFullCachedPlugin::enqueue(PluginTensorDesc const* inputDes
         const int32_t H = mNumHeads;
         const int32_t D = mHeadDim;
 
-        // Workspace partition (no kv_bf16 — that's in inputs[3])
+        // Workspace partition (no kv_bf16; that's in inputs[3])
         size_t x_i8_sz    = alignUp(static_cast<size_t>(M) * K);
         size_t x_sc_sz    = alignUp(static_cast<size_t>(M) * sizeof(float));
         size_t q_bf16_sz  = alignUp(static_cast<size_t>(M) * mInnerDim * sizeof(uint16_t));
@@ -285,7 +285,7 @@ int32_t FusedCrossAttnFullCachedPlugin::enqueue(PluginTensorDesc const* inputDes
             static_cast<int32_t>(M), mInnerDim, K, stream);
         if (rc != 0) return rc;
 
-        // --- Step 3: SKIP — K, V come from inputs[3] (cached kv_bf16) ---
+        // --- Step 3: SKIP. K, V come from inputs[3] (cached kv_bf16) ---
 
         // --- Steps 4-6: SDPA (Q·Kᵀ, masked softmax, P·V) ---
         // q_bf16 is (B, S, H*D); the cached inputs[3] is (B, S_enc, 2*H*D) with K at

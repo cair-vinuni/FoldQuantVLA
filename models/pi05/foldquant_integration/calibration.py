@@ -128,7 +128,7 @@ def load_policy(
     checkpoint = Path(checkpoint_dir)
     if not (checkpoint / "model.safetensors").is_file():
         raise FileNotFoundError(
-            f"{checkpoint} holds no model.safetensors — FoldQuant integrates the PyTorch model; convert the "
+            f"{checkpoint} holds no model.safetensors. FoldQuant integrates the PyTorch model; convert the "
             "JAX checkpoint first (examples/convert_jax_model_to_pytorch.py)"
         )
     plugin = load_plugin()
@@ -191,7 +191,7 @@ def plan_samples(
     covers as many episodes (tasks, scenes) as the budget allows; the step
     inside each episode is drawn uniformly. ``exclude_episodes`` keeps a
     verification split disjoint from the calibration split at the episode
-    level — a held-out *step* of a calibrated episode is not held out.
+    level. A held-out *step* of a calibrated episode is not held out.
     ``heldout`` only changes the stream so the two splits never coincide.
     """
     if len(episode_ids) != len(episode_lengths):
@@ -310,7 +310,7 @@ def infer(policy, observation: dict[str, Any], *, seed: int) -> np.ndarray:
 def make_forward_loop(policy, observations: Sequence[dict[str, Any]], *, seed: int) -> Callable[[Any], None]:
     """The ``forward_loop(module)`` every FoldQuant export takes.
 
-    It replays the full policy — the module argument is ignored on purpose:
+    It replays the full policy; the module argument is ignored on purpose:
     the LLM and expert hooks fire wherever they sit in the graph, and the
     expert is reached only through the whole Euler loop. Observation ``i``
     always runs under seed ``seed + i`` so every calibration pass of an export

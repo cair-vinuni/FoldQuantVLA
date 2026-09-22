@@ -4,7 +4,7 @@
 """Unit tests for the INT4 groupwise-GEMM ONNX graph surgery.
 
 All graphs here are synthetic, built directly with ``onnx``/``onnx_graphsurgeon``
-in-memory — no GPU, no TensorRT, and no real ModelOpt export are needed.
+in-memory: no GPU, no TensorRT, and no real ModelOpt export are needed.
 """
 
 from __future__ import annotations
@@ -119,7 +119,7 @@ def test_rewrite_packed_weight_and_scale_shapes() -> None:
 
 
 def test_rewrite_recovers_exact_int4_values_through_the_pack() -> None:
-    """``pack_intweights`` is a pure nibble permutation (see test_weights_quant.py) —
+    """``pack_intweights`` is a pure nibble permutation (see test_weights_quant.py):
     unpacking the plugin's packed weight must reproduce the same +8-biased
     nibble multiset the surgery computed from ``q_true``."""
     n, k, block_size = 128, 64, 64
@@ -137,7 +137,7 @@ def test_rewrite_recovers_exact_int4_values_through_the_pack() -> None:
 
 
 def test_rewrite_out_of_range_shape_falls_back_to_bypass_not_plugin() -> None:
-    """gemm_n not divisible by 128 fails the plugin's divisibility requirement —
+    """gemm_n not divisible by 128 fails the plugin's divisibility requirement, so
     the DQ must be bypassed to its fake-dequant constant, not force-converted."""
     graph, _, _ = _build_synthetic_modelopt_int4_graph(n=96, k=64, block_size=64)  # 96 % 128 != 0
     graph, replaced, materialized = rewrite_int4_modelopt_dq(graph)

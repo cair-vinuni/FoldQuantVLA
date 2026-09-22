@@ -3,7 +3,7 @@
 
 """Serve FoldQuant engines from inside the upstream ``Gr00tPolicy``.
 
-Upstream N1.6 deploys one TensorRT engine — the DiT — by rebinding
+Upstream N1.6 deploys one TensorRT engine (the DiT) by rebinding
 ``policy.model.action_head.model.forward`` to the engine call
 (``standalone_inference_script.replace_dit_with_tensorrt``). This module does
 the same for the two modules FoldQuant quantizes:
@@ -16,7 +16,7 @@ the same for the two modules FoldQuant quantizes:
   matching loop, the state / action encoders and the action decoder stay in
   PyTorch.
 
-Everything else — processor, ViT, collation, action decoding — is untouched,
+Everything else (processor, ViT, collation, action decoding) is untouched,
 so the policy's public behaviour is exactly upstream's with two modules
 swapped underneath.
 """

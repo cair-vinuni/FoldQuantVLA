@@ -1,10 +1,10 @@
-// PerRowInt4LinearResidual — FoldQuant rotated per-row INT4 quant + W4A4 Linear
+// PerRowInt4LinearResidual: FoldQuant rotated per-row INT4 quant + W4A4 Linear
 // (no bias) + residual add, all in one IPluginV3.
 //
 // INT4 analogue of PerRowInt8LinearResidual, for linears that no macro plugin
 // covers (e.g. an action-head FFN whose LayerNorm is followed by a *runtime*
 // time-embedding add that FusedFfnBlockInt4's baked no-affine norm cannot
-// express — so the norm/add/GELU stay ONNX ops and only the two GEMMs run
+// express, so the norm/add/GELU stay ONNX ops and only the two GEMMs run
 // through this plugin).
 //
 // Pipeline:
@@ -18,30 +18,30 @@
 // Plugin name:      "PerRowInt4LinearResidual"
 //
 // Inputs (runtime):
-//   0: x        [B, S, K]  BF16  — raw (un-rotated) pre-linear activation
-//   1: residual [B, S, N]  BF16  — added to GEMM output
+//   0: x        [B, S, K]  BF16  - raw (un-rotated) pre-linear activation
+//   1: residual [B, S, N]  BF16  - added to GEMM output
 //
 // Plugin fields (baked):
-//   "weight_i4"     INT8  (N*K/2 packed nibbles, column-major — see
+//   "weight_i4"     INT8  (N*K/2 packed nibbles, column-major - see
 //                          omega_rotation.pack_int4_colmajor{,_sq})
 //   "weight_scale"  FP32  (N,)
-//   "perm"          INT32 (K,)               — channel permutation (Ω mode)
-//   "rotation"      FP32  (K/bs * bs * bs)   — per-block rotation (Ω mode)
+//   "perm"          INT32 (K,)               - channel permutation (Ω mode)
+//   "rotation"      FP32  (K/bs * bs * bs)   - per-block rotation (Ω mode)
 //   "N"             INT32 scalar
 //   "K"             INT32 scalar
-//   "block_size"    INT32 scalar             — Ω rotation block
-//   "rot_block_size" INT32 scalar            — FWHT mode (see below)
+//   "block_size"    INT32 scalar             - Ω rotation block
+//   "rot_block_size" INT32 scalar            - FWHT mode (see below)
 //
 // Two rotation modes, selected by the baked field set (one creator, two users):
-//   FoldQuant mode  — "perm"+"rotation" present: fused permute + dense per-block
+//   FoldQuant mode: "perm"+"rotation" present -> fused permute + dense per-block
 //                  rotation quant (expert emitters, unchanged).
-//   FWHT mode    — "perm"/"rotation" absent, "rot_block_size" >= 1: in-plugin
+//   FWHT mode: "perm"/"rotation" absent, "rot_block_size" >= 1 -> in-plugin
 //                  block-diagonal Sylvester Hadamard before per-row quant, the
 //                  LLM W4A4 residual path (o_proj / down_proj). Weight side is
 //                  folded offline with W·Hᵀ (llm_rotation_sq.apply_rot_fold).
 //
 // Outputs:
-//   0: y        [B, S, N]  BF16  — INT4 GEMM result + residual
+//   0: y        [B, S, N]  BF16  - INT4 GEMM result + residual
 #pragma once
 
 #include <NvInferRuntime.h>

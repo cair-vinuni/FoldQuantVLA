@@ -1,4 +1,4 @@
-// Step B.1 — DiT INT8 rowwise GEMM v2 (CUTLASS-wrapped, FlashRT port).
+// Step B.1: DiT INT8 rowwise GEMM v2 (CUTLASS-wrapped, FlashRT port).
 //
 // C interface for an INT8 W8A8 GEMM with per-row activation scales and
 // per-column weight scales, producing BF16 output. Ported from FlashRT-orin
@@ -27,7 +27,7 @@ extern "C" {
 //
 // Outputs:
 //   out_i8:     (M, K) INT8, row-major
-//   out_scale:  (M,)   FP32 — act_scale[m] = amax[m] / 127.0
+//   out_scale:  (M,)   FP32 - act_scale[m] = amax[m] / 127.0
 //
 // Each block processes one row; each thread handles K/blockDim.x elements.
 // Returns 0 on success, non-zero CUDA error code otherwise.
@@ -44,7 +44,7 @@ int dit_int8_per_row_quant_bf16(
 // channel axis that a per-token scale cannot see.
 //
 // The caller MUST have folded the weight side offline (W' = W·Hᵀ, same
-// orthonormal Sylvester Hadamard — see fwht.cuh) or the result is wrong.
+// orthonormal Sylvester Hadamard; see fwht.cuh) or the result is wrong.
 //
 //   rot_bs <= 1        → delegates to dit_int8_per_row_quant_bf16 (no shared mem)
 //   rot_bs power of 2, K % rot_bs == 0 → rotation applied (costs K floats shared)
@@ -79,7 +79,7 @@ int dit_int8_per_row_static_quant_bf16(
 //
 // Inputs:
 //   A:             (M, K) INT8 row-major
-//   B:             (K, N) INT8 column-major  (FlashRT layout — weight is N×K stored as K×N column-major)
+//   B:             (K, N) INT8 column-major  (FlashRT layout - weight is N×K stored as K×N column-major)
 //   act_scale:     (M,)   FP32 per-row
 //   weight_scale:  (N,)   FP32 per-col
 //   M, N, K:       dimensions

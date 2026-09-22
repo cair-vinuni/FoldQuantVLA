@@ -87,7 +87,7 @@ def committed_plugin_dir() -> Path:
     """Filesystem dir of the checked-in, target-named ``.so`` (package-data).
 
     Reached by path navigation from this package (``foldquant.kernels``)
-    only, never from the export code — keeps the build->runtime
+    only, never from the export code, which keeps the build->runtime
     boundary intact.
     """
     from importlib.resources import files
@@ -142,7 +142,7 @@ def resolve_plugin_so(libname: str) -> Optional[Path]:
     if best is not None:
         if best_minor != host_minor:
             logger.warning(
-                "Loading TRT plugin %s built for TRT %d.%d on host TRT %d.%d — forward-compatible "
+                "Loading TRT plugin %s built for TRT %d.%d on host TRT %d.%d; forward-compatible "
                 "within major %d, but verify if you hit plugin/ABI errors.",
                 libname,
                 host_major,
@@ -213,7 +213,7 @@ def load_required_plugins(libnames: Iterable[str] = KNOWN_PLUGIN_LIBS) -> List[P
         raise MissingPluginError(
             f"No TensorRT plugin {missing} for target {target_slug()!r}. Searched committed dir "
             f"{committed_plugin_dir()} and cache {plugin_cache_dir()}. This host matches no committed "
-            f"binary — run `python -m foldquant.kernels build` (rebuilds from "
+            f"binary. Run `python -m foldquant.kernels build` (rebuilds from "
             f"foldquant/kernels into the cache) or commit a matching prebuilt .so."
         )
     load_plugin_libs(paths)

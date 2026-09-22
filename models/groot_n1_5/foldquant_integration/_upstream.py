@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-#: ``models/groot_n1_5`` — the trimmed upstream ``n1.5-release`` checkout.
+#: ``models/groot_n1_5``, the trimmed upstream ``n1.5-release`` checkout.
 UPSTREAM_ROOT = Path(__file__).resolve().parents[1]
 #: Upstream's fp16 / FP8 TensorRT path (plain scripts, not a package). Its
 #: DiT graph takes three inputs (``sa_embs``, ``vl_embs``, ``timesteps_tensor``)
@@ -42,7 +42,7 @@ def ensure_upstream_on_path() -> None:
     """Make ``examples.Libero.*`` importable (idempotent).
 
     Upstream addresses its LIBERO data config and evaluation helpers as
-    ``examples.Libero...`` — a package that exists only relative to the
+    ``examples.Libero...``, a package that exists only relative to the
     repository root, which upstream's own scripts assume is the working
     directory.
     """
@@ -84,7 +84,7 @@ def _seed_libero_config(benchmark_root: Path) -> None:
 
 
 #: Where a LIBERO checkout may be named, for the families whose release pins
-#: none. The N1.5 release ships ``examples/Libero`` — the client loop — but not
+#: none. The N1.5 release ships ``examples/Libero`` (the client loop) but not
 #: the benchmark itself, so the checkout is the operator's to supply.
 LIBERO_DIR_ENV = "FOLDQUANT_LIBERO_DIR"
 
@@ -93,12 +93,12 @@ def ensure_libero_on_path() -> None:
     """Make a LIBERO checkout importable (idempotent).
 
     Unlike the N1.6 / N1.7 releases this one pins no LIBERO submodule, so there
-    is nothing in-tree to point at and the location cannot be hard-coded — it
+    is nothing in-tree to point at and the location cannot be hard-coded: it
     differs per machine and naming one would put somebody's filesystem in a
     public repository. An installed ``libero`` satisfies this outright;
     otherwise ``FOLDQUANT_LIBERO_DIR`` names a checkout, which is put on
     ``sys.path`` (LIBERO's ``libero/`` carries no ``__init__.py``, so an
-    editable install of it leaves nothing importable — the directory itself has
+    editable install of it leaves nothing importable; the directory itself has
     to be on the path).
     """
     import importlib.util

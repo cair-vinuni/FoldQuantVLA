@@ -6,7 +6,7 @@
 The rollout itself is upstream's (``gr00t.eval.rollout_policy``): the same
 ``MultiStepWrapper`` (8-step chunks, 504-step cap, terminate on success), the
 same unseeded ``LiberoEnv.reset()``, the same success definition. This tool
-only adds what a paper sweep needs around it — the plugin library is loaded
+only adds what a paper sweep needs around it: the plugin library is loaded
 before any engine is deserialised, every task of every requested suite is
 visited, and one ``summary.json`` per output directory records per-task
 successes so an interrupted run resumes where it stopped.
@@ -15,7 +15,7 @@ Videos are not recorded (upstream's ``run_gr00t_sim_policy`` writes a video
 of every episode under ``/tmp``; ``run_rollout_gymnasium_policy`` is called
 directly with ``video_dir=None`` instead).
 
-Example — the W4A4 arm on all four suites, 20 episodes per task::
+Example:  the W4A4 arm on all four suites, 20 episodes per task::
 
     MUJOCO_GL=egl python -m foldquant_integration.eval_libero \\
         --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 \\
@@ -143,7 +143,7 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     if args.engine_dir and args.baseline_pack:
         raise ValueError("--engine-dir and --baseline-pack are mutually exclusive")
     if args.engine_dir:
-        # The float arm comes off upstream's pipeline and carries no FoldQuant manifest —
+        # The float arm comes off upstream's pipeline and carries no FoldQuant manifest;
         # it has no plugin nodes to load libraries for. Reading it unconditionally made
         # eval_libero refuse the one arm that separates TensorRT from quantization.
         manifest_path = Path(args.engine_dir) / MANIFEST_NAME
@@ -153,7 +153,7 @@ def main(args: EvalConfig) -> Dict[str, Any]:
             load_plugins(manifest["plugin_libs"])
         else:
             summary["schemes"] = {}
-            logger.info("%s has no FoldQuant manifest — serving it as a float arm", args.engine_dir)
+            logger.info("%s has no FoldQuant manifest; serving it as a float arm", args.engine_dir)
 
     from gr00t.data.embodiment_tags import EmbodimentTag
     from gr00t.eval.rollout_policy import (

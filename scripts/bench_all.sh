@@ -13,7 +13,7 @@
 # rebuilt: the engines must already exist under
 # models/<family>/exports/<arm>/engines.
 #
-# Arms are discovered, not hardcoded — whatever <family>/exports/*/engines
+# Arms are discovered, not hardcoded: whatever <family>/exports/*/engines
 # holds is timed, so this script does not go stale when an arm is added.
 #
 # One invocation per family times the eager PyTorch arm ONCE and every engine
@@ -21,7 +21,7 @@
 # rather than one file per arm: a shared baseline makes the speedup column
 # comparable across arms, and re-timing eager per arm would both waste Orin
 # minutes and let the baseline drift between rows. GR00T N1.7 is the exception
-# — it wraps upstream's benchmark_inference.py, which takes one engine
+# because it wraps upstream's benchmark_inference.py, which takes one engine
 # directory and prints to stdout, so it gets one benchmark.log per arm.
 #
 # Paths differ per machine, so every checkpoint/dataset root is an environment
@@ -125,7 +125,7 @@ for fam in "${FAMILIES[@]}"; do
 done
 
 echo
-echo "done — results under $REPO/results/"
+echo "done: results under $REPO/results/"
 # A family that fails prints FAIL and the loop moves on; the exit status is what
 # tells a caller (or CI) that the run was not clean.
 if [ "$fails" -gt 0 ]; then

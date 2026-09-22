@@ -1,4 +1,4 @@
-// Phase 1 — Tile-size sweep for DiT INT8 rowwise GEMM (M=51 on Orin SM87).
+// Phase 1: Tile-size sweep for DiT INT8 rowwise GEMM (M=51 on Orin SM87).
 //
 // Templated CUTLASS Sm80 EVT-epilogue GEMM with INT8×INT8 → INT32 → fp32(per-row
 // act_scale × per-col weight_scale) → BF16 output. Each tile variant is a

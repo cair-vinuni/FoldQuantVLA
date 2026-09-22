@@ -4,9 +4,9 @@
 """Held-out drift of a FoldQuant engine directory against the bf16 PyTorch policy.
 
 Upstream ``verify_n1d7_trt.py`` compares one observation (trajectory 0,
-step 0) under ``torch.manual_seed(42)``. This tool keeps its two seams —
+step 0) under ``torch.manual_seed(42)``. This tool keeps its two seams,
 ``backbone_features`` (what the LLM engine hands the action head) and the
-decoded action chunk — and its seeding, but scores ``--num-samples``
+decoded action chunk, plus its seeding, but scores ``--num-samples``
 observations drawn from episodes the calibration never saw (read off the
 export manifest), reporting per-seam cosine mean / min and the action
 max-abs error. Both passes integrate from the same flow-matching noise, so
@@ -59,13 +59,13 @@ class VerifyConfig:
     """``torch.manual_seed(seed + i)`` before observation ``i``'s get_action, both passes."""
 
     allow_calibration_episodes: bool = False
-    """Sample from every episode, calibration ones included — for datasets too small to hold any out.
+    """Sample from every episode, calibration ones included, for datasets too small to hold any out.
     The report then measures fit, not generalisation, and says so."""
 
     split_from: Optional[str] = None
     """Engine directory whose FoldQuant manifest defines the calibration split (default: ``engine_dir``).
     A float directory built by upstream has no manifest; point this at the quantized arm it is
-    compared with, and both score the same held-out observations — the float engines are the
+    compared with, and both score the same held-out observations. The float engines are the
     floor of the drift metric, not zero."""
 
     video_backend: str = "torchcodec"
@@ -250,7 +250,7 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         "schemes": manifest["schemes"] if manifest is not None else {},
         # The float arm comes off upstream's pipeline and carries no FoldQuant manifest, so
         # `schemes` is empty for it. Listing the engines that are actually installed states
-        # the arm's scope either way — without it two arms of different scope can share the
+        # the arm's scope either way. Without it two arms of different scope can share the
         # name "float" and nothing in the record distinguishes them.
         "components": sorted(p.name for p in sorted(engine_dir.glob("*.engine"))),
         "cascade": manifest.get("cascade", False) if manifest is not None else False,

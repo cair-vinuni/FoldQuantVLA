@@ -45,7 +45,7 @@ class SampleId:
 
 
 def resolve_embodiment(model_path: str, embodiment_tag: str | None):
-    """``EmbodimentTag`` for the run — explicit, or the single one the checkpoint's metadata names.
+    """``EmbodimentTag`` for the run: explicit, or the single one the checkpoint's metadata names.
 
     A tag is accepted by value (``new_embodiment``) or by member name
     (``NEW_EMBODIMENT``). N1.5 stores normalisation statistics per embodiment
@@ -136,7 +136,7 @@ def plan_samples(
     covers as many episodes (tasks, scenes) as the budget allows; the step
     inside each episode is drawn uniformly. ``exclude_episodes`` keeps a
     verification split disjoint from the calibration split at the episode
-    level — a held-out *step* of a calibrated episode is not held out.
+    level. A held-out *step* of a calibrated episode is not held out.
     ``heldout`` only changes the stream so the two splits never coincide.
     Episodes are addressed by their ``episode_index`` (upstream's
     ``trajectory_ids``), which need not be contiguous.
@@ -160,7 +160,7 @@ def plan_samples(
 
 
 def build_observations(policy, dataset, samples: Sequence[SampleId]) -> list[dict[str, Any]]:
-    """The raw dataset step per sample — what upstream's offline evaluation hands ``get_action``.
+    """The raw dataset step per sample, i.e. what upstream's offline evaluation hands ``get_action``.
 
     ``get_step_data`` decodes the frames of the requested step only, so
     samples are read in dataset order to keep each episode's decoder warm.
@@ -198,14 +198,14 @@ def sample_observations(
 def make_forward_loop(policy, observations: Sequence[dict[str, Any]], *, seed: int) -> Callable[[Any], None]:
     """The ``forward_loop(module)`` every FoldQuant export takes.
 
-    It replays the full policy — the module argument is ignored on purpose:
+    It replays the full policy; the module argument is ignored on purpose:
     the LLM and DiT hooks fire wherever they sit in the graph, and the DiT is
     reached only through the whole denoising loop.
 
     ``torch.manual_seed(seed + i)`` precedes observation ``i`` every time the
     loop runs. The DiT's action tokens start from ``torch.randn`` noise inside
-    ``get_action``, so without it each export — and each calibration pass
-    within one export — fits on a different activation set: the Hessians of
+    ``get_action``, so without it each export (and each calibration pass
+    within one export) fits on a different activation set: the Hessians of
     the GPTQ pass would be taken on inputs the SmoothQuant scales never saw,
     and two exports of the same arm would round the DiT differently.
     """

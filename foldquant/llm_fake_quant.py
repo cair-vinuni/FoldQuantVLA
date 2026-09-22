@@ -3,25 +3,23 @@
 
 """Kernel-matched fake-quant emulation of the folded per-row LLM schemes.
 
-Cascade calibration needs the *downstream* modules (DiT/expert/action head) to be
-calibrated against the context a **quantized** LLM produces — the distribution the
-deployed full-W4A4 engine actually feeds them — instead of the float baseline's.
-Measured motivation: the solo arms pass while the composed ``act_w4a4_sr_llm_w4a4_srg`` arm
-degrades super-additively (Pi0: the interaction term is 44% of end-to-end error),
-because every static quantizer
-parameter of the downstream module (SmoothQuant fold, rotated-activation amax,
-GPTQ/RTN rounding) was measured with a full-precision LLM upstream.
+Cascade calibration fits the downstream modules (DiT/expert/action head) to the
+context a **quantized** LLM produces, not the float one. Without it the composed
+``act_w4a4_sr_llm_w4a4_srg`` arm degrades super-additively (Pi0: the interaction
+term is 44% of end-to-end error), because every static downstream parameter
+(SmoothQuant fold, rotated-activation amax, GPTQ/RTN rounding) was measured
+behind a full-precision LLM.
 
 :func:`install_llm_per_row_emulation` mutates the live torch decoder in place so
 one more calibration replay reproduces the deployed LLM numerics exactly:
 
-* weights become the deployed frame — SmoothQuant fold (:func:`~.llm_rotation_sq.
+* weights become the deployed frame: SmoothQuant fold (:func:`~.llm_rotation_sq.
   apply_sq_fold`), block-Hadamard fold (:func:`~.llm_rotation_sq.apply_rot_fold`),
   then per-output-row symmetric quantize-dequantize (GPTQ rounding at 4 bits via
   the same :func:`~.llm_gptq.gptq_prepare`/:func:`~.llm_gptq.gptq_quant_codes`
   the plugin-graph builder bakes, RTN at 8 bits);
 * every quantized Linear gets a forward-pre-hook applying the runtime activation
-  transform — block-64 FWHT then per-row dynamic symmetric QDQ — the fused
+  transform (block-64 FWHT then per-row dynamic symmetric QDQ) that the fused
   ``RMSNorm→rotate→quant`` plugin performs. The SQ divide needs no hook: it is
   already inside the folded gammas / up-proj rows, exactly as deployed.
 
@@ -31,10 +29,10 @@ hook, so the policy leaves this function's scope unchanged.
 Float QDQ here is distribution-exact w.r.t. the s4 kernels: INT4 code products
 (≤49) summed over ≤2^18 columns stay inside fp32's exact-integer range, so the
 only divergence from the int32-accumulating tensor-core path is scale-multiply
-rounding — negligible against the 4-bit grid.
+rounding, negligible against the 4-bit grid.
 
 Supported: Qwen2 / Qwen3 / Qwen3-VL decoders (GR00T families) and Gemma
-(Pi0/Pi0.5) — Gemma's ``(1+γ)`` RMSNorm is handled by folding in the effective
+(Pi0/Pi0.5). Gemma's ``(1+γ)`` RMSNorm is handled by folding in the effective
 gamma and writing back ``gamma_folded − 1``, matching the deployed emitter's
 ``gemma_mode``.
 
@@ -66,7 +64,7 @@ _SQ_GAMMA_KEYS: Tuple[str, str] = ("input_layernorm.weight", "post_attention_lay
 
 
 def _perrow_qdq(x: Any, qmax: float, clip_ratio: float = 1.0) -> Any:
-    """Per-row (last-dim) dynamic symmetric quantize-dequantize — the plugin's activation path.
+    """Per-row (last-dim) dynamic symmetric quantize-dequantize, the plugin's activation path.
 
     ``clip_ratio`` < 1 shrinks the per-row scale to ``clip*amax/qmax`` and clamps,
     trading saturation of the largest entry per row for a finer grid on the rest
@@ -108,7 +106,7 @@ def _quantize_folded_weight(
 
 
 class LlmEmulationHandle:
-    """Undo token for :func:`install_llm_per_row_emulation` — restores weights, removes hooks."""
+    """Undo token for :func:`install_llm_per_row_emulation`: restores weights, removes hooks."""
 
     def __init__(self, originals: List[Tuple[Any, Any]], hooks: List[Any]) -> None:
         self._originals = originals
@@ -150,41 +148,35 @@ def install_llm_per_row_emulation(
             RTN weight rounding (the INT8 schemes).
         rot_bs: Block-Hadamard size (0/1 disables the rotation, matching the ``_sq``
             ablation schemes).
-        bits: 4 or 8 — selects the symmetric code limit (7 / 127).
+        bits: 4 or 8; selects the symmetric code limit (7 / 127).
         qmax: Test override for the code limit; production callers leave it ``None``.
-        layer_bits: Optional ``{layer_index: bits}`` override, for emulating a
-            mixed-precision assignment (a few sensitive layers held at INT8
-            inside an otherwise INT4 stack — both plugin widths already exist,
-            so this is a deployable configuration, and emulating it here scores
-            candidates without building an engine per candidate). Layers absent
-            from the mapping use *bits*. GPTQ rounding is applied at whichever
-            width a layer ends up on.
+        layer_bits: Optional ``{layer_index: bits}`` override for a deployable
+            mixed-precision assignment (sensitive layers at INT8 inside an INT4
+            stack), scored here without building an engine per candidate.
+            Missing layers use *bits*; GPTQ rounding follows each layer's width.
         site_bits: Optional ``{site: bits}`` override for ``site`` in ``qkv`` / ``o`` /
-            ``gateup`` / ``down`` — a per-SITE mixed assignment (e.g. the FWHT residual
+            ``gateup`` / ``down``: a per-SITE mixed assignment (e.g. the FWHT residual
             sites ``o``/``down`` at INT8 inside an otherwise INT4 layer). Applies to both
             the weight rounding and that site's activation quantizer; ``layer_bits``
             still wins per layer when both are given for the same site.
         act_bits: Optional ACTIVATION width override (4 or 8) applied to every site's
-            quantizer while the weights keep ``bits``/``site_bits`` — e.g. ``bits=4,
+            quantizer while the weights keep ``bits``/``site_bits``, e.g. ``bits=4,
             act_bits=8`` emulates a W4A8 arm (INT4 weights, INT8 per-token activations),
             a configuration with no FoldQuant kernel yet; the emulation prices it before one
             is written.
-        act_clip_ratio: Activation clip — one float for every site, or a dict keyed
+        act_clip_ratio: Activation clip: one float for every site, or a dict keyed
             ``L{i}_{site}`` (learned per-layer/per-site clips; missing keys use 1.0).
         weight_clip: Optional learned per-output-row weight clips keyed
             ``L{i}_{weight_name}`` (``(N,)`` tensors in (0, 1]).
-        gptq_factors: Optional pre-computed ``{site_key: gptq_prepare(...)}``
-            reuse cache. The factorization is deterministic in the Hessian, so a
-            caller that installs the emulation repeatedly over one calibration
-            set (the per-layer sensitivity sweep) can factorize once instead of
-            re-running a Cholesky per site per install. Populated in place when
-            an empty dict is passed.
+        gptq_factors: Optional ``{site_key: gptq_prepare(...)}`` cache, so repeated
+            installs over one calibration set (the sensitivity sweep) factorize
+            once. Populated in place when an empty dict is passed.
 
     Returns:
         A :class:`LlmEmulationHandle`; call ``.remove()`` to restore the module.
 
     Raises:
-        KeyError: A missing SQ scale or GPTQ Hessian site — the emulation never
+        KeyError: A missing SQ scale or GPTQ Hessian site. The emulation never
             silently skips a site the deployed graph quantizes.
     """
     import torch
@@ -196,7 +188,7 @@ def install_llm_per_row_emulation(
     decoder = resolve_qwen3_decoder(module)
     cls_name = type(decoder).__name__
     # GemmaRMSNorm applies its weight as (1+w) (y = rms(x)·(1+w); rms from x
-    # BEFORE the gamma, same as Qwen) — so the SQ fold must see gamma=(1+w),
+    # BEFORE the gamma, same as Qwen), so the SQ fold must see gamma=(1+w),
     # exactly as the deployed emitter materializes it, and the value written
     # back to the live module is gamma_folded − 1. The MLP difference
     # (gelu_tanh vs silu) does not touch the fold: the down fold is linear in

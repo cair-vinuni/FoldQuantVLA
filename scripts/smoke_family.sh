@@ -3,8 +3,8 @@
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 #
 # One family, end to end, small: export -> build -> verify, on 8 calibration
-# observations and 8 held-out ones. It answers one question — does this
-# family's chain run on this machine and produce a record — and deliberately
+# observations and 8 held-out ones. It answers one question (does this
+# family's chain run on this machine and produce a record?) and deliberately
 # not "are the paper's numbers right", which needs the full 128/32 protocol.
 #
 #   scripts/smoke_family.sh groot_n1_7
@@ -68,7 +68,7 @@ run_family () {
   local pp
   pp=$(family_pythonpath "$R" "$dir")
   echo "═══ $fam"
-  [ -x "$venv" ] || { note SKIP "no .venv — see models/$fam/foldquant_integration/README.md"; skip=$((skip+1)); return; }
+  [ -x "$venv" ] || { note SKIP "no .venv; see models/$fam/foldquant_integration/README.md"; skip=$((skip+1)); return; }
 
   # per-family arguments; an unset path means skip, never a wrong-path failure
   local ckpt=() data=() extra=()
@@ -108,13 +108,13 @@ run_family () {
       if [ -d "$dir/exports/float/onnx" ]; then
         float_args=(--float-onnx-dir exports/float/onnx)
         [ "$reuse" = 1 ] && [ -d "$dir/exports/float/engines" ] && float_args+=(--float-engine-dir exports/float/engines)
-        note ok "float pipeline found — reusing exports/float"
+        note ok "float pipeline found, reusing exports/float"
       else
         note ..   "building the float pipeline first (needed for the untouched modules)"
         if [ "$fam" = groot_n1_7 ]; then
           ( cd "$dir" && PYTHONPATH="$pp" "$venv" scripts/deployment/build_trt_pipeline.py \
               "${ckpt[@]}" "${data[@]}" "${extra[@]}" --output-dir .smoke_float --steps export,build ) >>"$log" 2>&1 \
-            || { note FAIL "float pipeline — see $log"; fail=$((fail+1)); return; }
+            || { note FAIL "float pipeline: see $log"; fail=$((fail+1)); return; }
         else
           # N1.6 ships no build_trt_pipeline.py: its float arm is the DiT alone, from
           # export_onnx_n1d6.py, which takes argparse underscore flags and writes the
@@ -126,7 +126,7 @@ run_family () {
               "$venv" scripts/deployment/export_onnx_n1d6.py \
               --model_path "${N16_MODEL:-}" --dataset_path "${GROOT_DATA:-}" \
               --embodiment_tag "${N16_TAG:-libero_panda}" --output_dir .smoke_float/onnx ) >>"$log" 2>&1 \
-            || { note FAIL "float DiT export — see $log"; fail=$((fail+1)); return; }
+            || { note FAIL "float DiT export: see $log"; fail=$((fail+1)); return; }
         fi
         float_args=(--float-onnx-dir .smoke_float/onnx)
         [ "$reuse" = 1 ] && float_args+=(--float-engine-dir .smoke_float/engines)
@@ -139,19 +139,19 @@ run_family () {
   ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.export_foldquant \
       "${ckpt[@]}" "${data[@]}" "${extra[@]}" --num-calib "$CALIB" --seed 0 \
       --output-dir .smoke_export ) >>"$log" 2>&1 \
-    || { note FAIL "export — see $log"; fail=$((fail+1)); return; }
+    || { note FAIL "export: see $log"; fail=$((fail+1)); return; }
   note ok "export"
 
   ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.build_engines \
       --onnx-dir .smoke_export/onnx --engine-dir .smoke_export/engines \
       "${float_args[@]}" ) >>"$log" 2>&1 \
-    || { note FAIL "build_engines — see $log"; fail=$((fail+1)); return; }
+    || { note FAIL "build_engines: see $log"; fail=$((fail+1)); return; }
   note ok "build_engines"
 
   ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.verify \
       "${ckpt[@]}" "${data[@]}" "${extra[@]}" --engine-dir .smoke_export/engines \
       --num-samples "$SAMPLES" --seed 42 --output "$OUT/$fam.verify.json" ) >>"$log" 2>&1 \
-    || { note FAIL "verify — see $log"; fail=$((fail+1)); return; }
+    || { note FAIL "verify: see $log"; fail=$((fail+1)); return; }
 
   "$venv" - "$OUT/$fam.verify.json" <<'PY'
 import json, sys

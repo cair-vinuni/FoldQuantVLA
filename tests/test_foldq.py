@@ -44,7 +44,7 @@ def test_both_widths_ship_the_same_fold_description(bits: int, fold_order: str) 
 
 
 def test_an_unfolded_site_tells_the_runtime_not_to_rotate() -> None:
-    """No scales means no rotation — the weights were never folded for one."""
+    """No scales means no rotation: the weights were never folded for one."""
     w = torch.randn(8, 128)
     for bits in (4, 8):
         _, _, attrs = fold_site(w, bits=bits, block_size=64, s_ch=None)
@@ -54,7 +54,7 @@ def test_an_unfolded_site_tells_the_runtime_not_to_rotate() -> None:
 
 @pytest.mark.parametrize("fold_order", ["before", "after"])
 def test_the_fold_is_exact_before_quantization(fold_order: str) -> None:
-    """W'·(rotated, scaled x) reconstructs W·x — the fold is baking only."""
+    """W'·(rotated, scaled x) reconstructs W·x; the fold is baking only."""
     torch.manual_seed(0)
     k, bs = 256, 64
     w = torch.randn(48, k)
@@ -123,7 +123,7 @@ def test_the_fold_is_exact_through_zero_padding(k_real: int, fold_order: str) ->
 def test_the_padded_site_keeps_the_nominal_block(k_real: int) -> None:
     """fold_site must see the PADDED width, or it narrows the block silently.
 
-    rotation_block_for(720, 64) is 16 and rotation_block_for(480, 64) is 32 — a
+    rotation_block_for(720, 64) is 16 and rotation_block_for(480, 64) is 32. A
     caller that pads the activation but hands fold_site the raw width bakes a
     rotation the kernel does not perform.
     """
@@ -139,14 +139,14 @@ def test_the_padded_site_keeps_the_nominal_block(k_real: int) -> None:
     assert spec["rot_block_size"] == 64, (
         f"padded site fell back to block {spec['rot_block_size']}; the kernel rotates in 64s. "
         f"rotation_block_for would narrow the RAW width to "
-        f"{rotation_block_for(k_real, 64)} — fold_site must see the padded one."
+        f"{rotation_block_for(k_real, 64)}; fold_site must see the padded one."
     )
 
 
 def test_gptq_rounding_beats_round_to_nearest_at_four_bits() -> None:
     """GPTQ spends the same grid better; it must not change anything else.
 
-    At 4 bits the fold is grid-limited — measured on a flow-matching action head, the
+    At 4 bits the fold is grid-limited. Measured on a flow-matching action head, the
     W4A4/W8A8 error ratio came out 18.3x against an ideal 127/7 = 18.14x, so no
     amount of scaling or rotation buys more. GPTQ adds no codes; it propagates
     each column's rounding error into the columns not yet quantized. The packed
@@ -165,7 +165,7 @@ def test_gptq_rounding_beats_round_to_nearest_at_four_bits() -> None:
     gpt_b, gpt_s, _ = foldq.fold_site(w, bits=4, block_size=64, s_ch=None, fwht=True, gptq=prep)
     assert len(rtn_b) == len(gpt_b), "GPTQ changed the packed byte length"
     assert len(rtn_s) == len(gpt_s), "GPTQ changed the scale shape"
-    assert rtn_b != gpt_b, "GPTQ produced identical codes — it was not applied"
+    assert rtn_b != gpt_b, "GPTQ produced identical codes; it was not applied"
 
 
 @pytest.mark.parametrize("fold_order", ["before", "after"])
@@ -174,7 +174,7 @@ def test_the_hessian_is_taken_in_the_frame_the_kernel_sees(fold_order: str) -> N
 
     That weight multiplies the rotated, scaled activation, so its Hessian has to
     be built there. A Hessian on the raw activation compensates an error that
-    never occurs — it is not merely less effective, it is aimed at the wrong
+    never occurs. It is not merely less effective, it is aimed at the wrong
     thing. This pins that the accumulator applies scale and rotation, by checking
     it differs from the raw-frame Hessian.
     """
@@ -198,7 +198,7 @@ def test_the_hessian_accumulates_the_exact_fp32_per_call_sum(device: str) -> Non
 
     Staging the fp32 matrix (pinned when the activation is on a GPU) and adding
     in place is the fast path; the value it must equal is the plain sum of the
-    per-call fp32 ``x_r^T x_r`` widened to float64 — no extra rounding, and the
+    per-call fp32 ``x_r^T x_r`` widened to float64, with no extra rounding and the
     same result whether the calls came from the CPU or a device.
     """
     torch.manual_seed(0)

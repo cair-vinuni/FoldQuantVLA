@@ -22,7 +22,7 @@ extern "C" {
 // In-place row-wise softmax on a (HS, S) BF16 tensor, where HS = num_heads × batch
 // and S = sequence length. Each row of length S is softmaxed independently.
 //
-//   io_bf16: (HS, S) BF16 row-major — modified in place.
+//   io_bf16: (HS, S) BF16 row-major, modified in place.
 //   HS:      number of softmax rows
 //   S:       row length
 //   stream:  CUDA stream
@@ -41,7 +41,7 @@ int sdpa_softmax_bf16_inplace(
 // cross-attn with the broadcast pattern (B, 1, 1, S_kv) → (B*H*S, S_kv).
 int sdpa_softmax_bf16_inplace_masked(
     void* io_bf16,
-    void const* mask_bf16,    // (num_masks, S) BF16 — broadcast row. nullptr → no mask.
+    void const* mask_bf16,    // (num_masks, S) BF16 - broadcast row. nullptr → no mask.
     int rows_per_mask,         // how many io rows share one mask row
     int HS,
     int S,

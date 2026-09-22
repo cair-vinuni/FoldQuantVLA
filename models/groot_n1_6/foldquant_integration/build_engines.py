@@ -4,7 +4,7 @@
 """Compile an N1.6 engine directory from FoldQuant graphs.
 
 The FoldQuant graphs are compiled with :func:`foldquant.runtime.builder.build_engine`
-(STRONGLY_TYPED — the plugin nodes declare their own dtypes), after the plugin
+(STRONGLY_TYPED; the plugin nodes declare their own dtypes), after the plugin
 libraries the export manifest names are loaded (built for this device when no
 cached binary matches). Shape profiles come from the ONNX value infos plus the
 captured shapes the export recorded in ``export_metadata.json``; the state +
@@ -14,7 +14,7 @@ range around the captured length because the task text differs per task.
 A DiT the FoldQuant export left float (``--dit-scheme none``) can be built from
 the ``dit_model.onnx`` upstream's ``export_onnx_n1d6.py`` writes
 (``--float-onnx-dir``; weakly typed, BF16). Given alone, that directory yields
-the float-engine arm — the floor of the drift metric.
+the float-engine arm, the floor of the drift metric.
 
 Example::
 
@@ -159,7 +159,7 @@ def build(args: BuildConfig) -> Path:
             if manifest.get("schemes", {}).get(name) == "float":
                 # STRONGLY_TYPED, like every other arm: a weakly-typed network picks a
                 # precision per layer, and the layers TensorRT runs in fp32 are *more* exact
-                # than the bf16 reference this arm is scored against — which made pi05's float
+                # than the bf16 reference this arm is scored against, which made pi05's float
                 # engine drift further from PyTorch than its INT8 engine did. Honouring the
                 # ONNX's own dtypes keeps the float arm a control that differs from the
                 # quantized arms in the precision of the projections and in nothing else.

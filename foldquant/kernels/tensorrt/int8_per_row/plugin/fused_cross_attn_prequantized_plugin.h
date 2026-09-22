@@ -1,4 +1,4 @@
-// FusedAdaLnQuantCrossAttnPrequantized — cross-attn prologue plugin that
+// FusedAdaLnQuantCrossAttnPrequantized: cross-attn prologue plugin that
 // consumes a pre-quantized (int8_enc, scale_enc) pair from an upstream
 // `EncoderPreQuant` node instead of re-quantizing the encoder in every block.
 // Saves 15 redundant per-row quants per forward (16 cross-attn blocks − 1).
@@ -6,11 +6,11 @@
 // Plugin name: "FusedAdaLnQuantCrossAttnPrequantized", namespace "gr00t::v1", version "1".
 //
 // Inputs:
-//   0: x         [B, S, K]          BF16  — hidden states (1536 dim)
-//   1: scale     [B, K]             BF16  — AdaLN scale
-//   2: shift     [B, K]             BF16  — AdaLN shift
-//   3: enc_i8    [B, S_enc, K_enc]  INT8  — pre-quantized encoder
-//   4: enc_scale [B, S_enc]         FP32  — per-row scale
+//   0: x         [B, S, K]          BF16  - hidden states (1536 dim)
+//   1: scale     [B, K]             BF16  - AdaLN scale
+//   2: shift     [B, K]             BF16  - AdaLN shift
+//   3: enc_i8    [B, S_enc, K_enc]  INT8  - pre-quantized encoder
+//   4: enc_scale [B, S_enc]         FP32  - per-row scale
 //
 // Plugin fields:
 //   "weight_q_i8"        INT8 length = inner_dim * K

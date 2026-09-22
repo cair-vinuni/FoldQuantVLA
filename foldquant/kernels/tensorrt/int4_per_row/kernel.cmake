@@ -1,11 +1,11 @@
-# foldquant_int4_per_row — W4A4 DiT macro plugins (scheme w4a4_sr).
+# foldquant_int4_per_row: W4A4 DiT macro plugins (scheme w4a4_sr).
 #
 # 4-bit weights AND activations on the DiT stack: rotated-INT4 GEMM +
 # BF16-folded rotation + cuBLAS SDPA + INT4 weight-only AdaLN. Each DiT block
 # collapses to ~2 plugin nodes.
 #
 # NEEDS_CUTLASS: dit_int4_rowwise_gemm_fused_cuda.cu includes <cutlass/cutlass.h>.
-#   (This was previously declared CUTLASS-free, which broke the build — the
+#   (This was previously declared CUTLASS-free, which broke the build; the
 #   dependency now lives here, next to the source that has it.)
 # NEEDS_CUBLAS: BF16 rotation + batched BF16 SDPA inside the W4A4 macros.
 #

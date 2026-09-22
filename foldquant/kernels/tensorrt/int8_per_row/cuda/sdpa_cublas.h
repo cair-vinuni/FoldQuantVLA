@@ -8,8 +8,8 @@
 // buffer per sample: head h of sample b starts at
 //     ptr + b * sample_stride + h * D
 // with leading dimension `ld`. Two strides (head = D, sample = sample_stride) do
-// not fit one cuBLAS strided-batched call — the per-sample offset is not affine
-// in the flat index b*H + h — so this helper issues one strided-batched GEMM per
+// not fit one cuBLAS strided-batched call (the per-sample offset is not affine
+// in the flat index b*H + h), so this helper issues one strided-batched GEMM per
 // sample with batchCount = H. B is the number of parallel environments (<= 8),
 // so the extra launches are negligible next to the GEMMs themselves.
 //

@@ -4,7 +4,7 @@
 """Unit tests for ``kernels.locator``.
 
 Device/TensorRT-version resolution is exercised by monkeypatching
-``current_target_tuple()`` — no CUDA device or TensorRT installation is
+``current_target_tuple()``; no CUDA device or TensorRT installation is
 required for these tests. ``load_required_plugins()``'s actual ``ctypes``
 load path is covered separately by the GPU integration test; here it is only
 exercised up to (not including) ``load_plugin_libs()``.
@@ -97,7 +97,7 @@ def test_resolve_minor_tolerant_picks_highest_eligible_minor(fake_target: tuple[
 
 def test_resolve_ignores_minor_above_host(fake_target: tuple[Path, Path]) -> None:
     committed_dir, _ = fake_target
-    # Only a *newer*-minor binary is committed — not usable on this (older) host.
+    # Only a *newer*-minor binary is committed, not usable on this (older) host.
     (committed_dir / "foldquant_int8_per_row.sm86-x86_64-trt10.20.so").write_bytes(b"fake-so")
 
     assert loc.resolve_plugin_so("foldquant_int8_per_row") is None
@@ -156,7 +156,7 @@ def test_load_required_plugins_reports_only_the_missing_libs(fake_target: tuple[
 
     message = str(exc_info.value)
     assert "foldquant_int4_groupwise" in message
-    assert "foldquant_int8_per_row" not in message  # resolved — must not be reported as missing
+    assert "foldquant_int8_per_row" not in message  # resolved, must not be reported as missing
 
 
 # --------------------------------------------------------------------------- target_slug() / sm_arch_number()

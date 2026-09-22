@@ -4,8 +4,8 @@
 """Compile a complete N1.7 engine directory with FoldQuant graphs in it.
 
 Upstream's ``build_tensorrt_engine.build_engine`` already does everything a
-FoldQuant graph needs — STRONGLY_TYPED network, shape profiles derived from
-the ONNX dim names — except knowing the plugins. This tool loads the plugin
+FoldQuant graph needs (STRONGLY_TYPED network, shape profiles derived from
+the ONNX dim names) except knowing the plugins. This tool loads the plugin
 libraries the export manifest names (building them for this device when no
 cached binary matches), then walks the seven upstream pipeline components:
 
@@ -19,7 +19,7 @@ the same strongly-typed build, which is also how the recipe it reproduces
 builds it.
 
 The result is a directory ``trt_model_forward.setup_tensorrt_engines`` loads
-as ``n17_full_pipeline`` — after the same plugins are loaded in-process, which
+as ``n17_full_pipeline``, after the same plugins are loaded in-process, which
 :mod:`.verify`, :mod:`.eval_libero`, :mod:`.rollout` and :mod:`.benchmark` do.
 
 Example::
@@ -75,8 +75,8 @@ class BuildConfig:
 
     max_batch: int = 8
     """Upper bound of the symbolic batch axis in every optimization profile (upstream's default).
-    The engine reserves activation memory for this bound — the W4A4 DiT graph takes ~3 GB at
-    8 against ~6 MB at 1 — so pass ``--max-batch 1`` for a single-robot, batch-1 deployment."""
+    The engine reserves activation memory for this bound (the W4A4 DiT graph takes ~3 GB at
+    8 against ~6 MB at 1), so pass ``--max-batch 1`` for a single-robot, batch-1 deployment."""
 
     verbose: bool = False
     """Full TensorRT builder log (upstream default); off keeps warnings and errors."""
@@ -100,7 +100,7 @@ def _pin_batch_axis(onnx_path: Path, mins: Dict, opts: Dict, maxs: Dict, max_bat
 def load_manifest(onnx_dir: Path) -> dict:
     path = onnx_dir / MANIFEST_NAME
     if not path.is_file():
-        raise FileNotFoundError(f"{path} — is {onnx_dir} a FoldQuant export directory?")
+        raise FileNotFoundError(f"{path}: is {onnx_dir} a FoldQuant export directory?")
     return json.loads(path.read_text())
 
 
@@ -167,7 +167,7 @@ def build(args: BuildConfig) -> Dict[str, str]:
         if src is None:
             eng = _first_existing(float_eng, (engine_name,))
             if eng is None:
-                logger.warning("%s: no ONNX or engine found — skipped", name)
+                logger.warning("%s: no ONNX or engine found, skipped", name)
                 status[name] = "missing"
                 continue
             shutil.copy2(eng, dst)
@@ -211,7 +211,7 @@ def build(args: BuildConfig) -> Dict[str, str]:
     # A component with no ONNX and no float engine leaves a hole in the directory.
     # Reporting "complete" here is what lets the run continue: the record is
     # written, the caller exits 0, and trt_model_forward.setup_tensorrt_engines
-    # then keeps that module in PyTorch with only a print — while verify.py and
+    # then keeps that module in PyTorch with only a print, while verify.py and
     # serve.py still name the scheme from the export manifest. N1.5 and N1.6
     # raise FileNotFoundError in the equivalent position.
     missing = sorted(n for n, st in status.items() if st == "missing")

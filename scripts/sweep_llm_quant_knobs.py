@@ -7,24 +7,22 @@
 The W4A4 LLM fold has two calibration constants with no closed-form optimum,
 both inherited from the INT8 recipe:
 
-* ``sq_alpha`` — the SmoothQuant migration strength (0.4 in the registry,
-  shared by every layer and site). Per-channel scaling is the load-bearing
-  mechanism of the fold, so its knob is the highest-leverage constant in the
-  pipeline — and refitting it is a pure offline re-fold, deployable with zero
-  kernel or runtime change.
-* ``act_clip_ratio`` — the per-row dynamic INT4 activation scale's clip (the
+* ``sq_alpha``: the SmoothQuant migration strength (0.4 in the registry,
+  shared by every layer and site). The highest-leverage constant in the
+  pipeline; refitting it is an offline re-fold with no kernel or runtime change.
+* ``act_clip_ratio``: the per-row dynamic INT4 activation scale's clip (the
   kernel ships 1.0). Saturates the largest entry per row for a finer grid on the
   rest; deploys as one scalar plugin attribute.
 
 Two stages keep the search cheap: a fast RTN grid ranks every combination on a
 handful of calibration observations, then the top candidates plus the registry
-default are re-scored with GPTQ rounding — the deployed numerics; GPTQ Hessians
+default are re-scored with GPTQ rounding (the deployed numerics); GPTQ Hessians
 are re-measured per alpha because they live in the transformed frame
 ``rot(x / s_alpha)``. GPTQ damping is fixed (``foldquant.llm_gptq.PERCDAMP``)
 and is not a knob.
 
 Two objectives. ``seam`` ranks by the decoder-output cosine at the LM/expert
-seam — the customary criterion. ``actions`` runs the whole policy per combo and
+seam, the customary criterion. ``actions`` runs the whole policy per combo and
 ranks by the cosine of the DECODED ACTION CHUNK against the BF16 reference (each
 observation seeded so both integrate from identical flow-matching noise). The
 two can disagree: on the Qwen3-VL backbone the seam-optimal preset lowers action

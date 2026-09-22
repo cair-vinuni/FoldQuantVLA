@@ -10,10 +10,10 @@ from pathlib import Path
 import sys
 
 
-#: ``models/groot_n1_6`` — the trimmed upstream ``n1.6.1-release`` checkout.
+#: ``models/groot_n1_6``, the trimmed upstream ``n1.6.1-release`` checkout.
 UPSTREAM_ROOT = Path(__file__).resolve().parents[1]
 #: Upstream's DiT export / TensorRT build / timing tools (plain scripts, not a
-#: package — importable only with this directory on ``sys.path``).
+#: package; importable only with this directory on ``sys.path``).
 DEPLOYMENT_DIR = UPSTREAM_ROOT / "scripts" / "deployment"
 
 #: The two modules FoldQuant replaces, the graph each is exported to and the
@@ -89,7 +89,7 @@ def ensure_libero_on_path() -> None:
     """
     if not (LIBERO_DIR / "libero").is_dir():
         raise RuntimeError(
-            f"{LIBERO_DIR} is empty — initialise the pinned LIBERO first:\n"
+            f"{LIBERO_DIR} is empty; initialise the pinned LIBERO first:\n"
             f"    git submodule update --init {LIBERO_DIR.relative_to(UPSTREAM_ROOT.parent.parent)}"
         )
     d = str(LIBERO_DIR)

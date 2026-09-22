@@ -1,4 +1,4 @@
-// FusedNormProjOut — collapses the DiT output head
+// FusedNormProjOut: collapses the DiT output head
 // (norm_out + AdaLN modulation from proj_out_1 + per-row INT8 quant + INT8
 //  proj_out_2 GEMM + bias) into one plugin call. Optional / exploratory: the
 // four shipped schemes in profile_quantization_dit.py keep the BF16 output
@@ -14,14 +14,14 @@
 //
 // Inputs:
 //   0: hidden   [B, S, K]    BF16
-//   1: scale    [B, K]       BF16 — split from proj_out_1(silu(temb)), second half
-//   2: shift    [B, K]       BF16 — split from proj_out_1(silu(temb)), first half
+//   1: scale    [B, K]       BF16 - split from proj_out_1(silu(temb)), second half
+//   2: shift    [B, K]       BF16 - split from proj_out_1(silu(temb)), first half
 //
 // Plugin fields:
 //   "weight_proj_out_i8"      INT8  length = output_dim * K
 //   "weight_proj_out_scale"   FP32  length = output_dim
 //   "bias_proj_out"           FP32  length = output_dim
-//   "static_act_scale_x"      FP32  length = max_S  (OPTIONAL — dynamic if absent)
+//   "static_act_scale_x"      FP32  length = max_S  (OPTIONAL - dynamic if absent)
 //   "K"                       INT32 = hidden dim
 //   "output_dim"              INT32 = proj_out_2 out_features
 //   "eps"                     FP32

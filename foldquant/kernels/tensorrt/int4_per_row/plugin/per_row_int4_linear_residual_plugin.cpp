@@ -154,7 +154,7 @@ IPluginV3* PerRowInt4LinearResidualPlugin::clone() noexcept {
             mWeightI4Host, mWeightScaleHost, mPermHost, mRotationHost, mN, mK, mBlockSize,
             mRotBlockSize, mActClipRatio);
         // attachToContext() clones, so anything not carried here is lost at
-        // runtime — and a dropped SmoothQuant vector quantizes un-smoothed with
+        // runtime, and a dropped SmoothQuant vector quantizes un-smoothed with
         // no visible symptom, which is exactly what the weights were folded for.
         p->mActScaleChHost = mActScaleChHost;
         p->mActScalePreHost = mActScalePreHost;
@@ -244,7 +244,7 @@ int32_t PerRowInt4LinearResidualPlugin::enqueue(PluginTensorDesc const* inputDes
         // Fail LOUD on a mis-baked Ω field set: perm-without-rotation would
         // dereference a null device pointer inside the kernel, and block_size
         // <= 0 makes the rotate-quant launcher an empty *success* that leaves
-        // the workspace uninitialized — the GEMM would then emit confident
+        // the workspace uninitialized, and the GEMM would then emit confident
         // garbage with no symptom. Mixing Ω fields with an FWHT rot_block_size
         // is contradictory (two different rotations for one baked weight).
         int rc;
@@ -257,8 +257,8 @@ int32_t PerRowInt4LinearResidualPlugin::enqueue(PluginTensorDesc const* inputDes
             if (!omega_complete) return -2;
             if (mCublasHandle == nullptr) return -3;
             // permute -> cuBLAS strided-batched block rotation -> per-row quant.
-            // The single fused kernel this replaces launched grid(M) blocks — 10
-            // for a Pi0.5 action chunk — and walked the rotation matrix out of
+            // The single fused kernel this replaces launched grid(M) blocks (10
+            // for a Pi0.5 action chunk) and walked the rotation matrix out of
             // global memory twice per row, which cost 25x this composition at
             // K=4096. Same decomposition the DiT's fused attention/FFN plugins
             // already use; BF16 operands with FP32 accumulate.
@@ -335,7 +335,7 @@ PluginFieldCollection const* PerRowInt4LinearResidualPlugin::getFieldsToSerializ
     mDataToSerialize.emplace_back(PluginField("N", &mN, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("K", &mK, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("block_size", &mBlockSize, PluginFieldType::kINT32, 1));
-    // FWHT mode must survive engine serialize exactly like the Ω fields — the
+    // FWHT mode must survive engine serialize exactly like the Ω fields: the
     // baked weights are already folded with W·Hᵀ and a deserialized engine that
     // lost rot_block_size would run un-rotated with no visible symptom.
     mDataToSerialize.emplace_back(PluginField("rot_block_size", &mRotBlockSize, PluginFieldType::kINT32, 1));

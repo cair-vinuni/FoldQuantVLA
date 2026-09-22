@@ -4,12 +4,12 @@
 """Compile a Pi0.5 engine directory from FoldQuant graphs.
 
 The graphs are compiled with :func:`foldquant.runtime.builder.build_engine`
-(STRONGLY_TYPED — the plugin nodes declare their own dtypes), after the plugin
+(STRONGLY_TYPED; the plugin nodes declare their own dtypes), after the plugin
 libraries the export manifest names are loaded (built for this device when no
 cached binary matches). Both graphs are static in practice: the LLM prefix
 graph was emitted with its sequence length pinned, and the expert graph's
 one symbolic axis (``prefix_len``, the KV-stack length it cross-attends) is
-profiled at exactly the captured prefix — upstream pads the prompt to a fixed
+profiled at exactly the captured prefix: upstream pads the prompt to a fixed
 token count, so no other length ever reaches it.
 
 A module the export left float (``--expert-scheme none`` / ``--llm-scheme
@@ -61,7 +61,7 @@ def load_manifest(onnx_dir: Path) -> dict[str, Any]:
 
 
 def dim_ranges(metadata: dict[str, Any]) -> dict[str, Any]:
-    """``{dim_name: int}`` for the symbolic dimensions the graphs may carry — all pinned to the capture."""
+    """``{dim_name: int}`` for the symbolic dimensions the graphs may carry, all pinned to the capture."""
     prefix_len = int(metadata["prefix_len"])
     return {
         "batch": 1,
@@ -110,7 +110,7 @@ def build(args: BuildConfig) -> Path:
         logger.info("%s: building %s from %s", name, engine_name, src.name)
         # A traced float graph carries no plugin nodes, but it is still built STRONGLY_TYPED:
         # a weakly-typed network picks a precision per layer, and the layers TensorRT then
-        # runs in fp32 are *more* exact than the bf16 reference the arm is scored against —
+        # runs in fp32 are *more* exact than the bf16 reference the arm is scored against,
         # which showed up as the float engine drifting further from PyTorch than the INT8 one.
         # Strongly typed honours the ONNX's own bf16 dtypes, so this arm differs from the
         # quantized arms in the precision of the projections and in nothing else.

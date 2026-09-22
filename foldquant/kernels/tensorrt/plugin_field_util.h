@@ -13,7 +13,7 @@ namespace gr00t {
 // (plus the string's NUL terminator on some parser builds); deserialization
 // hands over the typed field serializeToFields() wrote, whose length is the
 // ELEMENT count. Reading f.length as elements on the parser path over-reads
-// the payload sizeof(elem)x — harmless where only the prefix is consumed, but
+// the payload sizeof(elem)x. That is harmless where only the prefix is consumed, but
 // it bloats every serialized engine by the same factor and breaks any size
 // validation (PerRowInt4LinearResidual's omega-mode check rejected every
 // correctly-baked expert engine). Normalize to an element count.

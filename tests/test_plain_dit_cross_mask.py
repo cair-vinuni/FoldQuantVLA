@@ -75,7 +75,7 @@ def test_both_emitters_route_a_plain_dit_to_the_attend_all_mask() -> None:
     """Neither half of a text/image split may be selected when there is no split.
 
     Picking one silently would produce a graph that builds and runs at full speed
-    while attending to the wrong tokens — the failure the old hard refusal existed
+    while attending to the wrong tokens, the failure the old hard refusal existed
     to prevent.
     """
     from foldquant import dit_int4, dit_int8
@@ -160,8 +160,8 @@ def test_mask_acceptance_is_read_off_the_forward_signature() -> None:
 def test_replay_inputs_take_the_module_dtype_where_autocast_used_to() -> None:
     """N1.5 runs its action head under bf16 autocast, so the captured encoder states
     arrive fp32 out of the ``vlln`` LayerNorm while the DiT holds bf16 weights. The
-    replay has no autocast; it hands the module inputs in the module's own dtype —
-    the engine's declared input dtype — and leaves timestep/masks integral."""
+    replay has no autocast; it hands the module inputs in the module's own dtype
+    (the engine's declared input dtype) and leaves timestep/masks integral."""
     from foldquant.calibrate import dit_inputs_for
 
     module = _MasklessDiT().to(torch.bfloat16)

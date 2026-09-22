@@ -225,7 +225,7 @@ int32_t PerRowInt8LinearResidualPlugin::enqueue(PluginTensorDesc const* inputDes
         }
         if (rc != 0) return rc;
 
-        // Step 2: fused INT8 GEMM + residual (no bias), t128x128x64 tile —
+        // Step 2: fused INT8 GEMM + residual (no bias), t128x128x64 tile.
         // v4 ladder: full EVT fp32 precision (no bf16_add 2-step trade-off) +
         // tile-autotune winner. See test_llm_tile_autotune.py.
         // Tile choice, measured (RTX 4070 Ti Super, SM89): the 128x128x64 tile was
@@ -234,7 +234,7 @@ int32_t PerRowInt8LinearResidualPlugin::enqueue(PluginTensorDesc const* inputDes
         // ones and halves the CTA count; a projection with N=1024 gets 8 CTAs.
         // 64x64x64 wins 2.0-2.9x at M<=64 on every shape measured. Above that the
         // picture is shape-dependent and the LLM has its own autotune, so the
-        // switch keys on M alone. Same kernel and EVT epilogue — launch shape only.
+        // switch keys on M alone. Same kernel and EVT epilogue; launch shape only.
         bool const smallTile = (M <= 64);  // action-expert row counts only
         rc = smallTile
                  ? dit_int8_rowwise_gemm_residual_bf16out(
@@ -276,7 +276,7 @@ PluginFieldCollection const* PerRowInt8LinearResidualPlugin::getFieldsToSerializ
     }
     mDataToSerialize.emplace_back(PluginField("N", &mN, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("K", &mK, PluginFieldType::kINT32, 1));
-    // MUST be serialized — see mRotBlockSize in the header.
+    // MUST be serialized; see mRotBlockSize in the header.
     mDataToSerialize.emplace_back(
         PluginField("rot_block_size", &mRotBlockSize, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("act_scale_pre", mScalePreHost.data(),

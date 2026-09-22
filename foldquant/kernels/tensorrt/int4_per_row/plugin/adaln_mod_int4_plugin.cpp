@@ -1,4 +1,4 @@
-// AdaLNModInt4 — INT4 weight-only (W4A16) AdaLN modulation linear.
+// AdaLNModInt4: INT4 weight-only (W4A16) AdaLN modulation linear.
 // See adaln_mod_int4_plugin.h. Skeleton cloned from encoder_prequant_int4_plugin.cpp.
 
 #include "plugin_field_util.h"

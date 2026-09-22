@@ -1,4 +1,4 @@
-// Phase 4 — Fused GELU (tanh approximation) + per-row INT8 quantization.
+// Phase 4: Fused GELU (tanh approximation) + per-row INT8 quantization.
 //
 // Replaces the FFN intermediate sequence (proj0 → gelu_tanh → per_row_quant)
 // after-GEMM pieces into a single launch. Operates on the (M, N) BF16 output
@@ -28,7 +28,7 @@ int dit_gelu_quant_bf16_to_int8(
 
 // FoldQuant variant: SmoothQuant channel divide (act_scale_pre, the RAW-frame
 // fold-before vector; pass NULL for the unfolded arm) then a block-diagonal
-// Sylvester butterfly of width rot_bs, and only then the per-row amax — the
+// Sylvester butterfly of width rot_bs, and only then the per-row amax; the
 // quantizer must see the rotated row, since that is what the INT8 grid holds.
 // Returns cudaErrorInvalidValue when rot_bs is not a usable block for K.
 int dit_gelu_fwht_quant_bf16_to_int8(

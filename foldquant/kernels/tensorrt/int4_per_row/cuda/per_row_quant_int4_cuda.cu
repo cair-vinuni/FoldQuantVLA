@@ -69,7 +69,7 @@ __global__ void per_row_quant_bf16_to_int4_kernel(
     float inv_scale = (scale > 1e-12f) ? (1.0f / scale) : 0.0f;
     if (threadIdx.x == 0) out_scale[m] = scale;
 
-    // Phase 4: quantize + pack — one thread per output byte (2 elements).
+    // Phase 4: quantize + pack, one thread per output byte (2 elements).
     const int nbytes = K / 2;
     for (int b = threadIdx.x; b < nbytes; b += blockDim.x) {
         float v0 = __bfloat162float(row_in[2 * b]);
@@ -85,17 +85,17 @@ __global__ void per_row_quant_bf16_to_int4_kernel(
 // Rotation variant: block-diagonal Hadamard between the input and the
 // quantizer. INT4 clone of per_row_fwht_quant_bf16_to_int8_kernel.
 //
-// Unlike the plain kernel this MUST stage the row in shared memory — the FWHT is
+// Unlike the plain kernel this MUST stage the row in shared memory: the FWHT is
 // an in-place multi-pass butterfly and its OUTPUT is what amax and the packer
 // need. Shared cost is K floats: 8 KB at K=2048 (o_proj), 24 KB at K=6144
-// (down_proj) — both inside sm_87's 96 KB budget.
+// (down_proj), both inside sm_87's 96 KB budget.
 //
 // The plain kernel above is left untouched on purpose: it is shared with the
 // DiT int4 macro plugins, which must not change behaviour.
 __global__ void per_row_fwht_quant_bf16_to_int4_kernel(
     const __nv_bfloat16* __restrict__ in,
-    const float* __restrict__ act_scale_pre, // (K,) or nullptr — pre-rotation SmoothQuant
-    const float* __restrict__ act_scale_ch,  // (K,) or nullptr — post-rotation SmoothQuant
+    const float* __restrict__ act_scale_pre, // (K,) or nullptr - pre-rotation SmoothQuant
+    const float* __restrict__ act_scale_ch,  // (K,) or nullptr - post-rotation SmoothQuant
     int8_t* __restrict__ out_i4,   // (M, K/2) packed
     float* __restrict__ out_scale,
     int M, int K, int rot_bs, float act_clip)
@@ -135,7 +135,7 @@ __global__ void per_row_fwht_quant_bf16_to_int4_kernel(
     // it into the baked matrix (omega_rotation.fold_rotation_sq divides R[:,c] by
     // s_ch[c], i.e. it scales the rotation's OUTPUT channel). A fixed butterfly
     // has no coefficients to absorb it, so it arrives as its own vector and is
-    // applied here — same arithmetic, one extra pass over shared memory.
+    // applied here: same arithmetic, one extra pass over shared memory.
     if (act_scale_ch != nullptr) {
         for (int k = threadIdx.x; k < K; k += blockDim.x) {
             y_buf[k] /= act_scale_ch[k];
@@ -168,13 +168,13 @@ __global__ void per_row_fwht_quant_bf16_to_int4_kernel(
     }
     __syncthreads();
 
-    // INT4 symmetric range [-7, 7] — the -8 code is never emitted, matching the
+    // INT4 symmetric range [-7, 7]. The -8 code is never emitted, matching the
     // Python packer and the simulator's qmax_of(4).
     const float scale = act_clip * warp_amaxes[0] * (1.0f / 7.0f);
     const float inv_scale = (scale > 1e-12f) ? (1.0f / scale) : 0.0f;
     if (threadIdx.x == 0) out_scale[m] = scale;
 
-    // One thread per output byte (2 elements) — no cross-thread nibble race.
+    // One thread per output byte (2 elements), so no cross-thread nibble race.
     const int nbytes = K / 2;
     for (int b = threadIdx.x; b < nbytes; b += blockDim.x) {
         int q0 = (int)fmaxf(-7.0f, fminf(7.0f, rintf(y_buf[2 * b]     * inv_scale)));
@@ -326,7 +326,7 @@ extern "C" int dit_int4_per_row_quant_fwht_bf16(
     if (rot_bs <= 1) {
         // No rotation means no rotated channel axis for a POST-rotation scale to
         // live on; a caller passing one has a folding bug, so refuse it. A
-        // pre-rotation scale is still meaningful — it divides the raw channel,
+        // pre-rotation scale is still meaningful: it divides the raw channel,
         // which exists with or without a rotation (that is plain SmoothQuant,
         // and it is what the rotation-off ablation arms need).
         if (act_scale_ch != nullptr) return static_cast<int>(cudaErrorInvalidValue);
@@ -366,7 +366,7 @@ extern "C" int dit_int4_per_row_quant_fwht_bf16(
     size_t smem_bytes = sizeof(float) * (size_t)K;
     // Same wide-K guard as the INT8 twin: K > ~12K floats exceeds the 48KB
     // default dynamic-smem limit (Gemma's 16384-wide down_proj is exactly
-    // that case on the INT8 path) — opt in explicitly.
+    // that case on the INT8 path), so opt in explicitly.
     if (smem_bytes > 48 * 1024) {
         cudaError_t attr_rc = cudaFuncSetAttribute(
             per_row_fwht_quant_bf16_to_int4_kernel,

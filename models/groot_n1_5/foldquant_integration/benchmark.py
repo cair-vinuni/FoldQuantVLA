@@ -10,12 +10,12 @@ observation from the dataset, ``--warmup`` untimed calls, then
 iteration it times what ``Gr00tPolicy.get_action`` does, in the same order
 and under the same autocast:
 
-* ``data_processing``  — ``apply_transforms`` on the raw observation dict;
-* ``backbone``         — ``model.prepare_input`` + the Eagle backbone (ViT + LLM);
-* ``action_head``      — ``action_head.get_action`` (the full denoising loop);
-* ``e2e``              — a separate, whole ``policy.get_action`` call.
+* ``data_processing``:   ``apply_transforms`` on the raw observation dict;
+* ``backbone``:          ``model.prepare_input`` + the Eagle backbone (ViT + LLM);
+* ``action_head``:       ``action_head.get_action`` (the full denoising loop);
+* ``e2e``:               a separate, whole ``policy.get_action`` call.
 
-Every arm — PyTorch Eager and each FoldQuant engine directory — is timed by
+Every arm (PyTorch Eager and each FoldQuant engine directory) is timed by
 the same loop with :func:`.runtime.install_engines` swapping the engines in.
 
 Example::

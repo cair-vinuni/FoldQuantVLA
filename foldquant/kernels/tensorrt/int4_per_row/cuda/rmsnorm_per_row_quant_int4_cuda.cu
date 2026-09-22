@@ -1,4 +1,4 @@
-// LLM W4A4 — RMSNorm + block-Hadamard + per-row INT4 quant prologue.
+// LLM W4A4: RMSNorm + block-Hadamard + per-row INT4 quant prologue.
 //
 // INT4 clone of rmsnorm_per_row_quant_cuda.cu's dynamic kernel, feeding the
 // FusedRmsNormLinearInt4 plugin (merged Q+K+V and merged gate+up GEMMs).
@@ -16,7 +16,7 @@
 //   Pass 3: pack clamp(round(y[k] / (amax/7)), -7, 7) into nibbles.
 //
 // Shared mem: K floats (y buffer) + WarpsPerBlock floats (warp reduction).
-// 8 KB at K=2048, 24 KB at K=6144 — inside sm_87's 96 KB budget.
+// 8 KB at K=2048, 24 KB at K=6144, inside sm_87's 96 KB budget.
 
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
@@ -53,7 +53,7 @@ __device__ __forceinline__ float warp_reduce_max(float v) {
 
 // rot_bs <= 1 disables the rotation; the kernel then keeps the fused
 // single-pass amax (no extra barrier, no re-read of y_buf) exactly like the
-// INT8 original. That fused branch is not an optimisation detail — losing it
+// INT8 original. That fused branch is not an optimisation detail: losing it
 // was a measured regression on the INT8 path.
 __global__ void rmsnorm_per_row_quant_int4_kernel(
     __nv_bfloat16 const* __restrict__ x,
@@ -151,7 +151,7 @@ __global__ void rmsnorm_per_row_quant_int4_kernel(
         out_scale[token_id] = q_scale;
     }
 
-    // --- Pass 3: quantize and pack — one thread per output byte, so the two
+    // --- Pass 3: quantize and pack, one thread per output byte, so the two
     // nibbles of a byte are always written by the same thread. ---
     const int nbytes = K / 2;
     for (int b = tid; b < nbytes; b += blockDim.x) {
@@ -189,7 +189,7 @@ extern "C" int rmsnorm_fwht_per_row_quant_bf16_to_int4(
     size_t smem_bytes = sizeof(float) * ((size_t)K + kWarpsPerBlock);
     // Same wide-K guard as the INT8 twin (rmsnorm_per_row_quant_cuda.cu): the
     // row is staged in dynamic shared memory, and K > ~12K floats exceeds the
-    // 48KB default per-block limit — opt in explicitly. Gemma's 16384-wide
+    // 48KB default per-block limit, so opt in explicitly. Gemma's 16384-wide
     // down_proj already tripped exactly this on the INT8 path.
     if (smem_bytes > 48 * 1024) {
         cudaError_t attr_rc = cudaFuncSetAttribute(

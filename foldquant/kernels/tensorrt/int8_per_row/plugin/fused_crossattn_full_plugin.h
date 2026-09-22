@@ -1,4 +1,4 @@
-// FusedCrossAttnFull — full cross-attention block collapsed into one plugin call:
+// FusedCrossAttnFull: full cross-attention block collapsed into one plugin call:
 // AdaLN + per-row quant on x + Q GEMM + KV GEMM (from pre-quantized encoder) +
 // SDPA (optionally masked) + per-row quant + attn_O GEMM + bias + residual.
 //
@@ -11,18 +11,18 @@
 // Plugin name: "FusedCrossAttnFull", namespace "gr00t::v1", version "1".
 //
 // Inputs:
-//   0: x          [B, S, K]              BF16 — hidden state (also residual)
-//   1: scale      [B, K]                 BF16 — AdaLN scale
-//   2: shift      [B, K]                 BF16 — AdaLN shift
-//   3: enc_i8     [B, S_enc, K_enc/4]    INT32 — pre-quantized encoder (packed)
-//   4: enc_scale  [B, S_enc]             FP32 — per-row encoder scale
-//   5: attn_mask  [B, 1, 1, S_enc]       BF16 — additive mask (0=keep, -1e4=mask).
-//                                              Required input — pass a zero mask
+//   0: x          [B, S, K]              BF16 - hidden state (also residual)
+//   1: scale      [B, K]                 BF16 - AdaLN scale
+//   2: shift      [B, K]                 BF16 - AdaLN shift
+//   3: enc_i8     [B, S_enc, K_enc/4]    INT32 - pre-quantized encoder (packed)
+//   4: enc_scale  [B, S_enc]             FP32 - per-row encoder scale
+//   5: attn_mask  [B, 1, 1, S_enc]       BF16 - additive mask (0=keep, -1e4=mask).
+//                                              Required input: pass a zero mask
 //                                              tensor for unmasked behavior.
 //
 // Outputs (depends on `emit_kv` attribute):
-//   0: out        [B, S, K]              BF16 — post-cross-attn block output
-//   1: kv_bf16    [B, S_enc, 2*K]        BF16 — emitted only when emit_kv != 0;
+//   0: out        [B, S, K]              BF16 - post-cross-attn block output
+//   1: kv_bf16    [B, S_enc, 2*K]        BF16 - emitted only when emit_kv != 0;
 //                                              K at offset 0..inner_dim, V at
 //                                              offset inner_dim..2*inner_dim,
 //                                              row-stride = 2*inner_dim.
@@ -103,7 +103,7 @@ private:
     std::vector<float>  mStaticActScalePostSdpaHost;
 
     // FoldQuant: block-diagonal butterfly plus the RAW-frame SmoothQuant vectors for
-    // the block's two GEMM inputs — the post-adaLN X into the Q/QKV projection,
+    // the block's two GEMM inputs: the post-adaLN X into the Q/QKV projection,
     // and the post-SDPA context into the output projection. Zero block size is
     // the unrotated path; there is no third state and no silent skip.
     int32_t mRotBlockSize{0};

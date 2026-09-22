@@ -55,7 +55,7 @@ namespace kernel
 
 // Reduce sum within the warp using the tree reduction algorithm.
 // psum is FP32 accumulator (changed from FP16 to handle outlier weight scales
-// observed in finetuned LLMs — products can exceed FP16 65504 max).
+// observed in finetuned LLMs; products can exceed FP16 65504 max).
 template <int Num, int WarpSize>
 __device__ __forceinline__ static void warp_reduce(float* psum, float (*out_smem)[Num * 4])
 {

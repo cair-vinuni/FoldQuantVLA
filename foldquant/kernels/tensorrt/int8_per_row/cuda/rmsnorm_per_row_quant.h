@@ -39,7 +39,7 @@ extern "C" {
 //   stream:      CUDA stream
 // Outputs:
 //   out_i8:      (B, S, K) INT8 row-major
-//   out_scale:   (B*S,)    FP32 — per-row quantization scale
+//   out_scale:   (B*S,)    FP32 - per-row quantization scale
 //
 // Returns 0 on success, CUDA error code otherwise.
 int rmsnorm_per_row_quant_bf16_to_int8(
@@ -59,7 +59,7 @@ int rmsnorm_per_row_quant_bf16_to_int8(
 // axis; on this LLM that blindness costs ~14% median per-channel error.
 //
 // The caller MUST have folded the weight side offline (W' = W·Hᵀ, same
-// orthonormal Sylvester Hadamard — see fwht.cuh), otherwise the layer silently
+// orthonormal Sylvester Hadamard; see fwht.cuh), otherwise the layer silently
 // computes the wrong product.
 //
 //   rot_bs <= 1        → identical to rmsnorm_per_row_quant_bf16_to_int8

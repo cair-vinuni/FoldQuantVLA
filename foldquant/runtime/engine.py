@@ -1,10 +1,10 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""TensorRT engine wrapper — deserialize, bind, run.
+"""TensorRT engine wrapper: deserialize, bind, run.
 
 Binds torch CUDA tensors to the TensorRT execution context by raw device
-pointer (``tensor.data_ptr()``) — no host-side buffer copies. Per-module
+pointer (``tensor.data_ptr()``), with no host-side buffer copies. Per-module
 engines run inline inside a larger PyTorch forward pass, where staging through
 host buffers would be pure overhead.
 
@@ -15,8 +15,8 @@ which the caller's ``current_stream()`` usually is).
 **CUDA-graph replay** (opt-in, ``FOLDQUANT_TRT_CUDA_GRAPH=1``): per input-shape
 key, the first call captures ``execute_async_v3`` into a ``torch.cuda.CUDAGraph``
 against stable staging buffers; later calls copy inputs into the staging
-buffers and replay. This removes per-call launch overhead — the same benefit
-NVIDIA's ``openpi_on_thor`` reference gets from ``trtexec --useCudaGraph`` —
+buffers and replay. This removes per-call launch overhead (the same benefit
+NVIDIA's ``openpi_on_thor`` reference gets from ``trtexec --useCudaGraph``)
 and matters most for engines called many times per action chunk (Pi0.5's
 expert runs 10×). Outputs keep the existing
 buffer-reuse contract: callers that hold a result across another call of the
@@ -72,7 +72,7 @@ class TensorRTEngine:
         engine_path: Path to a serialized ``.engine`` file.
     """
 
-    # Shared across every instance in the process — trt.Runtime/Logger carry
+    # Shared across every instance in the process: trt.Runtime/Logger carry
     # process-global state; GR00T N1.6 alone deserializes up to six of these.
     _shared_runtime: Any = None
     _shared_logger: Any = None
@@ -136,7 +136,7 @@ class TensorRTEngine:
                 if not (lo <= dim <= hi):
                     raise RuntimeError(
                         f"TensorRTEngine: input {name!r} axis {axis} = {dim} is outside the compiled "
-                        f"profile bounds [{lo}, {hi}]. Shape profiles are fixed at compile time — "
+                        f"profile bounds [{lo}, {hi}]. Shape profiles are fixed at compile time; "
                         "rebuild the engine with wider bounds if this input is legitimately larger."
                     )
         if not self.context.set_input_shape(name, tuple(shape)):
@@ -154,7 +154,7 @@ class TensorRTEngine:
         missing_out, extra_out = expected_outputs - actual_outputs, actual_outputs - expected_outputs
         if missing_in or extra_in or missing_out or extra_out:
             raise RuntimeError(
-                "TensorRTEngine: I/O contract mismatch — "
+                "TensorRTEngine: I/O contract mismatch: "
                 f"missing inputs={sorted(missing_in)}, unexpected inputs={sorted(extra_in)}, "
                 f"missing outputs={sorted(missing_out)}, unexpected outputs={sorted(extra_out)}."
             )
@@ -180,7 +180,7 @@ class TensorRTEngine:
         """Replay (capturing on first sight of a shape key) instead of enqueueing.
 
         Raises:
-            RuntimeError: If graph capture fails — the flag is an explicit
+            RuntimeError: If graph capture fails. The flag is an explicit
                 opt-in, so a failed capture is surfaced (with the advice to
                 unset ``FOLDQUANT_TRT_CUDA_GRAPH``) rather than silently falling
                 back to a differently-performing path.

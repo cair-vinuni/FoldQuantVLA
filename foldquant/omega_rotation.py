@@ -13,7 +13,7 @@ These reproduce, byte-for-byte, the weight preprocessing the compiled
     matching CUTLASS ``ColumnMajor int4b_t`` (see ``dit_int4_rowwise.h``);
   * an optional **SmoothQuant per-channel activation fold** (``fold_rotation_sq``
     / ``pack_int4_colmajor_sq``) that absorbs a static per-channel activation
-    scale into the rotation and weight — deployable static W4A4;
+    scale into the rotation and weight, giving deployable static W4A4;
   * the ``AdaLNModInt4`` weight-only GEMV packing (``adaln_pack_int4``).
 
 Reproduced verbatim from the GR00T FoldQuant reference; the math must not drift from
@@ -89,7 +89,7 @@ def pad_in_dim(t: Any, block_size: int) -> Any:
     W_pad·x_pad = W·x, and an orthonormal rotation stays orthonormal on the
     padded space.
 
-    The calibration capture and the emitter must pad IDENTICALLY — the scale is
+    The calibration capture and the emitter must pad IDENTICALLY: the scale is
     measured in the rotated frame, so a rotation built on a different width
     mis-scales every channel with no error anywhere.
     """
@@ -108,7 +108,7 @@ def hadamard_blocks(k_in: int, block_size: int) -> Tuple[Any, Any]:
     """Identity permutation plus a per-block Sylvester Hadamard.
 
     Shaped exactly like :func:`build_rotation`'s return value, so every consumer
-    of ``(perm, R)`` — the weight fold, the SmoothQuant capture, the packers —
+    of ``(perm, R)`` (the weight fold, the SmoothQuant capture, the packers)
     works unchanged for a butterfly rotation. The runtime never receives this
     matrix; the kernel recomputes it as a butterfly. It exists so the offline
     side can fold ``W·Hᵀ`` with the same code path the dense rotation uses.
@@ -129,10 +129,10 @@ def build_rotation(weight: Any, block_size: int) -> Tuple[Any, Any]:
         block_size: input-channel block width (``in`` must be divisible by it).
 
     Returns:
-        ``perm``: ``(in,)`` long — zigzag channel permutation by descending
+        ``perm``: ``(in,)`` long. Zigzag channel permutation by descending
         column norm (round-robin into blocks → each block mixes high/low energy
         channels, preventing per-block-scale domination).
-        ``R``: ``(num_blocks, block_size, block_size)`` float — per-block
+        ``R``: ``(num_blocks, block_size, block_size)`` float. Per-block
         orthogonal rotation ``R_b = V·H`` (``V`` = right singular vectors of the
         block's columns; ``H`` = normalized Hadamard). Falls back to pure ``H``
         on the (rare) blocks where SVD fails to converge (still orthogonal).
@@ -191,9 +191,9 @@ def apply_rotation(x: Any, perm: Any, R: Any, block_size: int) -> Any:
 
     One implementation for both sides of the rotation contract: the weight side
     (``(out, in)``) that gets baked, and the activation side (any leading dims) that
-    the plugin prologue reproduces at runtime. They must agree exactly — the
+    the plugin prologue reproduces at runtime. They must agree exactly (the
     SmoothQuant scales are measured through this on activations and folded into
-    weights rotated through the same code — so they share it rather than mirroring
+    weights rotated through the same code), so they share it rather than mirroring
     each other.
     """
     import torch
@@ -215,7 +215,7 @@ def fold_rotation_sq(R: Any, s_ch: Any) -> Any:
     """SmoothQuant fold of a per-channel activation scale into the rotation.
 
     ``R'[b,i,c] = R[b,i,c] / s_ch[b*bs + c]`` so that at runtime
-    ``rotate(x, R') = rotate(x, R) / s_ch`` — the per-channel activation scale is
+    ``rotate(x, R') = rotate(x, R) / s_ch``: the per-channel activation scale is
     absorbed into the (baked) rotation, leaving the prologue + INT4 GEMM kernels
     unchanged. Paired with :func:`pack_int4_colmajor_sq` on the weight side.
     """
@@ -232,12 +232,12 @@ def pack_int4_nibbles(codes: Any) -> np.ndarray:
     """Nibble-pack INT4 codes ``(out, in)`` → uint8 ``(out, in/2)``.
 
     For output channel ``n``, byte ``b`` holds ``nibble(2b)`` = low,
-    ``nibble(2b+1)`` = high of ``codes[n, :]`` — matching CUTLASS
+    ``nibble(2b+1)`` = high of ``codes[n, :]``, matching CUTLASS
     ``ColumnMajor int4b_t`` (column ``n`` = ``in/2`` contiguous bytes; see
     ``dit_int4_rowwise.h``).
 
     The nibble order lives here and nowhere else. Every INT4 producer goes
-    through it — the DiT/expert RTN packers below and the LLM's GPTQ path —
+    through it (the DiT/expert RTN packers below and the LLM's GPTQ path)
     because a flipped order builds, loads and runs, and produces noise rather
     than an error.
     """
@@ -268,13 +268,13 @@ def fold_rotation_sq_before(R: Any, s_raw: Any, perm: Any) -> Any:
     """Pre-rotation SmoothQuant fold (SmoothRot order): scale RAW channels, then rotate.
 
     ``rotate(x / s_raw) == apply_rotation(x, perm, R')`` with
-    ``R'[b, i, c] = R[b, i, c] / s_perm[b*bs + i]`` — the division lands on the
+    ``R'[b, i, c] = R[b, i, c] / s_perm[b*bs + i]``: the division lands on the
     rotation's INPUT axis (the permuted raw channel), where :func:`fold_rotation_sq`
     divides the OUTPUT axis (the rotated channel). Measured on the N1.6 DiT
     (Zen weekly 17-22/08): folding before the rotation at alpha=0.5 cuts output
     error 36-40% at unchanged size/latency. Caveat carried from the same report:
     the folded rotation is baked in BF16, and fold-before at alpha >= 0.6 pushes
-    ``R/s`` past an 8-bit mantissa on the engine (simulation does not model it) —
+    ``R/s`` past an 8-bit mantissa on the engine (simulation does not model it);
     hold alpha at the engine-verified 0.5.
     """
     nbk, bs, _ = R.shape
@@ -288,7 +288,7 @@ def fold_weight_sq(weight: Any, perm: Any, R: Any, s_ch: Any, block_size: int, f
     ``"after"``  -> ``rotate(W) · diag(s_ch)``   pairs with fold_rotation_sq
     ``"before"`` -> ``rotate(W · diag(s_raw))``  pairs with fold_rotation_sq_before
 
-    Split out of the INT4 packers so the INT8 path folds identically — the fold
+    Split out of the INT4 packers so the INT8 path folds identically: the fold
     is the algorithm, the packer is only the bit width. Keeping two copies is how
     the INT8 action arms ended up folding nothing while their scheme name still
     said ``_sr``.
@@ -306,7 +306,7 @@ def pack_int4_colmajor_sq_before(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Weight-side pair of :func:`fold_rotation_sq_before`.
 
-    ``W' = rotate(W · diag(s_raw))`` — the scale multiplies the RAW input columns
+    ``W' = rotate(W · diag(s_raw))``: the scale multiplies the RAW input columns
     before the permutation and rotation, so ``W'·rot(x/s) = (W·s)·(x/s) = W·x``
     exactly (baking-only, like the post-rotation fold).
     """
@@ -321,7 +321,7 @@ def pack_int4_colmajor_sq(weight: Any, perm: Any, R: Any, s_ch: Any, block_size:
 
     The activation-side fold (:func:`fold_rotation_sq`) divides by ``s_ch`` and
     the weight-side pack multiplies by ``s_ch``, so the product ``W·x`` is
-    unchanged — this is baking-only. Must be called with the same ``perm``/``R``
+    unchanged; this is baking-only. Must be called with the same ``perm``/``R``
     :func:`build_rotation` produced for this weight.
     """
     Wr = apply_weight_rotation(weight.float(), perm, R, block_size)

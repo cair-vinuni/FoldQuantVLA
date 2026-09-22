@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 #: The algorithm keys this module implements (the framework's keys, unchanged).
 MODELOPT_W8A8_SMOOTHQUANT = "modelopt_w8a8_smoothquant"
 #: INT4 weight-only AWQ, group 128, ``awq_lite`` scale search (``INT4_AWQ_CFG``'s
-#: own default — the key has always meant the lite search, so nothing overrides it).
+#: own default; the key has always meant the lite search, so nothing overrides it).
 MODELOPT_W4A16_AWQ = "modelopt_w4a16_awq"
 
 #: Algorithm key -> attribute of ``modelopt.torch.quantization`` holding its base config.
@@ -71,7 +71,7 @@ BASE_CFG: Mapping[str, str] = {
 
 #: Keys whose weights are quantized and whose activations are not. Their export
 #: carries ``trt::DequantizeLinear`` weights and NO activation Q/DQ, and TensorRT
-#: 10.3 has no INT4 weight-only path of its own — the graph is rewritten to
+#: 10.3 has no INT4 weight-only path of its own, so the graph is rewritten to
 #: :mod:`foldquant.int4_groupwise` plugin nodes before the parser sees it.
 WEIGHT_ONLY_ALGORITHMS: frozenset = frozenset({MODELOPT_W4A16_AWQ})
 

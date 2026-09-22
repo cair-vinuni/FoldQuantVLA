@@ -3,7 +3,7 @@
 
 """Calibration capture: recover a module's real inputs from a replay callable.
 
-Every FoldQuant export takes a ``forward_loop(module)`` — a callable that runs
+Every FoldQuant export takes a ``forward_loop(module)``: a callable that runs
 the host model over calibration observations so *module* is invoked the way the
 deployment invokes it. The fold needs those inputs (SmoothQuant scales are the
 per-channel amax of the rotated activation; GPTQ Hessians are of the same
@@ -73,7 +73,7 @@ def capture_dit_inputs(
 
     if not captured:
         raise RuntimeError(
-            "calibration captured no DiT calls — the replay never reached the module, so "
+            "calibration captured no DiT calls; the replay never reached the module, so "
             "SmoothQuant scales cannot be measured."
         )
     absent = [name for name, value in zip(input_names, captured[0]) if value is None]
@@ -90,7 +90,7 @@ def dit_inputs_for(module: nn.Module, sample: Tuple[Any, ...]) -> Tuple[Any, ...
 
     The host may run its action head under ``torch.autocast`` (N1.5 does), so a
     captured ``encoder_hidden_states`` can be fp32 straight out of a LayerNorm while
-    the DiT's weights are bf16 — autocast reconciled the two at every matmul and a
+    the DiT's weights are bf16. Autocast reconciled the two at every matmul and a
     bare replay cannot. The deployed graph's inputs are declared in the module's
     dtype, so the replay feeds exactly what the engine will see. Integer and bool
     inputs (timestep, masks) only change device.
@@ -131,7 +131,7 @@ def capture_llm_snapshots(decoder: nn.Module, forward_loop: Any) -> list:
 
     if not captured:
         raise RuntimeError(
-            "calibration captured no LLM calls — the replay never reached the decoder, so "
+            "calibration captured no LLM calls; the replay never reached the decoder, so "
             f"SmoothQuant scales cannot be measured. (Hook target: {type(decoder).__name__}.)"
         )
     return captured
@@ -167,7 +167,7 @@ def is_gemma(module: nn.Module) -> bool:
 
 
 def is_qwen3_vl(module: nn.Module) -> bool:
-    """GR00T N1.7's Qwen3-VL text tower — decided by ``rope_scaling.mrope_section``, not by name."""
+    """GR00T N1.7's Qwen3-VL text tower, decided by ``rope_scaling.mrope_section``, not by name."""
     return bool(rope_scaling(module).get("mrope_section"))
 
 

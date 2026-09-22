@@ -11,7 +11,7 @@ for several suites unattended: it starts :mod:`.serve` for the arm, waits for
 the port, runs the unmodified upstream client on each suite with the
 client environment's interpreter (``--client-python``), reads the final
 ``Total success rate`` / ``Total episodes`` lines off the client log, and
-records them in ``<output>/summary.json`` per suite — an interrupted sweep
+records them in ``<output>/summary.json`` per suite, so an interrupted sweep
 resumes where it stopped.
 
 The client saves a replay video of every episode; they are directed to

@@ -4,7 +4,7 @@
 """The kernel registry must agree with the sources it describes.
 
 ``registry.py`` exists so that "which kernels need CUTLASS" is stated once,
-beside the code. That only helps if the declaration is true — a wrong
+beside the code. That only helps if the declaration is true: a wrong
 ``needs_cutlass`` is exactly the bug the registry was introduced to prevent
 (``foldquant_int4_per_row`` was treated as CUTLASS-free while its GEMM includes
 ``<cutlass/cutlass.h>``, which surfaced as a bare "No such file" mid-compile).

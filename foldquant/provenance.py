@@ -3,22 +3,16 @@
 
 """Turn a caller's local path into something a committed result may carry.
 
-Every integration records what an arm was built from — the checkpoint, the
-calibration dataset, the engine directory — into ``foldquant_export.json`` and
+Every integration records what an arm was built from (the checkpoint, the
+calibration dataset, the engine directory) into ``foldquant_export.json`` and
 ``verify.json``, and those files are committed under ``results/``. Written
 verbatim they publish the operator's filesystem: ``/home/<user>/...`` names a
 person, and an absolute path names a machine layout nobody else can use.
 
-The reduction is not simply a basename, because a basename throws away the one
-thing the field is for. A Hugging Face cache directory carries the repository
-in its own name (``models--ORG--NAME/snapshots/<sha>``), so it becomes
-``ORG/NAME`` — shorter, anonymous, and still the identifier a reader can
-resolve. Anything else absolute keeps its last component, which is what the
-operator called the checkpoint.
-
-Hub ids and repository-relative paths are left exactly as they are: they are
-already portable and already public, and rewriting them would lose provenance
-for no privacy gain.
+A Hugging Face cache directory (``models--ORG--NAME/snapshots/<sha>``) becomes
+``ORG/NAME``, which stays resolvable. Any other absolute path keeps its last
+component. Hub ids and repository-relative paths are already portable and are
+left unchanged.
 """
 
 from __future__ import annotations
@@ -74,7 +68,7 @@ def public_path(value: Any) -> Any:
 
     # A path inside this checkout keeps its whole repo-relative form: it names
     # the arm ("models/pi05/exports/w4a4/engines"), which the basename alone
-    # would throw away — every engine directory is called "engines".
+    # would throw away; every engine directory is called "engines".
     inside = _repo_relative(text)
     if inside is not None:
         return inside

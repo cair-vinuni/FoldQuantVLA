@@ -40,13 +40,13 @@ struct WeightSpec {
 class SharedDeviceWeights : public nvinfer1::IPluginResource {
 public:
     SharedDeviceWeights() = default;
-    // Template ctor (pre-registration): carries the host specs so clone() — which
-    // TensorRT calls once per new key — can allocate and upload the device copies.
+    // Template ctor (pre-registration): carries the host specs so clone() (which
+    // TensorRT calls once per new key) can allocate and upload the device copies.
     explicit SharedDeviceWeights(std::vector<WeightSpec> specs) : mSpecs(std::move(specs)) {}
 
     ~SharedDeviceWeights() noexcept override { freeAll(); }
 
-    // Note: getInterfaceInfo() is intentionally NOT overridden — the base
+    // Note: getInterfaceInfo() is intentionally NOT overridden; the base
     // IPluginResource provides the required {"IPluginResource", 1, 0}.
 
     // Called by TensorRT exactly once per unique key; only the clone is registered.

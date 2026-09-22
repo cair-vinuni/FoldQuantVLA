@@ -1,12 +1,12 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""What each custom kernel is and what it needs to build — the single source of truth.
+"""What each custom kernel is and what it needs to build: the single source of truth.
 
 Before this existed, "which libraries need CUTLASS" was a set literal inside the
 build driver, one package away from the sources it described. Nothing tied the
 two together, so a kernel could be added with a CUTLASS dependency while the
-driver still believed it had none — which is exactly how ``foldquant_int4_per_row``
+driver still believed it had none. That is exactly how ``foldquant_int4_per_row``
 came to be declared CUTLASS-free while its GEMM includes ``<cutlass/cutlass.h>``.
 The failure surfaced as a bare "No such file or directory" mid-compile.
 
@@ -33,7 +33,7 @@ class KernelSpec:
     """One buildable custom kernel.
 
     Args:
-        name: Library name — also the CMake target and the ``.so`` stem, so
+        name: Library name, also the CMake target and the ``.so`` stem, so
             ``<name>.<target_slug>.so`` is the committed binary. The source
             directory is named after it too; the three cannot drift.
         needs_cutlass: Whether any source includes a CUTLASS header. Determines
@@ -45,7 +45,7 @@ class KernelSpec:
         tensor_core_dtype: The tensor-core datatype this kernel's speed depends
             on, or ``None`` when it has no such dependency. Checked against the
             device before a build, because a mismatch is silent: the library
-            still compiles, loads, and produces correct output — just without
+            still compiles, loads, and produces correct output, just without
             the instruction that made it worth building.
     """
 
@@ -71,7 +71,7 @@ def tensorrt_source_root() -> Path:
 #: Compute capabilities whose tensor cores implement a given datatype.
 #:
 #: ``s4`` (``mma.sync.m16n8k64.s4.s4.s32``) exists on Turing and Ampere and was
-#: **removed in Hopper**. A kernel written for it still compiles for sm90 —
+#: **removed in Hopper**. A kernel written for it still compiles for sm90,
 #: verified on the committed binary, whose sm90 image contains 6
 #: ``IMMA.16832.S8.S8`` instructions and no ``S4`` variant at all, against 416 in
 #: the INT8 kernel built the same way. CUTLASS silently selects a non
@@ -106,8 +106,8 @@ def tensor_core_support_warning(lib: str, capability: "tuple[int, int] | None") 
     return (
         f"{lib} depends on {spec.tensor_core_dtype} tensor cores, which sm{sm} does not have "
         f"(present on: {', '.join('sm%d' % a for a in arches)}). The engine will build and be "
-        "numerically correct, but the kernel falls back off the tensor cores — measured ~15x "
-        "slower than the float baseline on sm90. Use an int8 scheme on this device."
+        "numerically correct, but the kernel falls back off the tensor cores (measured ~15x "
+        "slower than the float baseline on sm90). Use an int8 scheme on this device."
     )
 
 

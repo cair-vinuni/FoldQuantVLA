@@ -16,7 +16,7 @@
 // Only the DYNAMIC per-row variant exists, by design. A static per-row scale is
 // calibrated on the UNrotated activation, and at 4 bits the rotation is not an
 // optional refinement but the thing that makes the scheme work at all
-// (simulated: cos 0.014 without it, 0.9995 with SQ+rotation) — so the two are
+// (simulated: cos 0.014 without it, 0.9995 with SQ+rotation), so the two are
 // never combined and a static INT4 variant would have no caller.
 #pragma once
 
@@ -38,7 +38,7 @@ extern "C" {
 //   out_scale:   (B*S,)     FP32 per-row quantization scale
 //
 // The caller MUST have folded the weight side offline (W' = W·Hᵀ, same
-// orthonormal Sylvester Hadamard — see int8_per_row/fwht.cuh), otherwise the
+// orthonormal Sylvester Hadamard; see int8_per_row/fwht.cuh), otherwise the
 // layer silently computes the wrong product.
 //
 //   rot_bs <= 1        → RMSNorm + per-row quant, no rotation

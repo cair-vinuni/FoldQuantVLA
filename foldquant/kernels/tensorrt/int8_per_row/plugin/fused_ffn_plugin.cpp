@@ -235,7 +235,7 @@ int32_t FusedFfnBlockPlugin::enqueue(PluginTensorDesc const* inputDesc,
         // Step 1: LN + per-row INT8 quant (using fused_adaln_quant with zero scale/shift).
         int rc;
         if (mRotBlockSize > 0) {
-            // FoldQuant: LN, raw-frame divide, butterfly, then the per-row amax —
+            // FoldQuant: LN, raw-frame divide, butterfly, then the per-row amax,
             // all inside one launch, with the amax taken on the rotated row.
             rc = fused_adaln_fwht_quant_bf16_to_int8(
                 inputs[0], mZeroScaleDevice, mZeroShiftDevice, mScalePre0Device,
@@ -256,7 +256,7 @@ int32_t FusedFfnBlockPlugin::enqueue(PluginTensorDesc const* inputDesc,
         }
         if (rc != 0) return rc;
 
-        // Step 2: proj0 — INT8 GEMM + bias → BF16 (M, inner_dim).
+        // Step 2: proj0: INT8 GEMM + bias → BF16 (M, inner_dim).
         rc = dit_int8_rowwise_gemm_bias_bf16out(
             act1_i8, mProj0I8Device,
             act1_scale, mProj0ScaleDevice, mProj0BiasDevice,
@@ -282,7 +282,7 @@ int32_t FusedFfnBlockPlugin::enqueue(PluginTensorDesc const* inputDesc,
         }
         if (rc != 0) return rc;
 
-        // Step 4: proj2 — INT8 GEMM + bias + residual (residual = original x) → BF16 (M, K).
+        // Step 4: proj2: INT8 GEMM + bias + residual (residual = original x) → BF16 (M, K).
         rc = dit_int8_rowwise_gemm_bias_residual_bf16out(
             act2_i8, mProj2I8Device,
             act2_scale, mProj2ScaleDevice,

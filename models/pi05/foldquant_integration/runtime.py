@@ -13,7 +13,7 @@ instance:
   ``paligemma_with_expert.forward`` (``prefix_embs`` / 4-D additive
   ``attention_mask`` / ``position_ids`` in, the stacked post-RoPE KV cache
   ``kv_stack`` out). The SigLIP tower, the multimodal projector and the token
-  embedding stay in PyTorch — they produce ``prefix_embs``;
+  embedding stay in PyTorch; they produce ``prefix_embs``;
 * the expert engine takes ``denoise_step`` (``x_t`` / ``timestep`` /
   ``prefix_pad_masks`` / ``kv_stack`` in, ``velocity`` out): the suffix
   embedding, the 18 Gemma-300M layers, the AdaRMS final norm and
@@ -22,8 +22,8 @@ instance:
 The two seams meet on the KV cache: whichever side is PyTorch, the cache
 crosses as the same ``[layers, 2, 1, kv_heads, prefix_len, head_dim]`` bf16
 tensor the engine contract uses, so each engine can be installed alone.
-Everything else — transforms, tokenizer, normalisation, the websocket
-server — is untouched, so the policy's public behaviour is exactly
+Everything else (transforms, tokenizer, normalisation, the websocket
+server) is untouched, so the policy's public behaviour is exactly
 upstream's with two modules swapped underneath.
 
 The model must be eager. Upstream builds it with ``pytorch_compile_mode =
@@ -31,7 +31,7 @@ The model must be eager. Upstream builds it with ``pytorch_compile_mode =
 inlining the prefix pass it found at trace time; a ``forward`` rebound on the
 instance afterwards is never called, and tensors kept across CUDA-graph
 replays are overwritten. :func:`install_engines` and :class:`PrefixCapture`
-therefore refuse a compiled model — build it with
+therefore refuse a compiled model; build it with
 ``calibration.load_policy(..., compile=False)``.
 """
 
@@ -83,7 +83,7 @@ def require_eager(model: torch.nn.Module) -> None:
     if mode is not None:
         raise RuntimeError(
             f"the model was built with pytorch_compile_mode={mode!r}; torch.compile keeps calling the prefix pass "
-            "it traced, so a seam rebound on the instance is skipped — load the policy with "
+            "it traced, so a seam rebound on the instance is skipped; load the policy with "
             "calibration.load_policy(..., compile=False)"
         )
 
@@ -98,9 +98,9 @@ class Pi05ExpertView(torch.nn.Module):
 
     Upstream keeps the expert's pieces as siblings on ``PI0Pytorch``
     (``paligemma_with_expert.gemma_expert``, ``action_in_proj``, the time MLP,
-    ``action_out_proj``). The emitter expects them under one root — the
+    ``action_out_proj``). The emitter expects them under one root (the
     ``expert_model.*`` / ``action_in_proj.*`` / ... state-dict prefixes of the
-    Pi0.5 expert — with ``config.use_adarms`` / ``action_horizon`` /
+    Pi0.5 expert) with ``config.use_adarms`` / ``action_horizon`` /
     ``action_dim`` and the Gemma variant on ``_variant``. This view rebinds the
     live submodules (no copies): its state dict aliases the model's parameters.
     """
@@ -159,7 +159,7 @@ def _prefix_forward(pwe: torch.nn.Module, engine: TensorRTEngine | None) -> Call
 
     With *engine* the prefix runs through the FoldQuant LLM engine; without it
     the PyTorch language model runs and its cache is stacked into the same
-    layout — that is what lets the expert engine be installed alone.
+    layout. That is what lets the expert engine be installed alone.
     """
     original = type(pwe).forward
 
@@ -268,7 +268,7 @@ def install_engines(policy, engine_dir: str | Path, *, components: Iterable[str]
     by default every engine present in the directory is installed. An engine
     the directory lacks is skipped with a log line when the selection was
     implicit and is an error when it was asked for. Both seams are always
-    installed — the KV stack is their shared contract — with the missing side
+    installed (the KV stack is their shared contract), with the missing side
     running PyTorch.
     """
     engine_dir = Path(engine_dir)

@@ -6,8 +6,8 @@
 The three GR00T integrations expose the same calibration API
 (``load_policy`` / ``load_dataset`` / ``sample_observations`` /
 ``make_forward_loop``) and the same ``_module_paths`` map, so one loader
-serves all of them. Run from the family's own virtualenv — the integration is
-pinned to its upstream environment — with the family named on the command line;
+serves all of them. Run from the family's own virtualenv (the integration is
+pinned to its upstream environment) with the family named on the command line;
 this module puts ``models/<family>`` on ``sys.path`` so
 ``foldquant_integration`` resolves to that family's copy.
 
@@ -38,7 +38,7 @@ def integration(family: str) -> Tuple[Any, Any]:
         raise SystemExit(f"--family must be one of {FAMILIES}; {family!r} has a different calibration API")
     root = REPO / "models" / family
     if not (root / "foldquant_integration").is_dir():
-        raise SystemExit(f"{root} has no foldquant_integration/ — is the upstream checkout in place?")
+        raise SystemExit(f"{root} has no foldquant_integration/; is the upstream checkout in place?")
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     import foldquant_integration.calibration as calibration
@@ -94,14 +94,14 @@ class Loaded:
         return self.calibration.make_forward_loop(self.policy, obs, seed=self.seed)
 
     def capture(self, observations: Optional[Sequence[Dict[str, Any]]] = None) -> list:
-        """Raw ``(args, kwargs)`` decoder calls of one replay — one per observation."""
+        """Raw ``(args, kwargs)`` decoder calls of one replay, one per observation."""
         from foldquant.calibrate import capture_llm_snapshots
 
         return capture_llm_snapshots(self.decoder, self.forward_loop(observations))
 
     def actions(self, observations: Optional[Sequence[Dict[str, Any]]] = None) -> List[torch.Tensor]:
         """Flat decoded action chunk per observation, seeded so reference and candidate
-        integrate from the same flow-matching noise — without that two runs of the
+        integrate from the same flow-matching noise. Without that, two runs of the
         SAME model drift by ~0.5 max-abs and swamp any knob difference."""
         obs = self.observations if observations is None else observations
         out: List[torch.Tensor] = []

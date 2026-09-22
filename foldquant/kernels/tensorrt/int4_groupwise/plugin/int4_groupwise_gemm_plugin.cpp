@@ -140,7 +140,7 @@ int32_t Int4GroupwiseGemmPlugin::getOutputDataTypes(DataType* outputTypes, [[may
     {
         assert(nbOutputs == 1);
         // BF16 output (changed from FP16) so accumulator values exceeding FP16
-        // range (65504) — produced by outlier weight scales in finetuned models —
+        // range (65504), produced by outlier weight scales in finetuned models,
         // can be represented without overflow. BF16 has same exponent range as FP32.
         outputTypes[0] = DataType::kBF16;
         return 0;

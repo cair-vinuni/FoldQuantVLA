@@ -5,26 +5,19 @@
 
 Two quantities are reported for an engine arm, and both belong in any table:
 
-* **as served** (``--keep-replaced-weights``): what ``serve`` holds today. The
-  checkpoint is loaded to the GPU, the engines are installed by rebinding the
-  replaced modules' ``forward``, and the replaced PyTorch weights stay
-  resident. On N1.6 that is roughly 3.5 GiB above the floor and decides
-  whether an arm fits beside simulator renderers on a 16 GB card.
-* **floor** (default): what the arm needs at inference — the engines plus the
-  PyTorch components the runtime still executes (vision tower, embeddings,
-  action encoders/decoder, processor). The checkpoint is loaded on the CPU,
-  the engines are installed, the replaced modules' parameters are replaced by
-  ``meta`` tensors (never materialized on the device), and only the remaining
-  components are moved to CUDA. A replaced module that is ever called fails
-  loudly on a meta tensor instead of silently computing.
+* **as served** (``--keep-replaced-weights``): what ``serve`` holds today:
+  checkpoint on the GPU, engines installed by rebinding ``forward``, replaced
+  PyTorch weights still resident (on N1.6 about 3.5 GiB above the floor).
+* **floor** (default): the engines plus the PyTorch components the runtime
+  still executes. The checkpoint loads on the CPU, replaced parameters become
+  ``meta`` tensors, and only the remaining components move to CUDA, so calling
+  a replaced module fails loudly.
 
-The measurement follows the framework's benchmark: ``cudaMemGetInfo`` (total
-minus free, so it includes the CUDA context and every allocator: TensorRT,
-PyTorch, cuBLAS) sampled after each timed call, with the torch allocator's
-peak reported alongside. ``steady_used_mib`` is the median of the plateau
-over the timed calls, not a peak. One process measures one arm; run the eager
-arm first with ``--reference-actions`` so the engine arms can report their
-decoded-action cosine against it on the same three observations.
+The number is ``cudaMemGetInfo`` (total minus free: CUDA context and every
+allocator) sampled after each timed call; ``steady_used_mib`` is the median of
+that plateau, with the torch allocator's peak alongside. Run the eager arm
+first with ``--reference-actions`` so engine arms report their decoded-action
+cosine against it on the same three observations.
 
 Example::
 

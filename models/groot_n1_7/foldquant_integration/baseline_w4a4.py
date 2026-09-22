@@ -5,10 +5,10 @@
 
 Two recipes, selected with ``--method``:
 
-* ``holoq`` — HoloQ-VLA style: zigzag permutation + block-64 SVD·Hadamard
+* ``holoq``:  HoloQ-VLA style: zigzag permutation + block-64 SVD·Hadamard
   rotation, GPTQ LLM weights, RTN DiT weights, per-token INT4 LLM activations,
   static per-denoising-step per-channel INT4 DiT activations (q99.9).
-* ``duquant`` — DuQuant style as Omega-QVLA's baseline runs it: the same
+* ``duquant``:  DuQuant style as Omega-QVLA's baseline runs it: the same
   permutation and solvers, block-64 SVD-only rotation (eigenvectors of
   ``W^T W``), and a frozen per-channel q99.9 activation scale on both towers.
 
@@ -16,8 +16,8 @@ Calibration replays ``--num-calib`` seeded observations from a LeRobot dataset
 through the bf16 policy, exactly as :mod:`.export_foldquant` does for the
 FoldQuant arms, so the two families of arms see the same data. The pack is then
 served with ``serve --baseline-pack`` or rolled out with
-``eval_libero --baseline-pack``. Both arms are *emulated* — INT4 codes are
-dequantised before a BF16 ``F.linear`` — so they measure a recipe's rounding,
+``eval_libero --baseline-pack``. Both arms are *emulated* (INT4 codes are
+dequantised before a BF16 ``F.linear``), so they measure a recipe's rounding,
 never its speed.
 
 Example::

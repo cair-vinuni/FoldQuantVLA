@@ -1,4 +1,4 @@
-// Phase 2 — DiT INT8 rowwise GEMM with fused bias + residual EVT epilogue.
+// Phase 2: DiT INT8 rowwise GEMM with fused bias + residual EVT epilogue.
 //
 // Sm80 CUTLASS EVT chain extension:
 //

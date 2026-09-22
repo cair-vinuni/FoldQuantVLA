@@ -1,4 +1,4 @@
-// LLM ladder L3+ — RMSNorm + per-row INT8 quant kernel.
+// LLM ladder L3+: RMSNorm + per-row INT8 quant kernel.
 //
 // Ported from fused_adaln_quant_cuda.cu with:
 //   - mean subtract removed (RMSNorm uses sumsq-only).
@@ -99,7 +99,7 @@ __global__ void rmsnorm_per_row_quant_kernel(
     // Two shapes: the rotation needs the whole row staged before it can start,
     // so it writes y_buf, barriers, rotates, then reduces from shared. The far
     // more common no-rotation path (every DiT/INT8 caller, rot_bs<=1) keeps the
-    // original fused single pass — amax straight from the register, no barrier,
+    // original fused single pass: amax straight from the register, no barrier,
     // no re-read of y_buf.
     float t_amax = 0.f;
     if (gr00t::fwht::rot_bs_valid(rot_bs, K)) {
@@ -243,7 +243,7 @@ static int launch_dynamic(
     size_t smem_bytes = sizeof(float) * (K + kWarpsPerBlock);
     // Same wide-K guard as dit_int8_per_row_quant_fwht_bf16: the row is staged
     // in dynamic shared memory, and K > ~12K floats exceeds the 48KB default
-    // per-block limit — opt in explicitly (latent here: no current model norms
+    // per-block limit, so opt in explicitly (latent here: no current model norms
     // a 16K-wide activation, but the failure would be the same silent -1).
     if (smem_bytes > 48 * 1024) {
         cudaError_t attr_rc = cudaFuncSetAttribute(
@@ -287,7 +287,7 @@ static int launch_static(
 }  // namespace rmsnorm_per_row_quant
 }  // namespace gr00t
 
-// Legacy entry point — preserved verbatim for existing callers (rot disabled).
+// Legacy entry point, preserved verbatim for existing callers (rot disabled).
 extern "C" int rmsnorm_per_row_quant_bf16_to_int8(
     void const* x_bf16,
     void const* gamma_bf16,

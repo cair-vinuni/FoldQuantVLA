@@ -1,4 +1,4 @@
-// FusedRmsNormLinearInt8 — RMSNorm + per-row INT8 quant + INT8 Linear (no bias).
+// FusedRmsNormLinearInt8: RMSNorm + per-row INT8 quant + INT8 Linear (no bias).
 //
 // Generic LLM building block. Replaces:
 //   y_n = RMSNorm(x, gamma, eps)         // gamma is per-channel affine
@@ -16,16 +16,16 @@
 // Plugin name:      "FusedRmsNormLinearInt8"
 //
 // Inputs (runtime):
-//   0: x      [B, S, K]  BF16  — hidden_states
+//   0: x      [B, S, K]  BF16  - hidden_states
 //
 // Plugin fields (baked at engine build):
-//   "weight_i8"            INT8 (N*K)        — weight transposed, row-major (N, K)
-//   "weight_scale"         FP32 (N,)          — per-output-channel scale
-//   "gamma"                BF16 (K,)          — RMSNorm.weight (per-channel)
-//   "static_act_scale_x"   FP32 (B*S,) opt    — empty = dynamic per-row amax
-//   "N"                    INT32 scalar       — output dim
-//   "K"                    INT32 scalar       — input  dim (= hidden_size)
-//   "eps"                  FP32 scalar        — RMSNorm epsilon (Qwen3: 1e-6)
+//   "weight_i8"            INT8 (N*K)        - weight transposed, row-major (N, K)
+//   "weight_scale"         FP32 (N,)          - per-output-channel scale
+//   "gamma"                BF16 (K,)          - RMSNorm.weight (per-channel)
+//   "static_act_scale_x"   FP32 (B*S,) opt    - empty = dynamic per-row amax
+//   "N"                    INT32 scalar       - output dim
+//   "K"                    INT32 scalar       - input  dim (= hidden_size)
+//   "eps"                  FP32 scalar        - RMSNorm epsilon (Qwen3: 1e-6)
 //
 // Outputs:
 //   0: y      [B, S, N]  BF16

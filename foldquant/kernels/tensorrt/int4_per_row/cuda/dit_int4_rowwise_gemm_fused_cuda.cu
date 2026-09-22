@@ -6,7 +6,7 @@
 //   Alignment  : 16                → 32        (128-bit / 4-bit = 32 elems)
 //   Instruction: GemmShape<16,8,32> → GemmShape<16,8,64>  (s4 mma.m16n8k64)
 //   Tile/Warp  : 64×64×64 / 32×32×64 → 128×128×128 / 64×64×128 (Stage-1 int4 shape;
-//                tile is perf-irrelevant here — engine is launch-bound — so the
+//                tile is perf-irrelevant here (engine is launch-bound), so the
 //                known-good int4 shape from dit_int4_rowwise_gemm_cuda.cu is used).
 // The EVT epilogue visitor tree is element-type agnostic → copied verbatim.
 //
@@ -56,7 +56,7 @@ using OperatorClass = cutlass::arch::OpClassTensorOp;
 // Tile shape is a template parameter, not a constant: the action experts run
 // this GEMM with M = action horizon (10-16 rows), where a 128-row threadblock
 // computes mostly padding and halves the CTA count. Same kernel and EVT
-// epilogue in both instantiations — only the launch shape differs.
+// epilogue in both instantiations; only the launch shape differs.
 template <int TBM, int TBN, int TBK, int WM, int WN, int WK>
 struct TileCfg {
     using ThreadblockShape = cutlass::gemm::GemmShape<TBM, TBN, TBK>;

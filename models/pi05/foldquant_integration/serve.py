@@ -10,10 +10,10 @@ and the observation / action dictionaries are upstream's, so the unmodified
 LIBERO client (``examples/libero/main.py``, in its own environment) evaluates
 a FoldQuant arm exactly as it evaluates the bf16 policy::
 
-    # terminal 1 — the arm under test
+    # terminal 1:  the arm under test
     python -m foldquant_integration.serve --checkpoint-dir <ckpt> --engine-dir exports/pi05_w4a4/engines
 
-    # terminal 2 — upstream's evaluation client, unchanged
+    # terminal 2:  upstream's evaluation client, unchanged
     python examples/libero/main.py --args.task-suite-name libero_spatial
 
 Omit ``--engine-dir`` to serve the bf16 PyTorch policy (the reference arm).
@@ -106,7 +106,7 @@ def main(args: ServeConfig) -> None:
     server = websocket_policy_server.WebsocketPolicyServer(
         policy=policy, host="0.0.0.0", port=args.port, metadata=policy.metadata
     )
-    logger.info("config %s, port %d — ready", args.config, args.port)
+    logger.info("config %s, port %d: ready", args.config, args.port)
     try:
         server.serve_forever()
     finally:

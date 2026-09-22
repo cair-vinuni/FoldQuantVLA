@@ -4,7 +4,7 @@
 """Upstream ``scripts/deployment/benchmark_inference.py`` with the FoldQuant plugins preloaded.
 
 Every argument is upstream's. The latency numbers in the paper come from this
-script — the same timing loop, warm-up and iteration count for the float and
+script: the same timing loop, warm-up and iteration count for the float and
 the FoldQuant arms::
 
     python -m foldquant_integration.benchmark --model-path ... \\

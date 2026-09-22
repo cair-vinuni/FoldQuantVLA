@@ -1,4 +1,4 @@
-// v4 — t128x128x64 tile variant of the fused INT8 GEMM + per-row scale +
+// v4: t128x128x64 tile variant of the fused INT8 GEMM + per-row scale +
 // per-col scale + residual (no bias) EVT epilogue. Used by the LLM L3+
 // per-row plugins (PerRowInt8LinearResidual, FusedAttnCausalOprojLlm) which
 // need the fp32 EVT residual epilogue (precision-preserving) AND want the
@@ -9,7 +9,7 @@
 // duplicating the EVT chain plumbing and aren't needed by the LLM ladder.
 //
 // Math identical to dit_int8_rowwise_gemm_residual_bf16out (in
-// dit_int8_rowwise_v2_fused_cuda.cu) — only the threadblock/warp tile differ.
+// dit_int8_rowwise_v2_fused_cuda.cu); only the threadblock/warp tile differ.
 
 #include <cuda_runtime.h>
 #include <cstdint>
@@ -48,7 +48,7 @@ constexpr int AlignmentC = 8;
 
 using ArchTag = cutlass::arch::Sm80;
 using OperatorClass = cutlass::arch::OpClassTensorOp;
-// === t128x128x64 / warp 64x64x64 / 4-stage cp.async — LLM microbench winner. ===
+// === t128x128x64 / warp 64x64x64 / 4-stage cp.async: LLM microbench winner. ===
 using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 64>;
 using WarpShape = cutlass::gemm::GemmShape<64, 64, 64>;
 using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;

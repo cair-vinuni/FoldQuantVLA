@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-#: ``models/pi05`` — the trimmed upstream openpi checkout.
+#: ``models/pi05``, the trimmed upstream openpi checkout.
 UPSTREAM_ROOT = Path(__file__).resolve().parents[1]
 
 #: A Python file to import before any training config is resolved, named by this
 #: environment variable. A checkpoint fine-tuned outside the release carries a
 #: ``TrainConfig`` the release has never heard of, and upstream resolves configs
-#: from a module-level dict of its own entries. Rather than edit that file — the
-#: upstream tree here is used unchanged — the plugin registers the entry itself::
+#: from a module-level dict of its own entries. Rather than edit that file (the
+#: upstream tree here is used unchanged), the plugin registers the entry itself::
 #:
 #:     # so101_plugin.py
 #:     from openpi.training import config as _config

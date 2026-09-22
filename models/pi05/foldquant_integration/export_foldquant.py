@@ -13,7 +13,7 @@ Writes, under ``--output-dir``::
 The LLM graph is the prefix pass only: ``prefix_embs`` (SigLIP features +
 prompt embeddings, produced in PyTorch), the 4-D additive attention mask and
 ``position_ids`` in, the stacked post-RoPE KV cache out. Its sequence length
-is pinned from a calibration call — the Pi processor pads the prompt to a
+is pinned from a calibration call: the Pi processor pads the prompt to a
 fixed token count and the camera set is fixed, so the prefix is a constant
 of the (config, checkpoint) pair. The expert graph is one denoise step
 (``x_t``, ``timestep``, ``prefix_pad_masks``, ``kv_stack`` -> ``velocity``);

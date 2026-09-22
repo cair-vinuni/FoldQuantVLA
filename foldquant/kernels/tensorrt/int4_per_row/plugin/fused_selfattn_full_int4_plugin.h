@@ -1,4 +1,4 @@
-// FusedSelfAttnFullInt4 — AdaLN + INT4 merged-QKV + cuBLAS BF16 SDPA + INT4 attn_O
+// FusedSelfAttnFullInt4: AdaLN + INT4 merged-QKV + cuBLAS BF16 SDPA + INT4 attn_O
 // + bias + residual, with FoldQuant rotation folded into the QKV and O prologues.
 // Clone of FusedSelfAttnFull (INT8). Plugin name "FusedSelfAttnFullInt4".
 //
@@ -7,8 +7,8 @@
 //
 // Fields: weight_qkv_i4 (3*inner*K/2) / weight_qkv_scale (3*inner) / bias_qkv (3*inner);
 //         weight_o_i4 (K*inner/2) / weight_o_scale (K) / bias_o (K);
-//         perm_qkv INT32 (K) / rotation_qkv FP32 (K/bs*bs*bs)  — QKV input (shared Q/K/V);
-//         perm_o   INT32 (inner) / rotation_o FP32 (inner/bs*bs*bs) — attn_O input;
+//         perm_qkv INT32 (K) / rotation_qkv FP32 (K/bs*bs*bs)  - QKV input (shared Q/K/V);
+//         perm_o   INT32 (inner) / rotation_o FP32 (inner/bs*bs*bs) - attn_O input;
 //         inner_dim, K, num_heads, head_dim, block_size INT32; eps FP32.
 #pragma once
 

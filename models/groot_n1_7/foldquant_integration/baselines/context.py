@@ -7,8 +7,8 @@
 The fork sets the step inside the action head's Euler loop. This release does
 not edit the vendored upstream model, so :func:`install_dit_step_context`
 attaches the same context from the outside: a forward pre-hook on the DiT
-module (``action_head.model``) counts its calls — upstream calls it exactly
-once per denoising step — and publishes ``step = calls % num_inference_timesteps``
+module (``action_head.model``) counts its calls (upstream calls it exactly
+once per denoising step) and publishes ``step = calls % num_inference_timesteps``
 for the duration of that call.
 """
 

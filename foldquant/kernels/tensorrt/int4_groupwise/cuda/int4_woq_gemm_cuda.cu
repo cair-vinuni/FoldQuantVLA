@@ -126,7 +126,7 @@ __inline__ __device__ void cp_async_cg_A(uint32_t smem_int_ptr, uint4 const* __r
 //
 // NOTE: A_shared_warp and B_shared_warp are still typed `half*` (the underlying
 // shared memory is just 16-bit byte storage). The stored bit patterns are BF16
-// however — see share_to_reg_one_stage_B_T2 for the dequant→BF16 conversion,
+// however (see share_to_reg_one_stage_B_T2 for the dequant→BF16 conversion),
 // and the surgeried ONNX feeds BF16 activation directly to the plugin (no Cast).
 __device__ __inline__ void mma_m16n8k16(float* C_warp, half* A_shared_warp, half* B_shared_warp)
 {
@@ -289,7 +289,7 @@ __device__ __inline__ void share_to_reg_one_stage_B_T2(
     // convert FP16 result → BF16 for storage. The BF16 patterns are read by the
     // BF16 MMA instruction. Dequant×scale fits FP16 (max 7×scale_max), so the
     // intermediate FP16 multiply is safe; the BF16 conversion only loses a few
-    // mantissa bits (BF16 7-bit vs FP16 10-bit) — benign for this magnitude.
+    // mantissa bits (BF16 7-bit vs FP16 10-bit), benign for this magnitude.
 #pragma unroll
     for (int shared_iter = 0; shared_iter < shared_iters; ++shared_iter)
     {

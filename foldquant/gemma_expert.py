@@ -5,19 +5,19 @@
 
 Replaces the exported ``expert.onnx`` (one flow-matching denoise step) with a
 graph whose transformer GEMMs run through the ``gr00t::v1`` INT8 per-row
-plugins — same I/O contract as the graph it replaces (``x_t [1,H,32]``,
+plugins, with the same I/O contract as the graph it replaces (``x_t [1,H,32]``,
 ``timestep [1]``, ``prefix_pad_masks [1,S]`` BOOL,
 ``kv_stack [18,2,1,1,S,256]`` BF16, Pi0 additionally ``state [1,32]`` ->
 ``velocity [1,H,32]`` FP32).
 
-No fused macro plugin fits this block: the norm is ``GemmaAdaRMSNorm`` —
+No fused macro plugin fits this block: the norm is ``GemmaAdaRMSNorm``,
 RMSNorm-based (no mean subtraction, so the DiT AdaLN plugin's LayerNorm
 prologue does NOT match) modulated by *runtime* ``(1+scale)*normed + shift``
 tensors from ``dense(adarms_cond)``, with an AdaLN-Zero ``x + y*gate``
 residual. So the graph decomposes the block: the AdaRMS
 modulation, RoPE, GQA repeat, SDPA and gated residuals stay BF16 ONNX ops,
 and every projection GEMM runs through ``PerRowInt8LinearResidual`` (with a
-static zeros residual — the suffix length is fixed per build — and the gated
+static zeros residual, since the suffix length is fixed per build, and the gated
 add applied *outside* the plugin, since the gate multiply must sit between
 GEMM output and residual add).
 
@@ -37,7 +37,7 @@ Variant differences (read off ``use_adarms``):
 What stays BF16/FP32 ONNX besides the glue: the suffix embedding (the
 period-parametrised sinusoidal time embedding with constants baked from exact
 float64 tables, the time/state/action MLPs), the per-norm ``dense`` modulation
-matmuls, and ``action_out_proj`` (bf16 matmul, fp32 output cast — matching the
+matmuls, and ``action_out_proj`` (bf16 matmul, fp32 output cast, matching the
 runtime). Constructs ONNX only: no ``tensorrt`` import, no ``.so`` load.
 """
 
@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["build_gemma_expert_plugin_onnx"]
 
 # The plugin contract lives in dit_common ("must match the compiled plugin .so.
-# Do not change") — imported, not redeclared, so the four emitters cannot drift.
+# Do not change"), imported rather than redeclared so the four emitters cannot drift.
 # PLUGIN_VERSION is a STRING: TensorRT reads plugin_version as a string
 # attribute, and an INT attr fails creator lookup ("Plugin not found") at parse.
 from . import foldq  # noqa: E402  (contract imports kept next to their use)
@@ -490,7 +490,7 @@ def build_gemma_expert_plugin_onnx(
     # ===== final norm (AdaRMS with cond / vanilla) + action_out_proj =====
     _adarms("final_norm", cur, ep + "norm", "suffix_normed")
     if not use_adarms:
-        # Pi0: drop the state token — velocity reads the last H tokens.
+        # Pi0: drop the state token; velocity reads the last H tokens.
         inits.append(_i64_init("_slice_start", [1]))
         inits.append(_i64_init("_slice_end", [suffix_len]))
         inits.append(_i64_init("_slice_axes", [1]))
@@ -537,17 +537,17 @@ def compute_gemma_expert_sq_scales(
 ) -> Dict[str, Any]:
     """Rotated-activation amax for every Gemma-expert INT4 GEMM site.
 
-    The Gemma norms return ``(normed, gate)`` tuples — the hook reads element 0.
+    The Gemma norms return ``(normed, gate)`` tuples; the hook reads element 0.
 
     Args:
         fwht: Calibrate against the fixed Hadamard butterfly instead of the
             learned dense rotation. The scale is the amax of the *rotated*
             activation, so it is only valid for the rotation it was measured
-            under — mixing the two silently mis-scales every site.
+            under. Mixing the two silently mis-scales every site.
         fold_order: ``"after"`` measures the amax in the ROTATED frame (the fold
             divides the rotation's output axis); ``"before"`` measures it in the
             RAW frame (SmoothRot order, dividing the input axis). The two are not
-            interchangeable — a scale measured in the wrong frame mis-scales
+            interchangeable: a scale measured in the wrong frame mis-scales
             every channel with no error.
             gptq_scales: when given, this call switches from measuring SCALES to
             measuring each site's GPTQ Hessian, through the SAME taps. Pass the

@@ -10,11 +10,11 @@ measures the rounding of a recipe, not its speed.
 
 Three activation-scaling modes are supported, selected per layer record:
 
-* ``dynamic-per-token`` — one scale per token from that token's ``max|x|``
+* ``dynamic-per-token``:  one scale per token from that token's ``max|x|``
   (HoloQ-style LLM);
-* ``static-per-step-per-channel`` — a calibrated ``[steps, in]`` table indexed
+* ``static-per-step-per-channel``:  a calibrated ``[steps, in]`` table indexed
   by the active denoising step (HoloQ-style DiT);
-* ``static-per-channel`` — one calibrated ``[1, in]`` table, frozen, used at
+* ``static-per-channel``:  one calibrated ``[1, in]`` table, frozen, used at
   every call (DuQuant-style / Omega-QVLA ``PercentileCalibrator``: per-channel
   q99.9 over the calibration tokens, running max across observations).
 """

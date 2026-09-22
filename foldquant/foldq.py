@@ -8,11 +8,9 @@ axis the SmoothQuant scale lands on, what the packed weight is, and which node
 attributes describe the result. The per-(family, width) emitters only choose
 *where* the sites are.
 
-This module exists because the alternative was measured: the INT8 action path
-kept its own copy of "quantize the weight per row", drifted away from the INT4
-copy, and ended up folding nothing at all. That was invisible on the Gemma
-expert (gate 0.9991) and collapsed an expert whose activations carry exactly
-the outliers SmoothQuant exists to move (0.6005 expert cosine).
+A separate INT8 copy of this logic once drifted and stopped folding: harmless
+on the Gemma expert (gate 0.9991), fatal on an outlier-heavy expert (0.6005
+cosine). Keep it single-sourced.
 
 Contract, identical at 4 and 8 bit:
 
@@ -57,7 +55,7 @@ def rotation_block_for(k_in: int, block_size: int) -> int:
     """Largest power-of-two rotation block ``<= block_size`` that divides ``k_in``.
 
     Sites whose input width is not a multiple of the nominal block still get a
-    rotation, just a narrower one — a 480-wide projection drops from 64 to 32.
+    rotation, just a narrower one: a 480-wide projection drops from 64 to 32.
     Callers that can pad the input axis (the INT4 path) should do that instead
     and keep the full width; callers that cannot (a fused-norm plugin
     normalises over K internally and cannot take a padded activation) use this.
@@ -89,10 +87,10 @@ def fold_macro_site(
 
     Macro plugins (the DiT's attention/FFN blocks) bake several sites
     into one node, so they need the packed weight and the paired rotation matrix
-    back rather than a ready-made attribute dict — the caller decides which of its
+    back rather than a ready-made attribute dict; the caller decides which of its
     many ``rotation_*``/``act_scale_pre*`` slots each site fills.
 
-    Returns ``(packed_bytes, weight_scale_bytes, R_use)`` — INT4 nibbles or INT8
+    Returns ``(packed_bytes, weight_scale_bytes, R_use)``: INT4 nibbles or INT8
     bytes according to ``bits``, which is the only thing that differs between the
     two widths. ``R_use`` is the
     SmoothQuant-folded rotation, numerically paired with the packed weight, for
@@ -117,7 +115,7 @@ def fold_macro_site(
 def fold_rotation(R: Any, perm: Any, s_ch: Any | None, fold_order: str) -> Any:
     """The SmoothQuant-folded rotation matrix, for sites that bake one.
 
-    Some sites ship a matrix rather than a packed weight — the DiT's
+    Some sites ship a matrix rather than a packed weight: the DiT's
     encoder pre-quant shares one rotation across every cross block's KV pack. They
     still have to fold on the same axis as the weights they pair with: a mismatch
     breaks every cross-attention KV product (measured on the DiT, cosine 0.9996 ->
@@ -138,7 +136,7 @@ class FoldSpec(dict):
 
     A dict so it can be splatted straight into ``make_node(**spec)``. The folded
     rotation tensor, which some emitters bake themselves, rides as a Python
-    attribute rather than a key — a key would be splatted into the node and
+    attribute rather than a key. A key would be splatted into the node and
     rejected as an unknown attribute.
     """
 
@@ -160,7 +158,7 @@ def fold_site(
 
     Args:
         weight: ``(N, K)`` float weight, already padded if the caller pads.
-        bits: 4 or 8 — the only thing that differs between the two paths.
+        bits: 4 or 8, the only thing that differs between the two paths.
         block_size: nominal rotation block; narrowed to fit ``K`` when needed.
         s_ch: SmoothQuant vector measured in the frame ``fold_order`` names, or
             None for an unfolded site.
@@ -171,8 +169,8 @@ def fold_site(
             Hessian must be built on the SAME rotated, scaled activation the
             kernel sees, or the error it compensates is not the error that occurs.
         rotation: an already-built ``(perm, R)`` to fold with, for sites whose
-            rotation is derived from a different tensor than the one being packed
-            — the DiT's encoder pre-quant shares one rotation across every cross
+            rotation is derived from a different tensor than the one being packed.
+            The DiT's encoder pre-quant shares one rotation across every cross
             block's KV pack, so it cannot be re-derived from each weight.
 
     Returns:
@@ -187,7 +185,7 @@ def fold_site(
     k_in = int(weight.shape[1])
     bs = rotation_block_for(k_in, block_size)
     if s_ch is None or bs <= 1:
-        # Unfolded, but a caller-supplied rotation still has to be applied — the
+        # Unfolded, but a caller-supplied rotation still has to be applied: the
         # weights are packed rotated whether or not a scale rides along.
         if rotation is not None:
             perm, rot = rotation
@@ -227,13 +225,13 @@ _QMAX = {4: 7.0, 8: 127.0}
 
 
 def _pack(weight: Any, bits: int, gptq: Any | None = None) -> Tuple[bytes, bytes]:
-    """Bit-width-specific packing — the only step that is not shared.
+    """Bit-width-specific packing, the only step that is not shared.
 
     ``gptq`` is this site's factorized Hessian from
     :func:`llm_gptq.gptq_prepare`. With it the weight is GPTQ-rounded instead of
     round-to-nearest: same fold, same rotation, same per-output-row scale, only
-    the rounding changes, so nothing downstream — kernel, node attributes, byte
-    order — is affected.
+    the rounding changes, so nothing downstream (kernel, node attributes, byte
+    order) is affected.
 
     Why it is worth a branch here rather than in each emitter: at 4 bits the
     error is grid-limited, not outlier-limited. Measured on a flow-matching action head,
@@ -278,32 +276,30 @@ def finalize_scales(
     """The per-channel scale each site ships, from its captured activation amax.
 
     ``alpha`` is SmoothQuant's migration strength, and it only has meaning in the
-    RAW frame — that is, under ``fold_order="before"``. There the scale divides the
+    RAW frame, that is, under ``fold_order="before"``. There the scale divides the
     activation and multiplies the weight, so how much of the outlier burden moves
     across is a choice::
 
         s = a^alpha / w^(1 - alpha)
 
     ``alpha=1.0`` (the default, and the only meaningful value for the
-    post-rotation fold) is pure activation amax: the activation is fully
-    normalized and the weights absorb everything. That is NOT SmoothQuant — a
-    channel whose activation is small over the calibration set has its weight
-    column scaled up without limit, and since the weights are quantized per ROW,
-    one such column sets the row's scale and costs every other column its
-    resolution. ``alpha=0.5`` splits the burden, which is what SmoothQuant is.
+    post-rotation fold) is pure activation amax: the weights absorb everything,
+    so a quiet channel's weight column grows without limit and, with per-ROW
+    weight scales, costs the rest of the row its resolution. ``alpha=0.5``
+    splits the burden, which is what SmoothQuant does.
 
     Args:
         amax: per-key captured activation amax (the accumulator's output).
         weights: per-key weight sharing that key's input channel, needed when
             ``alpha != 1.0``. For merged groups pass the concatenation (Q+K+V
-            together, every cross-attention KV for a shared encoder group) — the
+            together, every cross-attention KV for a shared encoder group). The
             scale is per INPUT channel, so every weight reading that input must
             be in the amax.
         alpha: migration strength in ``[0, 1]``.
     """
     if not amax:
         raise RuntimeError(
-            "W4A4 calibration replay produced zero forward passes — the SmoothQuant fold "
+            "W4A4 calibration replay produced zero forward passes; the SmoothQuant fold "
             "cannot be computed. Check the calibration manifest/capture."
         )
     if alpha != 1.0 and weights is None:
@@ -335,7 +331,7 @@ def hessian_accumulator(rot: Dict[str, tuple], scales: Dict[str, Any], fold_orde
     A second calibration pass, after :func:`scale_accumulator` has produced the
     scales: GPTQ compensates the rounding error of the weight the engine actually
     stores, so its Hessian has to be built on the activation that weight actually
-    multiplies — rotated, and divided by the SmoothQuant vector. A Hessian taken
+    multiplies, rotated, and divided by the SmoothQuant vector. A Hessian taken
     on the raw activation compensates an error that never occurs.
 
     Returns ``(hessians, accum)``; feed each site's entry to
@@ -347,7 +343,7 @@ def hessian_accumulator(rot: Dict[str, tuple], scales: Dict[str, Any], fold_orde
     # The Hessians live on the host in float64 (129 DiT sites would not fit
     # next to the model on a 16 GB card), so every call ships a K x K matrix
     # across PCIe. Staging it as fp32 in pinned memory and adding in place is
-    # 3x faster than ``.double().cpu()`` plus an out-of-place add — the per-call
+    # 3x faster than ``.double().cpu()`` plus an out-of-place add; the per-call
     # GEMM is fp32 either way, so the accumulated value is bit-identical.
     staging: Dict[int, Any] = {}
 
@@ -401,7 +397,7 @@ def scale_accumulator(rot: Dict[str, tuple], block_size: int = 0, fold_order: st
 
     That matters because the two bit widths handle an awkward width differently.
     A 480-wide projection is zero-PADDED to 512 on the INT4 path, while
-    the INT8 path NARROWS the block to 32 and stays at 480 — a fused norm+GEMM
+    the INT8 path NARROWS the block to 32 and stays at 480: a fused norm+GEMM
     plugin has nowhere to put a Pad node. A capture that assumed one policy
     produced a 512-long scale for a 480-wide site and the build died on a shape
     mismatch. Deriving both from the rotation makes the capture agree with

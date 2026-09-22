@@ -1,4 +1,4 @@
-// EncoderPreQuant — runs the per-row INT8 quant of the cross-attention encoder
+// EncoderPreQuant: runs the per-row INT8 quant of the cross-attention encoder
 // once at the start of the graph.
 //
 // In the single-pass DiT the encoder (BF16, shape (B, S_enc, K_enc)) is identical
@@ -13,7 +13,7 @@
 //   0: encoder  [B, S_enc, K_enc]  BF16
 //
 // Plugin fields:
-//   "static_act_scale_enc"  FP32 length = max_S_enc  (OPTIONAL — if present, uses static path)
+//   "static_act_scale_enc"  FP32 length = max_S_enc  (OPTIONAL - if present, uses static path)
 //   "K_enc"                 INT32
 //
 // Outputs:
@@ -84,7 +84,7 @@ private:
     void*  mStaticActScaleEncDevice{nullptr};
 
     // FoldQuant: block-diagonal butterfly + the RAW-frame SmoothQuant vector. Zero
-    // block size means the unrotated path, exactly as in the INT4 sibling —
+    // block size means the unrotated path, exactly as in the INT4 sibling;
     // there is no third state and no silent skip.
     int32_t mRotBlockSize{0};
     std::vector<float> mScalePreEncHost;

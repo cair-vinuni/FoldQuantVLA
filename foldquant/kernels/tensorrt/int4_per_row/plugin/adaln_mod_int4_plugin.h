@@ -1,8 +1,8 @@
-// AdaLNModInt4 — AdaLN modulation linear (norm1.linear) as INT4 weight-only,
+// AdaLNModInt4: AdaLN modulation linear (norm1.linear) as INT4 weight-only,
 // BF16 activation (W4A16). Replaces the BF16 MatMul+Add(bias) that produces the
 // modulation vector (later Split into scale/shift). The INT4 weight is stored
 // ONCE (~72 MB total vs 288 MB BF16) and consumed by a fused dequant GEMV
-// (dit_adaln_gemv_int4_bf16) — no runtime dequant-to-BF16 copy, no extra latency
+// (dit_adaln_gemv_int4_bf16): no runtime dequant-to-BF16 copy, no extra latency
 // (M = B is tiny). Accuracy: weight-only int4 on AdaLN is ~lossless (cos ~0.9916).
 //
 // Inputs:  0: x [.., in] BF16  (the SiLU(temb) modulation input)

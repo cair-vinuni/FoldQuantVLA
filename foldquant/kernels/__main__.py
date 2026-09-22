@@ -1,7 +1,7 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""``python -m foldquant.kernels build [--force] [LIB ...]`` — build the TensorRT plugins for this device.
+"""``python -m foldquant.kernels build [--force] [LIB ...]``: build the TensorRT plugins for this device.
 
 Binaries land in the out-of-tree cache (``FOLDQUANT_CACHE_DIR`` ->
 ``$XDG_CACHE_HOME/foldquant`` -> ``~/.cache/foldquant``) under a
@@ -27,7 +27,7 @@ def _cmd_status(_args: argparse.Namespace) -> int:
     rc = 0
     for lib in locator.KNOWN_PLUGIN_LIBS:
         resolved = locator.resolve_plugin_so(lib)
-        shown = resolved if resolved is not None else "(unresolved — run: python -m foldquant.kernels build)"
+        shown = resolved if resolved is not None else "(unresolved; run: python -m foldquant.kernels build)"
         print(f"  {lib:28s} {shown}")
         rc |= int(resolved is None)
     return rc

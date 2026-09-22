@@ -7,7 +7,7 @@
 Both arms are post-training fake quantization of the 112 LLM + 192 DiT
 projection Linears (zigzag permutation + block-64 rotation, GPTQ / RTN
 weights, INT4 activations), differing only in the rotation and in how the
-activation scale is chosen — see :data:`.calibration.METHODS`. Nothing here
+activation scale is chosen (see :data:`.calibration.METHODS`). Nothing here
 runs an INT4 kernel; the arms exist so a closed-loop comparison against the
 FoldQuant engines can be reproduced from the release alone.
 """

@@ -136,7 +136,7 @@ def _build_v2_dynamic_graph(
 
     With ``sq_scales=None`` this is the unfolded graph this module always built,
     node for node. With scales it folds through the same :mod:`foldq` calls the
-    INT4 emitter uses — bit width is the only difference between the two.
+    INT4 emitter uses. Bit width is the only difference between the two.
     """
     dim = w.dim
     num_heads = w.num_heads
@@ -280,7 +280,7 @@ def _build_v2_dynamic_graph(
         else:
             assert attn_mask_name is not None  # cross-attn always routes a mask
             # Q reads the block's own X; K/V read the encoder, so they fold under
-            # the SHARED encoder rotation — the same pairing the INT4 emitter uses.
+            # the SHARED encoder rotation, the same pairing the INT4 emitter uses.
             q_i8, sQ_b, _, _ = _macro(wQ, s_in)
             o_i8, sO_b, _, _ = _macro(wO, s_o)
             kv_i8, sKV_b, _, _ = _macro(torch.cat([wK, wV], dim=0), _scale("encoder"))

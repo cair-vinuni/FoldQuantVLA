@@ -10,10 +10,10 @@ from pathlib import Path
 import sys
 
 
-#: ``models/groot_n1_7`` — the trimmed upstream ``n1.7-release`` checkout.
+#: ``models/groot_n1_7``, the trimmed upstream ``n1.7-release`` checkout.
 UPSTREAM_ROOT = Path(__file__).resolve().parents[1]
 #: Upstream's ONNX export / TensorRT build / verification tools (plain scripts,
-#: not a package — importable only with this directory on ``sys.path``).
+#: not a package; importable only with this directory on ``sys.path``).
 DEPLOYMENT_DIR = UPSTREAM_ROOT / "scripts" / "deployment"
 
 #: Engine file each upstream pipeline component is loaded from
@@ -88,7 +88,7 @@ def ensure_libero_on_path() -> None:
     """
     if not (LIBERO_DIR / "libero").is_dir():
         raise RuntimeError(
-            f"{LIBERO_DIR} is empty — initialise the pinned LIBERO first:\n"
+            f"{LIBERO_DIR} is empty; initialise the pinned LIBERO first:\n"
             f"    git submodule update --init {LIBERO_DIR.relative_to(UPSTREAM_ROOT.parent.parent)}"
         )
     d = str(LIBERO_DIR)

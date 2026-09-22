@@ -1,4 +1,4 @@
-# foldquant_int4_groupwise — INT4 weight-only groupwise GEMM (W4A16, group 128).
+# foldquant_int4_groupwise: INT4 weight-only groupwise GEMM (W4A16, group 128).
 #
 # Consumes ModelOpt AWQ-quantized weights; the graph surgery that rewrites
 # trt::DequantizeLinear into this plugin lives in the TensorRT target.

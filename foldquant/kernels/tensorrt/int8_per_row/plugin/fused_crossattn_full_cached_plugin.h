@@ -1,4 +1,4 @@
-// FusedCrossAttnFullCached — cached-KV variant of FusedCrossAttnFull. Skips the
+// FusedCrossAttnFullCached: cached-KV variant of FusedCrossAttnFull. Skips the
 // per-step KV GEMM by consuming pre-computed K, V tensors emitted by
 // FusedCrossAttnFull at denoising step 0 (with `emit_kv = 1`). Used at
 // denoising steps 1..N-1 of the unfolded KV-cache loop, where the encoder
@@ -7,20 +7,20 @@
 // Plugin name: "FusedCrossAttnFullCached", namespace "gr00t::v1", version "1".
 //
 // Inputs:
-//   0: x          [B, S, K]              BF16 — hidden state (also residual)
-//   1: scale      [B, K]                 BF16 — AdaLN scale
-//   2: shift      [B, K]                 BF16 — AdaLN shift
-//   3: kv_bf16    [B, S_enc, 2*K]        BF16 — cached K,V interleaved
+//   0: x          [B, S, K]              BF16 - hidden state (also residual)
+//   1: scale      [B, K]                 BF16 - AdaLN scale
+//   2: shift      [B, K]                 BF16 - AdaLN shift
+//   3: kv_bf16    [B, S_enc, 2*K]        BF16 - cached K,V interleaved
 //                                              (K at offset 0..inner_dim,
 //                                              V at offset inner_dim..2*inner_dim,
 //                                              row-stride = 2*inner_dim).
 //                                              Same layout as FusedCrossAttnFull
 //                                              output 1.
-//   4: attn_mask  [B, 1, 1, S_enc]       BF16 — additive mask (optional; pass
+//   4: attn_mask  [B, 1, 1, S_enc]       BF16 - additive mask (optional; pass
 //                                              4-input form to skip).
 //
 // Outputs:
-//   0: out        [B, S, K]              BF16 — post-cross-attn block output
+//   0: out        [B, S, K]              BF16 - post-cross-attn block output
 #pragma once
 
 #include <NvInferRuntime.h>
@@ -87,7 +87,7 @@ private:
     std::string mLayerName;
     std::string mNamespace;
 
-    // No K/V weights — KV is consumed from inputs[3].
+    // No K/V weights; KV is consumed from inputs[3].
     std::vector<int8_t> mQI8Host, mOI8Host;
     std::vector<float>  mQScaleHost, mOScaleHost;
     std::vector<float>  mQBiasHost,  mOBiasHost;

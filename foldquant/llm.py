@@ -29,11 +29,9 @@ Final RMSNorm (``qwen3.norm``) in BF16 over the hidden dim, emitted only when th
 tower carries a real final norm. A tower whose norm is an identity bypass (N1.7,
 whose action head consumes the pre-norm residual stream) ends one node earlier.
 
-This is the **dynamic per-row** variant: activation amax is computed at runtime
-inside each plugin, so no static activation-scale plugin field is baked (no
-calibration step). The engine is dynamic-S - RoPE cos/sin and the causal mask
-are baked at ``max_seq_len`` and sliced down to the current sequence length at
-runtime; the rest of the graph uses symbolic seq_len.
+Activation amax is computed per row inside each plugin (no static activation
+scale). The engine is dynamic-S: RoPE tables and the causal mask are baked at
+``max_seq_len`` and sliced at runtime (see :func:`build_llm_plugin_onnx`).
 
 Passing *sq_scales* (optionally with *rot_bs*) selects the
 ``w8a8_{s,sr}`` variants: each layer folds through
@@ -118,14 +116,14 @@ def _torch() -> Any:
 # Quantization width (W8A8 vs W4A4)
 # ============================================================================
 
-# The graph topology is identical at both widths — ``bits`` selects only the
+# The graph topology is identical at both widths: ``bits`` selects only the
 # plugin pair, the weight-attribute name, and the weight packer. INT4 weights
 # are GPTQ-rounded (round-to-nearest measured chan_rel_err 0.4199 vs GPTQ's
 # 0.1586 on the N1.6 LLM), which changes ONLY the rounding: GPTQ keeps the same
 # per-output-row scale RTN would pick, so the packed layout and the s4 epilogue
 # are untouched.
 
-# Must stay in lockstep with omega_rotation._QMAX_I4 — both feed pack_int4_nibbles.
+# Must stay in lockstep with omega_rotation._QMAX_I4; both feed pack_int4_nibbles.
 _QMAX_I4 = 7.0
 
 
@@ -141,7 +139,7 @@ class _WidthSpec(NamedTuple):
 def _pack_int8(weight: Any, prep: "dict | None", row_clip: Any = None) -> "tuple[bytes, bytes]":
     """Per-output-row symmetric INT8 RTN: ``(N, K)`` int8 bytes + ``(N,)`` scales."""
     if prep is not None:
-        raise ValueError("GPTQ prep supplied to the INT8 packer — width routing bug.")
+        raise ValueError("GPTQ prep supplied to the INT8 packer (width routing bug).")
     if row_clip is not None:
         raise ValueError("learned weight clips are an INT4 (GPTQ) weight knob; the INT8 packer takes none.")
     w_i8, scale = quant_weight_per_row(weight)
@@ -151,7 +149,7 @@ def _pack_int8(weight: Any, prep: "dict | None", row_clip: Any = None) -> "tuple
 def _pack_int4(weight: Any, prep: "dict | None", row_clip: Any = None) -> "tuple[bytes, bytes]":
     """Per-output-row symmetric INT4 via GPTQ: ``(N, K/2)`` nibbles + ``(N,)`` scales.
 
-    The nibble packing is :func:`omega_rotation.pack_int4_nibbles` — the one
+    The nibble packing is :func:`omega_rotation.pack_int4_nibbles`, the one
     place the byte order lives, shared with the DiT/expert packers, because a
     flipped order builds, loads and runs, and produces noise rather than an
     error.
@@ -178,7 +176,7 @@ _LLM_WIDTH: "dict[int, _WidthSpec]" = {
     8: _WidthSpec("FusedRmsNormLinearInt8", "PerRowInt8LinearResidual", "weight_i8", _pack_int8, False, 8),
     4: _WidthSpec("FusedRmsNormLinearInt4", "PerRowInt4LinearResidual", "weight_i4", _pack_int4, True, 4),
 }
-# W4A8: the INT8 plugin pair fed nibble-packed INT4 weights (``weight_i4``) —
+# W4A8: the INT8 plugin pair fed nibble-packed INT4 weights (``weight_i4``);
 # the plugin unpacks them to INT8 at load, so the GEMM is INT8xINT8 over the
 # INT4 weight grid with the INT4 per-row scale, and the activation is the
 # INT8 plugins' per-token dynamic quantizer. Same packer as W4A4 (GPTQ).
@@ -312,7 +310,7 @@ def resolve_qwen3_decoder(qwen3_model: Any) -> Any:
 
 
 def _emit_gelu_tanh(nodes: list, inits: list, name: str, x: str, out: str) -> None:
-    """``gelu_pytorch_tanh``: 0.5*x*(1+tanh(sqrt(2/pi)*(x+0.044715*x^3))) — opset-17-safe."""
+    """``gelu_pytorch_tanh``: 0.5*x*(1+tanh(sqrt(2/pi)*(x+0.044715*x^3))), opset-17-safe."""
     import torch as _t
 
     inits.append(_bf16_initializer(f"{name}_c0", _t.tensor(0.7978845608028654, dtype=_t.bfloat16)))  # sqrt(2/pi)
@@ -365,7 +363,7 @@ def _emit_layer(
     b = prefix
     # Width per SITE: ``site_bits`` (qkv / o / gateup / down) overrides the layer
     # width, so a mixed layer can keep its FWHT residual sites (o, down) at INT8
-    # inside an INT4 stack — both plugin pairs exist, only the op name, weight
+    # inside an INT4 stack. Both plugin pairs exist; only the op name, weight
     # attribute and packer differ per site (measured: o8+down8 recovers 47% of
     # the held-out action error of full W4A4 on N1.6).
     _site_bits = {k: int(v) for k, v in (site_bits or {}).items()}
@@ -381,7 +379,7 @@ def _emit_layer(
 
     def _clip_kw(site: str) -> Dict[str, Any]:
         # INT4-activation-only attribute: the INT8 plugins (INT8 and W4A8 modes)
-        # do not declare it, and 1.0 is the plugins' default — emit nothing in
+        # do not declare it, and 1.0 is the plugins' default, so emit nothing in
         # either case so INT8 graphs and untuned INT4 graphs stay byte-identical.
         # A dict carries learned per-(layer, site) clips keyed ``L{i}_{site}``.
         ratio = (
@@ -438,7 +436,7 @@ def _emit_layer(
     gamma_pre = layer_state["input_layernorm.weight"]
 
     # Qwen2 carries q/k/v biases; Qwen3 does not. A bias is added
-    # after the INT8 GEMM as a plain BF16 Add — it lives outside both the
+    # after the INT8 GEMM as a plain BF16 Add; it lives outside both the
     # SmoothQuant fold (which rescales input channels) and the rotation fold
     # (which transforms the input space), so neither touches it.
     has_qkv_bias = "self_attn.q_proj.bias" in layer_state
@@ -841,7 +839,7 @@ def build_llm_plugin_onnx(
 
     ``bits`` selects the plugin pair (8: FusedRmsNormLinearInt8 +
     PerRowInt8LinearResidual; 4: FusedRmsNormLinearInt4 + the FWHT mode of
-    PerRowInt4LinearResidual) and the weight packer — at 4 bits the weights are
+    PerRowInt4LinearResidual) and the weight packer. At 4 bits the weights are
     GPTQ-rounded, so ``gptq_hessians`` (from
     :func:`llm_gptq.compute_gptq_hessians_llm`, keyed ``f"L{i}_{site}"``) is
     required and its absence fails closed rather than falling back to RTN.
@@ -854,7 +852,7 @@ def build_llm_plugin_onnx(
 
     Args:
         gemma_mode: emit the Pi0/Pi0.5 PaliGemma prefix-pass contract instead of
-            GR00T's hidden-states one — inputs ``prefix_embs`` [B, S, hidden] /
+            GR00T's hidden-states one: inputs ``prefix_embs`` [B, S, hidden] /
             the additive ``attention_mask`` [B, 1, S, S] / ``position_ids``
             INT64 [B, S]; RoPE gathered from a baked table at theta=10000;
             output is the stacked post-RoPE KV cache ``kv_stack``
@@ -923,14 +921,14 @@ def build_llm_plugin_onnx(
     # consistently with the rest of the export pipeline. RoPE cos/sin and
     # causal_mask are baked at (1, 1, max_seq_len, ...) - they broadcast over
     # batch naturally in the ONNX ops that consume them.
-    # N1.6 opens the batch dim (symbolic "batch"); N1.7 pins it to the captured batch —
+    # N1.6 opens the batch dim (symbolic "batch"); N1.7 pins it to the captured batch,
     # the deepstack ScatterND indexes a flat [B, S] mask, and a symbolic batch makes the
     # TensorRT optimization profile inconsistent (batch 1 vs seq max). This matches the
     # bf16 Qwen3-VL export, whose engine also builds with a fixed batch.
     batch_dim: Any = int(batch) if n1d7_mode else (1 if kv_stack_mode else "batch")
     # Gemma (Pi0/Pi0.5) pins the prefix length to the captured value: the Pi
     # processor pads text to a fixed max_length and the camera count is fixed,
-    # so the runtime prefix is constant — and a symbolic seq_len here breaks
+    # so the runtime prefix is constant, and a symbolic seq_len here breaks
     # the TensorRT profile the same way a symbolic batch broke N1.7's (the
     # manifest's observed shapes describe the ORIGINAL float graph, whose
     # additive mask is 4-D, so derive_shapes maps the plugin graph's 3-D bool
@@ -949,7 +947,7 @@ def build_llm_plugin_onnx(
         x_in = oh.make_tensor_value_info("prefix_embs", onnx.TensorProto.BFLOAT16, [batch_dim, seq_dim, k_dim])
         # The Pi prefix seam hands the engine the SAME 4-D ADDITIVE mask
         # the float export captured ([B, 1, S, S], HF `_prepare_4d_mask`
-        # output) — declare that contract instead of a bool mask so the
+        # output); declare that contract instead of a bool mask so the
         # drop-in module needs no conversion and the graph rank matches
         # the manifest's observed input_features.
         am_in = oh.make_tensor_value_info(
@@ -998,7 +996,7 @@ def build_llm_plugin_onnx(
         inits.append(_i64_init("_rope_axes_1", [1]))
         nodes.append(oh.make_node("Unsqueeze", ["rope_cos_g", "_rope_axes_1"], ["rope_cos"]))
         nodes.append(oh.make_node("Unsqueeze", ["rope_sin_g", "_rope_axes_1"], ["rope_sin"]))
-        # Input is already the additive [B, 1, S, S] bias — pass through.
+        # Input is already the additive [B, 1, S, S] bias; pass through.
         nodes.append(oh.make_node("Identity", ["attention_mask"], ["block_mask"]))
     else:
         # Bake the causal mask at max_seq_len; slice down at runtime (both families).
@@ -1050,7 +1048,7 @@ def build_llm_plugin_onnx(
     any_int4 = int(bits) == 4 or any(_sb.get(s, int(bits)) == 4 for s in _sites)
     if not any_int4 and gptq_hessians is not None:
         raise ValueError(
-            f"gptq_hessians supplied for a width-{bits} build — GPTQ serves the INT4 weight "
+            f"gptq_hessians supplied for a width-{bits} build. GPTQ serves the INT4 weight "
             "axis only; an INT8 build receiving Hessians means the scheme routing is wrong."
         )
     gptq = None
@@ -1066,7 +1064,7 @@ def build_llm_plugin_onnx(
         }
         if gemma_mode:
             # GemmaRMSNorm applies its weight as (1 + w); the plugin computes
-            # normed*gamma, so materialize gamma = w + 1 here — BEFORE any
+            # normed*gamma, so materialize gamma = w + 1 here, BEFORE any
             # SmoothQuant fold, which rescales gamma and must see (1+w).
             layer_state = dict(layer_state)
             layer_state["input_layernorm.weight"] = layer_state["input_layernorm.weight"] + 1.0
@@ -1125,7 +1123,7 @@ def build_llm_plugin_onnx(
             cur_x = ds_out
 
     if kv_stack_mode:
-        # Stack the per-layer KV; no final norm — the prefix hidden states are
+        # Stack the per-layer KV; no final norm: the prefix hidden states are
         # consumed nowhere (only the cache crosses the engine boundary).
         inits.append(_i64_init("_kv_axes_0", [0]))
         nodes.append(oh.make_node("Concat", kv_layer_names, [out_tensor], axis=0))

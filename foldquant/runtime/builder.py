@@ -4,7 +4,7 @@
 """Compile a FoldQuant plugin-node ONNX graph into a TensorRT engine.
 
 The one rule: the STRONGLY_TYPED vs weakly-typed(+INT8) choice is the
-caller's, recorded next to the export — never re-derived here by inspecting
+caller's, recorded next to the export and never re-derived here by inspecting
 the graph. Every plugin-node graph FoldQuant emits is strongly typed (the
 plugins declare their own I/O dtypes); the weakly-typed path exists for the
 float modules of a hybrid deployment (an fp16/bf16 ViT beside a quantized LLM).
@@ -57,7 +57,7 @@ def profiles_from_onnx(
 
     Static dimensions are copied. A symbolic dimension is looked up by name in
     *dims*: an ``int`` pins it, a ``(min, opt, max)`` triple gives it a range.
-    An unnamed dynamic dimension or a symbolic name absent from *dims* raises —
+    An unnamed dynamic dimension or a symbolic name absent from *dims* raises:
     the caller decides every range, nothing is guessed from the graph.
     """
     import onnx
@@ -105,7 +105,7 @@ def build_engine(
     """Parse *onnx_path*, build a serialized engine with *profiles*, write it to *engine_path*.
 
     Args:
-        profiles: One :class:`ShapeProfile` per graph input — every input must be
+        profiles: One :class:`ShapeProfile` per graph input. Every input must be
             covered, or TensorRT rejects the profile at build time.
         plugin_libs: FoldQuant plugin libraries the graph's nodes come from; they
             are resolved (rebuilt for this device if needed) and loaded before

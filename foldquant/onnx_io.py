@@ -9,12 +9,10 @@ driver runs ``torch.onnx.export`` first, then hands the scheme that path (see
 external-data sidecar is still sitting next to it at that point, and
 ``onnx.save_model`` *appends* to an existing sidecar rather than truncating it.
 
-Appending is silently destructive here. The new tensors land after the old
-ones, so their recorded offsets are pushed out by the size of the float
-weights — for GR00T's DiT that put 18 MB of live tensors past the 2 GiB mark,
-behind 2.18 GB of dead float weights, and TensorRT's parser rejected the result
-at model level with ``Trying to access weights or a null tensor!``. The graph
-itself was well-formed; only the sidecar was wrong.
+Appending is silently destructive: the new tensors land behind the dead float
+weights. On GR00T's DiT that pushed 18 MB of live tensors past the 2 GiB mark
+(behind 2.18 GB of float weights) and TensorRT's parser rejected the model with
+``Trying to access weights or a null tensor!``, although the graph was valid.
 
 Constructs ONNX only: no ``tensorrt`` import, no ``.so`` load, no
 ``foldquant.runtime`` import.

@@ -93,17 +93,17 @@ __global__ void per_row_quant_bf16_to_int8_kernel(
 // Rotation variant: block-diagonal Hadamard between the input and the
 // quantizer, so the per-token scale sees a channel-flattened row.
 //
-// Unlike the plain kernel above this one MUST stage the row in shared memory —
+// Unlike the plain kernel above this one MUST stage the row in shared memory:
 // the FWHT is an in-place multi-pass butterfly, and its output (not the input)
 // is what amax and the quantizer need. Shared cost is K floats: 8 KB at K=2048
-// (o_proj), 24 KB at K=6144 (down_proj) — both inside sm_87's 96 KB budget.
+// (o_proj), 24 KB at K=6144 (down_proj), both inside sm_87's 96 KB budget.
 //
 // The plain kernel is left untouched on purpose: `dit_int8_per_row_quant_bf16`
 // is shared with the DiT's INT8 v2 plugins, which must not change behaviour.
 __global__ void per_row_fwht_quant_bf16_to_int8_kernel(
     const __nv_bfloat16* __restrict__ in,
-    const float* __restrict__ act_scale_pre,  // (K,) or nullptr — fold-before
-    const float* __restrict__ act_scale_ch,   // (K,) or nullptr — fold-after
+    const float* __restrict__ act_scale_pre,  // (K,) or nullptr - fold-before
+    const float* __restrict__ act_scale_ch,   // (K,) or nullptr - fold-after
     int8_t* __restrict__ out_i8,
     float* __restrict__ out_scale,
     int M, int K, int rot_bs)
@@ -180,7 +180,7 @@ __global__ void per_row_fwht_quant_bf16_to_int8_kernel(
     }
 }
 
-// Static-per-row variant — uses precomputed scale instead of dynamic amax.
+// Static-per-row variant: uses precomputed scale instead of dynamic amax.
 __global__ void per_row_static_quant_bf16_to_int8_kernel(
     const __nv_bfloat16* __restrict__ in,
     const float* __restrict__ static_scale,
@@ -258,7 +258,7 @@ extern "C" int dit_int8_per_row_quant_fwht_bf16(
     size_t smem_bytes = sizeof(float) * (size_t)K;
     // The row is staged in dynamic shared memory, so K > 12288 floats exceeds
     // the 48KB default per-block limit (Gemma's 16384-wide down_proj is the
-    // first shape to hit it — every other family's intermediate is <= 6144).
+    // first shape to hit it; every other family's intermediate is <= 6144).
     // Opting in is a per-function attribute; sm90 allows up to ~227KB.
     if (smem_bytes > 48 * 1024) {
         cudaError_t attr_rc = cudaFuncSetAttribute(

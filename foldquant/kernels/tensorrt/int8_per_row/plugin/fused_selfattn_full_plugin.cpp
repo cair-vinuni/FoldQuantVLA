@@ -1,4 +1,4 @@
-// FusedSelfAttnFull — AdaLN + INT8 merged QKV + cuBLAS BF16 SDPA + INT8 attn_O
+// FusedSelfAttnFull: AdaLN + INT8 merged QKV + cuBLAS BF16 SDPA + INT8 attn_O
 // + bias + residual collapsed into one plugin call.
 
 #include "plugin_field_util.h"
@@ -30,13 +30,13 @@ constexpr char const* kPLUGIN_NAMESPACE{"gr00t::v1"};
 inline size_t alignUp(size_t v) { return (v + 127) & ~static_cast<size_t>(127); }
 
 // Workspace:
-//   [x_i8 (M*K)]               INT8 — post-AdaLN quantized input
-//   [x_scale (M*4)]             FP32 — per-row scale of x
-//   [merged_qkv (M*3*inner*2)] BF16 — output of merged QKV GEMM, laid out (S, 3, H, D)
-//   [scores (H*S*S*2)]         BF16 — Q·Kᵀ result, then softmax in-place
-//   [attn_buf (M*inner*2)]     BF16 — scores·V result, laid out (S, H, D)
-//   [attn_i8 (M*inner)]        INT8 — post-SDPA per-row quantized
-//   [attn_scale (M*4)]         FP32 — per-row scale
+//   [x_i8 (M*K)]               INT8 - post-AdaLN quantized input
+//   [x_scale (M*4)]             FP32 - per-row scale of x
+//   [merged_qkv (M*3*inner*2)] BF16: output of merged QKV GEMM, laid out (S, 3, H, D)
+//   [scores (H*S*S*2)]         BF16 - Q·Kᵀ result, then softmax in-place
+//   [attn_buf (M*inner*2)]     BF16 - scores·V result, laid out (S, H, D)
+//   [attn_i8 (M*inner)]        INT8 - post-SDPA per-row quantized
+//   [attn_scale (M*4)]         FP32 - per-row scale
 inline size_t workspaceBytes(int32_t M, int32_t K, int32_t innerDim,
                               int32_t numHeads, int32_t S) {
     size_t x_i8    = alignUp(static_cast<size_t>(M) * K);
@@ -261,7 +261,7 @@ int32_t FusedSelfAttnFullPlugin::enqueue(PluginTensorDesc const* inputDesc,
         int rc;
         if (mRotBlockSize > 0) {
             // FoldQuant: adaLN, raw-frame divide, butterfly, then the per-row
-            // amax — taken on the rotated row, which is what INT8 stores.
+            // amax, taken on the rotated row, which is what INT8 stores.
             rc = fused_adaln_fwht_quant_bf16_to_int8(
                 inputs[0], inputs[1], inputs[2], mScalePreInDevice,
                 x_i8, x_sc,

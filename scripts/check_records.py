@@ -2,8 +2,8 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 #
-# Invariants every committed record must satisfy. Reads results/ only — no GPU,
-# no engines, no upstream environment — so a reviewer can run it on a clone.
+# Invariants every committed record must satisfy. Reads results/ only (no GPU,
+# no engines, no upstream environment), so a reviewer can run it on a clone.
 #
 #   python scripts/check_records.py
 #
@@ -13,7 +13,7 @@
 #   ladder      a float engine cannot drift further from the bf16 reference than
 #               an INT8 engine built from the same graph. When it did, the float
 #               arm had been compiled weakly typed and TensorRT ran layers in
-#               fp32 — more exact than the reference, so further from it.
+#               fp32: more exact than the reference, so further from it.
 #   scope       two arms called "float" existed in one family, one covering the
 #               action head alone and one covering both modules, with nothing in
 #               the record to tell them apart.
@@ -77,7 +77,7 @@ def check() -> list[str]:
                 problems.append(
                     f"{fam}: float arm ({f:.5f}) drifts further than W8A8 ({w:.5f}). "
                     f"A float engine cannot be less faithful than an INT8 one built from the "
-                    f"same graph — check it was compiled STRONGLY_TYPED."
+                    f"same graph; check it was compiled STRONGLY_TYPED."
                 )
             fs, ws = _seam(arms["float"])[1], _seam(arms["w8a8"])[1]
             if fs and ws:
@@ -95,7 +95,7 @@ def check() -> list[str]:
             if not r.get("schemes") and not r.get("components"):
                 problems.append(
                     f"{fam}: the float record names neither `schemes` nor `components`, so its "
-                    f"scope is unstated — two arms with different scope have shared this name."
+                    f"scope is unstated; two arms with different scope have shared this name."
                 )
 
         # ---- every arm records its held-out status and sample count

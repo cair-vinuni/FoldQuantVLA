@@ -10,7 +10,7 @@
 #
 # This checks the half a robot depends on and the export smoke does not touch:
 # that serve.py assembles the policy, installs the engines if asked, and listens.
-# It does NOT drive a rollout — that is eval_libero, which needs the simulator.
+# It does NOT drive a rollout; that is eval_libero, which needs the simulator.
 #
 # Paths as in smoke_family.sh; add ENGINE_<FAM> to serve a built arm instead of
 # the bf16 policy, e.g. ENGINE_GROOT_N1_7=exports/w8a8/engines.
@@ -61,7 +61,7 @@ serve_one () {
       exec "$venv" -m foldquant_integration.serve "${args[@]}" --port "$PORT" ) >"$log" 2>&1 &
   local pid=$!
   # Wait on the socket, not on the log. Each family announces readiness in its own
-  # words — "listening on", "port %d", "ready", "running at ws://" — and matching
+  # words ("listening on", "port %d", "ready", "running at ws://"), and matching
   # those cost a false failure on N1.5, whose server was up and serving while the
   # check looked for a phrase it never prints. A bound port is the thing a client
   # actually needs, and it reads the same for all four.
@@ -75,7 +75,7 @@ serve_one () {
     note ok "listening on :$PORT${eng:+  (engines: $eng)}"
     pass=$((pass+1))
   else
-    note FAIL "no socket on :$PORT within ${WAIT}s — see $log"
+    note FAIL "no socket on :$PORT within ${WAIT}s; see $log"
     fail=$((fail+1))
   fi
   kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null

@@ -4,13 +4,13 @@
 """Make the FoldQuant TensorRT plugins available to this process.
 
 TensorRT resolves plugin creators (namespace / name / version) when the ONNX
-parser sees a plugin node and again when an engine is deserialized — so the
+parser sees a plugin node and again when an engine is deserialized, so the
 ``.so`` must be ``dlopen``-ed before either. Two call sites, two policies:
 
-* :func:`prepare_plugins` — at BUILD time: resolve the device-matched binary,
+* :func:`prepare_plugins`: at BUILD time, resolve the device-matched binary,
   rebuilding from the vendored sources into the cache when this device matches
   nothing committed, then load.
-* :func:`load_plugins` — at RUN time: resolve and load only; a missing binary is
+* :func:`load_plugins`: at RUN time, resolve and load only; a missing binary is
   a deployment error (:class:`foldquant.kernels.locator.MissingPluginError`),
   never a silent mid-inference rebuild.
 """

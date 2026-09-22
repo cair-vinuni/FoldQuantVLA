@@ -1,4 +1,4 @@
-// EncoderPreQuantInt4 — once-per-forward permute + shared block-rotation + per-row
+// EncoderPreQuantInt4: once-per-forward permute + shared block-rotation + per-row
 // INT4 quant of the cross-attn encoder. Emits (encoder_i4 INT32-packed, encoder_scale)
 // shared by all downstream FusedCrossAttnFullInt4 blocks. Clone of EncoderPreQuant.
 //

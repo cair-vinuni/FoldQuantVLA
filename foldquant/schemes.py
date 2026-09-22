@@ -38,8 +38,8 @@ W4A4_SR = "w4a4_sr"
 #: Same fold with the fixed Sylvester butterfly (FWHT) instead of a stored matrix:
 #: the SmoothQuant vector ships beside the weights, the rotation is implicit.
 W4A4_SH = "w4a4_sh"
-#: ``w4a4_sh`` with GPTQ-rounded weights. Free at runtime — identical kernel,
-#: node attributes and byte layout — GPTQ only spends the same 16 levels better.
+#: ``w4a4_sh`` with GPTQ-rounded weights. Free at runtime (identical kernel,
+#: node attributes and byte layout); GPTQ only spends the same 16 levels better.
 W4A4_SHG = "w4a4_shg"
 #: The butterfly fold at 8 bit, for activations whose outlier channels are what
 #: SmoothQuant exists to move.
@@ -51,14 +51,14 @@ ACT_FOLDED_SCHEMES: FrozenSet[str] = ACT_W4A4_SCHEMES | {W8A8_SH}
 ACT_MODULES: FrozenSet[str] = frozenset({"dit", "expert"})
 
 # --- LLM schemes ------------------------------------------------------------
-#: The LLM defaults at each width — SmoothQuant + block rotation, GPTQ at 4 bit.
+#: The LLM defaults at each width: SmoothQuant + block rotation, GPTQ at 4 bit.
 W8A8_SR = DEFAULT_LLM_INT8_ALGORITHM
 W4A4_SRG = DEFAULT_LLM_INT4_ALGORITHM
 #: ``w8a8_s`` / ``w8a8_sr``: fold parameters live in :mod:`.llm_rotation_sq`.
 LLM_INT8_SCHEMES: FrozenSet[str] = frozenset(LLM_INT8_ALGORITHMS)
 #: ``w4a4_sg`` (rotation-off ablation), ``w4a4_srg``, ``w4a8_srg``.
 LLM_INT4_SCHEMES: FrozenSet[str] = frozenset(LLM_INT4_ALGORITHMS)
-#: INT4 weights over INT8 activations — served by the INT8 plugins, which unpack
+#: INT4 weights over INT8 activations, served by the INT8 plugins, which unpack
 #: the nibbles at engine load.
 LLM_W4A8_SCHEMES: FrozenSet[str] = frozenset(
     k for k, v in LLM_INT4_ALGORITHMS.items() if int(v.get("act_bits", 4)) == 8

@@ -247,7 +247,7 @@ int32_t FusedAdaLnQuantCrossAttnPrequantizedPlugin::enqueue(
         if (rc != 0) return rc;
 
         // Step 2: REUSE pre-quantized encoder from inputs[3] (INT8) and inputs[4] (FP32 scale).
-        // No quant kernel call here — encoder INT8 is reused across blocks.
+        // No quant kernel call here; encoder INT8 is reused across blocks.
         void const* enc_i8 = inputs[3];
         void const* enc_sc = inputs[4];
 

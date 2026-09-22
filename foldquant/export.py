@@ -3,8 +3,8 @@
 
 """Export a live module as a FoldQuant plugin-node ONNX graph.
 
-One entry point per module kind — :func:`export_llm`, :func:`export_dit`,
-:func:`export_expert` — plus :func:`export_module`,
+One entry point per module kind (:func:`export_llm`, :func:`export_dit`,
+:func:`export_expert`) plus :func:`export_module`,
 which dispatches on the module name. Each takes the live PyTorch module, a
 destination path, a scheme key from :mod:`.schemes` and, for every folded
 scheme, a ``forward_loop(module)`` that replays calibration observations
@@ -14,9 +14,9 @@ way out.
 
 Calibration order is fixed and shared by every module kind:
 
-1. SmoothQuant scales — per-channel amax of the activation in the frame the
+1. SmoothQuant scales: per-channel amax of the activation in the frame the
    fold lands on (raw channel for fold-before, rotated for fold-after).
-2. GPTQ Hessians (``_g`` schemes only) — a SECOND replay after the scales
+2. GPTQ Hessians (``_g`` schemes only): a SECOND replay after the scales
    exist, of the transformed activation ``rot(x / s)``: GPTQ compensates the
    rounding error of the weight the engine stores, so its Hessian must be of
    the activation that weight actually multiplies.
@@ -87,8 +87,8 @@ def _act_fold_knobs(scheme: str, params: Mapping[str, Any]) -> Dict[str, Any]:
     """``{"fwht", "fold_order", "alpha"?}`` for an action-module fold.
 
     Butterfly arms default to fold-BEFORE (SmoothRot: scale the raw channel, then
-    rotate). It is the cheaper side of the kernel — the divide fuses into the
-    load loop where fold-after needs a second shared-memory pass — and on the
+    rotate). It is the cheaper side of the kernel (the divide fuses into the
+    load loop where fold-after needs a second shared-memory pass), and on the
     Gemma expert the two orders differ by 0.0006 of action cosine, far below what
     800 LIBERO episodes resolve. "after" stays selectable as the ablation arm.
 
@@ -178,7 +178,7 @@ def export_llm(
         # projection submodules directly and never runs the decoder's forward.
         if loop is None:
             raise ValueError(
-                "The Gemma plugin graph pins its prefix length from a captured forward call — "
+                "The Gemma plugin graph pins its prefix length from a captured forward call; "
                 "pass forward_loop even for the dynamic per-row scheme."
             )
         q0 = decoder.layers[0].self_attn.q_proj
@@ -190,7 +190,7 @@ def export_llm(
                 raise ValueError(
                     "This LLM is Qwen3-VL (rope_scaling.mrope_section present). Its plugin graph injects "
                     "M-RoPE position_ids and deepstack residuals as explicit inputs whose count and width "
-                    "are only knowable from a real forward call — pass forward_loop even for w8a8."
+                    "are only knowable from a real forward call. Pass forward_loop even for w8a8."
                 )
             snapshots = calibrate.capture_llm_snapshots(decoder, loop)
             mode_kwargs.update(calibrate.qwen3_vl_graph_params(module, snapshots) or {})
@@ -205,7 +205,7 @@ def export_llm(
     if prefix_graph:
         # The prefix replay drives the layer submodules directly, so the per-site
         # leaf hooks fire under it; there is no decoder-level snapshot to replay.
-        # One snapshot therefore stands for the WHOLE forward loop — every
+        # One snapshot therefore stands for the WHOLE forward loop: every
         # calibration observation runs inside it, which is what the "over 1
         # replay snapshot(s)" log lines below count.
         replay_snaps: list = [None]
@@ -266,7 +266,7 @@ def install_llm_emulation(module: nn.Module, result: ExportResult) -> Any:
     Raises:
         ValueError: *result* carries no emulation data (not a folded LLM scheme).
         NotImplementedError: a decoder family the Qwen / Gemma emulation does
-            not cover — a wrong emulation is worse than none.
+            not cover. A wrong emulation is worse than none.
     """
     data = result.emulation
     if data is None:
@@ -365,7 +365,7 @@ def export_expert(
     """Emit the Pi (Gemma-300M) action expert.
 
     The scale capture and the emitter take the SAME fold kwargs, from one
-    mapping — a knob dropped on one side leaves the capture measuring in one
+    mapping. A knob dropped on one side leaves the capture measuring in one
     frame while the emitter folds in another, with no error anywhere.
     """
     schemes.validate("expert", scheme)

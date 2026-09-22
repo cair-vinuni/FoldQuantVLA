@@ -1,4 +1,4 @@
-// FusedSelfAttnFullInt4 — INT4 merged-QKV + cuBLAS BF16 SDPA + INT4 attn_O, with
+// FusedSelfAttnFullInt4: INT4 merged-QKV + cuBLAS BF16 SDPA + INT4 attn_O, with
 // FoldQuant rotation folded into the QKV/O prologues. Clone of fused_selfattn_full_plugin.cpp.
 
 #include "plugin_field_util.h"

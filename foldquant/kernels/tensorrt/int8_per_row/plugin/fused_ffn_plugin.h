@@ -1,4 +1,4 @@
-// FusedFfnBlock — full DiT FFN block as one TRT plugin (shared by both v1 and v2).
+// FusedFfnBlock: full DiT FFN block as one TRT plugin (shared by both v1 and v2).
 //
 // Replaces the BasicTransformerBlock FFN sequence:
 //     norm3 = LayerNorm(x, elementwise_affine=False)

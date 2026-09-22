@@ -1,4 +1,4 @@
-// Phase 3 — Fused LayerNorm + AdaLN + per-row INT8 quantization kernel.
+// Phase 3: Fused LayerNorm + AdaLN + per-row INT8 quantization kernel.
 //
 // Single-pass-ish algorithm per token:
 //   Pass 1: read x_row, accumulate sum and sum-of-squares in fp32.
@@ -160,7 +160,7 @@ __global__ void fused_adaln_quant_kernel(
 // block-diagonal butterfly, and only then the per-row amax.
 //
 // adaLN's (1+scale)/shift are elementwise, so they commute with nothing the
-// rotation does — the rotation mixes channels and must sit between the
+// rotation does: the rotation mixes channels and must sit between the
 // modulation and the quantizer. The amax therefore has to be taken on the
 // rotated row: it is the row the INT8 grid stores, and the offline weight fold
 // inverts the rotation on the other side of the GEMM.

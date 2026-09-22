@@ -65,7 +65,7 @@ class VerifyConfig:
     """Seed of the held-out sample and of observation ``i``'s flow-matching noise (``seed + i``), both passes."""
 
     allow_calibration_episodes: bool = False
-    """Sample from every episode, calibration ones included — for datasets too small to hold any out.
+    """Sample from every episode, calibration ones included, for datasets too small to hold any out.
     The report then measures fit, not generalisation, and says so."""
 
     split_from: str | None = None

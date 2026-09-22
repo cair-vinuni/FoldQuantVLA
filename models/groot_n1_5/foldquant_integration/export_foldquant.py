@@ -11,7 +11,7 @@ Writes, under ``--output-dir``::
     onnx/foldquant_export.json what was exported, from which samples, needing which plugins
 
 Both graphs use FoldQuant's I/O contracts (see ``runtime.py``), not the
-fp16 three-input DiT of upstream's ``deployment_scripts/export_onnx.py`` —
+fp16 three-input DiT of upstream's ``deployment_scripts/export_onnx.py``;
 the two are not interchangeable. The LLM graph takes ``inputs_embeds`` and
 ``attention_mask`` and returns the decoder's ``hidden_states`` at the entry
 the Eagle backbone reads (``hidden_states[select_layer]``, 12 for the
@@ -113,7 +113,7 @@ def capture_shape_metadata(policy, observation: dict[str, Any]) -> dict[str, Any
     """One forward with hooks: the tensor shapes the engine builder profiles, and where the backbone reads.
 
     ``final_norm`` records whether ``hidden_states[select_layer]`` of the Qwen3
-    decoder — the entry the Eagle backbone consumes — is the post-final-norm
+    decoder (the entry the Eagle backbone consumes) is the post-final-norm
     stream (``last_hidden_state``) under the installed transformers, so the
     emitted graph ends where the PyTorch tower's output does.
     """

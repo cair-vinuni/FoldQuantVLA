@@ -5,23 +5,20 @@
 
 At 4 bits the weight axis costs real accuracy that round-to-nearest cannot
 recover: measured on the GR00T N1.6 LLM, RTN scores ``chan_rel_err`` 0.4199 where
-GPTQ scores 0.1586 — 62% of the gap to the INT8 gate, closed by changing only the
+GPTQ scores 0.1586, 62% of the gap to the INT8 gate, closed by changing only the
 ROUNDING. That is why ``int4_dynamic_per_row_llm_{sq,rot_sq}`` quantize weights
 with GPTQ (Frantar et al.) while the INT8 schemes stay on RTN.
 
 GPTQ composes with the deployed kernel because it does **not** touch the scales.
 It keeps the same per-output-row scale RTN would pick and instead moves each
 column's quantization error onto the not-yet-quantized columns, weighted by the
-inverse Hessian. Group-wise scales — what GPTQ normally ships — are deliberately
+inverse Hessian. Group-wise scales (what GPTQ normally ships) are deliberately
 absent: the s4 epilogue can express one scale per output row and nothing finer,
 and a group-wise variant would be measuring a kernel that does not exist.
 
-**The Hessian frame is the thing to get right.** These weights are quantized
-*after* the SmoothQuant fold and the block-Hadamard rotation, so the second moment
-must be of the matching transformed activation ``x̂ = rot(x / s)``. Computing it on
-the raw activation instead is the easiest way to get an optimistic number: GPTQ
-would compensate error against a problem it is not solving, and the engine would
-land nowhere near the offline estimate.
+**Hessian frame.** Weights are quantized *after* the SmoothQuant fold and the
+block-Hadamard rotation, so the second moment must be of ``x̂ = rot(x / s)``. A
+raw-activation Hessian gives an optimistic offline number the engine never reaches.
 
 Torch is imported lazily (build-time only). No ``tensorrt`` / ``.so`` /
 ``foldquant.runtime`` imports.
@@ -72,7 +69,7 @@ def _exact_gram(xx: Any) -> Any:
     ``PI0Pytorch.__init__`` sets ``torch.set_float32_matmul_precision("high")``, which
     would run this Gram in TF32 and hand the factorization a matrix whose PSD margin
     is below the 1% damping on Gemma's 16384-wide down site (measured: Cholesky
-    failure at minor 6451 with the seed-0 draw). Scoped to the GEMM only — the
+    failure at minor 6451 with the seed-0 draw). Scoped to the GEMM only; the
     model's own forward keeps whatever precision deployment runs with, so the
     captured activations are exactly the served ones.
     """
@@ -99,7 +96,7 @@ def compute_gptq_hessians_llm(
 ) -> Dict[str, Any]:
     """Second moment ``x̂ᵀx̂`` of the TRANSFORMED input, per site, returned on host.
 
-    ``x̂ = rot(x / s)`` — the frame the quantizer actually sees. The transform order
+    ``x̂ = rot(x / s)``, the frame the quantizer actually sees. The transform order
     (SmoothQuant divide, then rotate) mirrors :func:`llm_rotation_sq.apply_sq_fold`
     followed by :func:`llm_rotation_sq.apply_rot_fold` on the weight side. ``o`` is
     excluded from the SQ divide exactly as in :data:`llm_rotation_sq.SQ_SITES`
@@ -109,10 +106,9 @@ def compute_gptq_hessians_llm(
     ``hook_module`` supplies ``.layers``, and ``forward_fn(snapshot)`` runs one
     calibration forward that fires the hooks.
 
-    Accumulation runs on the module's device — a host accumulator makes this pass
-    hours long. Results are drained to host one at a time rather than with a dict
-    comprehension, which would hold every device copy and every host copy alive at
-    the same moment (~3.2 GB of each on a 16-layer Qwen3).
+    Accumulation runs on the module's device (a host accumulator takes hours).
+    Results are drained to host one at a time, so device and host copies are
+    never all alive at once (~3.2 GB each on a 16-layer Qwen3).
 
     Returns:
         ``{f"L{i}_{site}": (K, K) float32 CPU tensor}`` for each site in
@@ -139,7 +135,7 @@ def compute_gptq_hessians_llm(
     rot_bs = int(rot_bs)
     hadamard = _hadamard(rot_bs).to(device) if rot_bs > 1 else None
     # compute_sq_scales_llm returns host tensors; moving them inside the hook would
-    # be one pageable H2D copy per site per sample — thousands of them.
+    # be one pageable H2D copy per site per sample, thousands of them.
     sq_dev = {k: v.to(device) for k, v in sq_scales.items()} if sq_scales is not None else None
 
     acc: Dict[str, Any] = {}
@@ -167,7 +163,7 @@ def compute_gptq_hessians_llm(
             if key not in acc:
                 # A K x K fp32 accumulator per site: Qwen-class inner dims
                 # (<= 6144, 151 MB) fit on-device across all layers, but
-                # Gemma's 16384-wide down site is 1 GB PER LAYER — 18 GB total,
+                # Gemma's 16384-wide down site is 1 GB PER LAYER, 18 GB total,
                 # past any 16 GB card. Wide sites accumulate on host instead;
                 # the per-call GEMM stays on-device either way.
                 on_host = xx.shape[1] >= 8192
@@ -204,7 +200,7 @@ def compute_gptq_hessians_llm(
     expected = {f"L{i}_{site}" for i in range(len(hook_module.layers)) for site in SITE_PROBES}
     if set(acc) != expected:
         raise RuntimeError(
-            f"GPTQ calibration produced Hessians for {len(acc)}/{len(expected)} sites — "
+            f"GPTQ calibration produced Hessians for {len(acc)}/{len(expected)} sites; "
             f"missing {sorted(expected - set(acc))[:4]}; a forward hook never fired."
         )
 
@@ -342,7 +338,7 @@ def gptaq_refit_weight(weight: Any, h_hat: Any, g: Any, *, strength: float = 1.0
     the optimum is ``W̃ = W (I + (G − Ĥ)(Ĥ + εI)⁻¹)``; *strength* in ``(0, 1]``
     scales the correction (GPTAQ damps it, since the full solution overfits a
     small calibration set). The result is then rounded by :func:`gptq_quant_codes`
-    with factors from ``gptq_prepare(Ĥ)`` — the frame the deployed kernel sees.
+    with factors from ``gptq_prepare(Ĥ)``, the frame the deployed kernel sees.
     """
     import torch
 
@@ -364,13 +360,13 @@ def gptq_prepare(hessian: Any, *, percdamp: float = PERCDAMP, actorder: bool = A
     """Factorize one site's Hessian into the factors :func:`gptq_quant_codes` consumes.
 
     Factorized once per SITE, not per Linear: q/k/v share one input (hence one
-    Hessian), as do gate/up, so this is ~1.75× less work than per-weight — and it
+    Hessian), as do gate/up, so this is ~1.75× less work than per-weight, and it
     is the expensive part.
 
     Float64 keeps a near-singular 6144×6144 Hessian stable through two Cholesky
-    factorizations. The linalg runs on CUDA fp64 when it works there — Gemma's
+    factorizations. The linalg runs on CUDA fp64 when it works there (Gemma's
     16384-wide down site costs ~20-30 CPU-minutes per LAYER (measured: hours per
-    Pi build) and seconds on an H100 — with a CPU fallback for the Jetson torch
+    Pi build) and seconds on an H100), with a CPU fallback for the Jetson torch
     builds whose CUDA linalg is broken (``libtorch_cuda_linalg`` undefined
     symbol). Only the triangular factor is kept, on host.
     """
@@ -409,13 +405,13 @@ def gptq_prepare(hessian: Any, *, percdamp: float = PERCDAMP, actorder: bool = A
             except RuntimeError as exc:
                 # RuntimeError covers both CUDA OOM and the Jetson torch builds
                 # whose CUDA linalg is broken (libtorch_cuda_linalg undefined
-                # symbol). Fall back LOUDLY — the CPU path costs minutes per wide
+                # symbol). Fall back LOUDLY: the CPU path costs minutes per wide
                 # site (measured: hours per Pi build) and a silent switch would
-                # read as a hang — and remember the failure so the remaining
+                # read as a hang. Remember the failure so the remaining
                 # sites of this build don't re-attempt CUDA one by one.
                 logger.warning(
                     "CUDA fp64 Cholesky failed (%s); falling back to CPU for this and all "
-                    "remaining GPTQ sites — expect minutes per wide site.",
+                    "remaining GPTQ sites; expect minutes per wide site.",
                     exc,
                 )
                 _CUDA_LINALG_BROKEN["flag"] = True
@@ -458,8 +454,8 @@ def gptq_quant_codes(
 ) -> Tuple[Any, Any]:
     """GPTQ-round a ``(N, K)`` weight to symmetric codes with a per-output-row scale.
 
-    The scale is taken from the transformed weight up front — the same scale RTN
-    would use — so any gain is pure rounding, which is exactly why this composes
+    The scale is taken from the transformed weight up front (the same scale RTN
+    would use), so any gain is pure rounding, which is exactly why this composes
     with the deployed per-output-row epilogue.
 
     Args:
@@ -503,7 +499,7 @@ def gptq_quant_codes(
             qc = torch.round(col / s_col).clamp(-qmax, qmax)
             c1[:, i] = qc
             # Push this column's residual onto the columns still to be quantized,
-            # weighted by the inverse Hessian — the whole of GPTQ is this line.
+            # weighted by the inverse Hessian. The whole of GPTQ is this line.
             err = (col - qc * s_col) / hinv1[i, i]
             w1[:, i:] -= err.unsqueeze(1) @ hinv1[i, i:].unsqueeze(0)
             e1[:, i] = err
@@ -514,7 +510,7 @@ def gptq_quant_codes(
 
     if invperm is not None:
         codes = codes[:, invperm.to(codes.device)]
-    # `dead` columns were forced to 0 and therefore quantize to code 0 — consistent
+    # `dead` columns were forced to 0 and therefore quantize to code 0, consistent
     # with the weight the engine bakes.
     return codes.to(torch.int32), scale.squeeze(1).to(torch.float32)
 
@@ -530,7 +526,7 @@ class GPTQSiteFactors:
     Holding all 64 factorizations of a 16-layer Qwen3 at once would cost ~3.2 GB
     of host memory on top of the Hessians, so the graph builder consumes them
     site by site and drops each factor set after packing that weight. The
-    Hessians themselves live until the caller's dict goes out of scope — the
+    Hessians themselves live until the caller's dict goes out of scope; the
     shallow copy taken here is what makes re-invoking the builder with the same
     dict safe (consume-once is per-instance), so only the factor half of the
     memory is bounded by this class.
@@ -543,7 +539,7 @@ class GPTQSiteFactors:
         """Factorize and release the Hessian for ``f"L{i}_{site}"``.
 
         Raises:
-            MissingHessianError: no Hessian for this site. Never falls back to RTN —
+            MissingHessianError: no Hessian for this site. Never falls back to RTN:
                 that would read as "GPTQ did not help" instead of "GPTQ never ran".
         """
         if key not in self._hessians:

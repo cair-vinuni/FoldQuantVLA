@@ -55,21 +55,15 @@ def _resolve_trt_include() -> Optional[Path]:
 
     Order: explicit ``TENSORRT_ROOT`` -> the vendored pinned headers -> system.
 
-    The vendored ``third_party/tensorrt-headers/include`` deliberately outranks
-    a system install, for the same reason the wheel outranks a system libnvinfer
-    in :func:`_resolve_trt_libnvinfer`: the headers must describe the SAME
-    TensorRT as the library. The pip wheel ships no headers, and the vendored
-    set is pinned to the wheel's version.
+    The vendored ``third_party/tensorrt-headers/include`` outranks a system
+    install because the headers must describe the SAME TensorRT as the library
+    (see :func:`_resolve_trt_libnvinfer`); the pip wheel ships no headers, and
+    the vendored set is pinned to its version.
 
-    Getting this backwards is silent and expensive. On a host with a system
-    TensorRT 11 install, the plugin compiled against TRT 11 headers while
-    linking the pinned TRT 10.15 wheel: the IPluginCreator ABI differs, so the
-    static registrar constructs a creator libnvinfer 10.15 cannot use.
-    ``registerCreator()`` still returns true — it only stores a pointer — so the
-    library dlopens cleanly, exports every init symbol, and reports success
-    while the registry surfaces zero usable creators. The first visible symptom
-    is TensorRT's importer failing with "Plugin not found, are the plugin name,
-    version, and namespace correct?" in a completely different command.
+    A mismatch is silent: TRT 11 headers against the pinned TRT 10.15 wheel
+    produce creators that register without error but are unusable, and the
+    first symptom is "Plugin not found, are the plugin name, version, and
+    namespace correct?" in a later command.
     """
     env = os.environ.get("TENSORRT_ROOT")
     if env:
@@ -92,12 +86,12 @@ def _resolve_trt_include() -> Optional[Path]:
 
             if int(str(_trt.__version__).split(".")[0]) < 11:
                 subdir = "include-trt10"
-        except Exception:  # noqa: BLE001 — no tensorrt importable: fall through to defaults
+        except Exception:  # noqa: BLE001 - no tensorrt importable: fall through to defaults
             pass
         cand = headers_root / subdir
         if (cand / "NvInferRuntime.h").is_file():
             return cand
-        # Version-matched set missing — fall back to the primary vendored set
+        # Version-matched set missing: fall back to the primary vendored set
         # rather than silently drifting to system headers.
         cand = headers_root / "include"
         if (cand / "NvInferRuntime.h").is_file():
@@ -116,14 +110,11 @@ def _resolve_trt_libnvinfer() -> Optional[Path]:
     Order: explicit ``TENSORRT_ROOT`` -> the installed ``tensorrt-libs`` wheel ->
     a system TensorRT.
 
-    The wheel deliberately outranks the system install. A plugin links one
-    libnvinfer and registers its creators into *that* library's plugin registry;
-    the engine builder looks them up in the registry of whichever libnvinfer the
-    Python process loaded. This project pins ``tensorrt-cu12`` by exact version
-    (see pyproject), so the wheel is what the process loads — and on a host that
-    also has a different system TensorRT, linking the system one produces a
-    plugin that loads cleanly, exports every init symbol, registers zero visible
-    creators, and fails the engine build with a bare "plugin not found".
+    The wheel outranks the system install: a plugin registers its creators into
+    the libnvinfer it links, and the builder looks them up in the one the Python
+    process loaded, which is the pinned ``tensorrt-cu12`` wheel. Linking a
+    different system TensorRT loads cleanly but fails the build with "plugin not
+    found".
 
     ``find_library(nvinfer)`` needs the bare ``libnvinfer.so`` linker name; the
     wheel ships only the ``.so.<N>`` SONAME, so :func:`_synthesize_trt_root`
@@ -170,12 +161,12 @@ def _synthesize_trt_root(work: Path) -> Optional[str]:
     inc_link.symlink_to(include)
 
     # Two symlinks, both required, for different phases:
-    #   libnvinfer.so      — the linker name CMake's find_library() resolves.
-    #   libnvinfer.so.<N>  — the SONAME the dynamic loader asks for at runtime.
+    #   libnvinfer.so      : the linker name CMake's find_library() resolves.
+    #   libnvinfer.so.<N>  : the SONAME the dynamic loader asks for at runtime.
     #
     # This directory lands in the built plugin's RUNPATH. If only the linker
     # name is present, the loader cannot satisfy the SONAME here and falls
-    # through to the system search path — so on a host with its own TensorRT the
+    # through to the system search path, so on a host with its own TensorRT the
     # plugin binds a SECOND libnvinfer, registers its creators into that
     # library's registry, and those creators are invisible to the one the Python
     # process loaded. registerCreator() still returns true, so nothing reports an
@@ -198,7 +189,7 @@ def _invalidate_stale_cmake_cache(build_tmp: Path, src: Path) -> None:
     across checkouts/branches, so a source-tree reorg (kernels have already moved
     once, out of ``modules/kernels/``) leaves behind a cache CMake refuses to
     reconfigure in place ("does not match the source ... used to generate
-    cache") — otherwise a permanent, non-self-healing failure rather than a
+    cache"). Otherwise it is a permanent, non-self-healing failure rather than a
     one-time rebuild.
     """
     cache_file = build_tmp / "CMakeCache.txt"
@@ -211,7 +202,7 @@ def _invalidate_stale_cmake_cache(build_tmp: Path, src: Path) -> None:
             break
     if cached_src is not None and Path(cached_src).resolve() != src.resolve():
         logger.info(
-            "plugin build cache %s was configured from %s, not the current source %s — wiping and reconfiguring",
+            "plugin build cache %s was configured from %s, not the current source %s; wiping and reconfiguring",
             build_tmp,
             cached_src,
             src,
@@ -232,7 +223,7 @@ def rebuild_plugins(out_dir: Path, libs: Optional[Sequence[str]] = None) -> None
 
     ``libs`` defaults to every standardized lib. Scoping the build keeps one
     lib's missing dependency from breaking a caller that never asked for it
-    (an INT4-only build must not die on the INT8 lib's CUTLASS dependency —
+    (an INT4-only build must not die on the INT8 lib's CUTLASS dependency;
     CUTLASS is required by ``foldquant_int8_per_row``, not
     ``foldquant_int4_groupwise``).
     """
@@ -241,7 +232,7 @@ def rebuild_plugins(out_dir: Path, libs: Optional[Sequence[str]] = None) -> None
     if unknown:
         raise ValueError(f"unknown plugin lib(s) {unknown}; known: {list(loc.KNOWN_PLUGIN_LIBS)}")
 
-    # Serialize ALL rebuilds — not just the staleness-triggered ones in
+    # Serialize ALL rebuilds, not just the staleness-triggered ones in
     # ensure_plugins_for_current_device: a manual `python -m foldquant.kernels build`
     # racing a build lane through the shared cmake _build dir interleaves
     # object writes into a corrupt .so that dlopen()s straight into SIGSEGV.
@@ -260,12 +251,12 @@ def rebuild_plugins(out_dir: Path, libs: Optional[Sequence[str]] = None) -> None
 
 
 def _rebuild_plugins_unlocked(out_dir: Path, names: "list[str]") -> None:
-    """The actual cmake configure+build+copy — call only under the rebuild lock."""
+    """The actual cmake configure+build+copy. Call only under the rebuild lock."""
     cmake = shutil.which("cmake")
     if cmake is None:
         raise RuntimeError("`cmake` not found on PATH; cannot rebuild TensorRT plugins for this device.")
     cutlass = _resolve_cutlass_include()
-    # Ask the registry which kernels need CUTLASS rather than restating it here —
+    # Ask the registry which kernels need CUTLASS rather than restating it here:
     # a hardcoded set is how foldquant_int4_per_row came to be treated as
     # CUTLASS-free. Checking before CMake turns a confusing mid-compile
     # "No such file" into a message naming the library and the fix.
@@ -322,9 +313,9 @@ def _rebuild_plugins_unlocked(out_dir: Path, names: "list[str]") -> None:
 def _install_built_lib(built: Path, dest: Path) -> None:
     """Install *built* at *dest* atomically (new inode), never overwriting in place.
 
-    A process that already ``dlopen``-ed the previous ``dest`` — this build's
+    A process that already ``dlopen``-ed the previous ``dest`` (this build's
     own parent after an earlier module loaded it, a serving backend on the
-    same host — keeps its mapping of the old inode. Overwriting in place
+    same host) keeps its mapping of the old inode. Overwriting in place
     (``shutil.copy2`` onto the existing file) rewrites the pages that mapping
     points at and the next call into the library is a SIGSEGV.
 
@@ -354,7 +345,7 @@ def ensure_plugins_for_current_device(
     # Rebuild only what is missing or stale. Rebuilding every requested lib
     # would re-link libraries this process has already dlopen()-ed for an
     # earlier module (a mixed-width LLM asks for the INT4 lib the DiT loaded
-    # plus the INT8 lib) — a rebuilt copy cannot be re-loaded into a running
+    # plus the INT8 lib). A rebuilt copy cannot be re-loaded into a running
     # process, so a lib that is loaded is left exactly as loaded.
     stale: List[str] = []
     for name in names:
@@ -373,11 +364,11 @@ def ensure_plugins_for_current_device(
 
     if stale:
         # rebuild_plugins holds the cross-process rebuild lock itself (two
-        # concurrent cmake runs into the shared _build dir corrupt the .so —
+        # concurrent cmake runs into the shared _build dir corrupt the .so,
         # measured as rc=-11 on two parallel Pi lanes). A process that had to
         # wait on another's rebuild re-checks staleness inside rebuild_plugins'
         # critical section via the fresh binaries it copies; here we simply
-        # call it — the lock must NOT also be taken at this level (nested
+        # call it. The lock must NOT also be taken at this level (nested
         # flock on a second fd of the same file self-deadlocks).
         rebuild_plugins(cache, stale)
 

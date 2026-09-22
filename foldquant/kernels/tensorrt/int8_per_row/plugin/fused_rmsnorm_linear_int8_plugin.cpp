@@ -1,5 +1,5 @@
 // IPluginV3 wrapper: RMSNorm + per-row INT8 quant + INT8 Linear (no bias).
-// LLM ladder L3+ basic block — used standalone for q/k/v/o_proj/gate/up_proj.
+// LLM ladder L3+ basic block, used standalone for q/k/v/o_proj/gate/up_proj.
 
 #include "plugin_field_util.h"
 #include "int4_unpack_util.h"
@@ -223,15 +223,15 @@ int32_t FusedRmsNormLinearInt8Plugin::enqueue(PluginTensorDesc const* inputDesc,
 
         // Step 2: INT8 GEMM (no bias) with autotune-selected tile.
         // t128x128x64_w64x64x64_s4 wins 8/8 LLM shapes (Q+K+V, o, gate+up, down)
-        // per scripts/.../test_llm_tile_autotune.py — 1.2–1.6× speedup vs
+        // per scripts/.../test_llm_tile_autotune.py: 1.2-1.6× speedup vs
         // the previously used dit_int8_rowwise_gemm_bf16out entry.
         // That autotune ran on LLM prefill shapes, where M is in the hundreds.
         // An action expert drives the same plugin with M = action horizon, and
         // there the 128-row tile computes mostly padding and halves the CTA
         // count: measured 2.0-2.9x slower at M<=64 on SM89. The LLM keeps the
-        // autotuned tile — forcing the small one on LLM shapes cost 1.5 ms of
+        // autotuned tile; forcing the small one on LLM shapes cost 1.5 ms of
         // backbone latency when this rule also keyed on N.
-        // NB: dit_int8_rowwise_gemm_bf16out is NOT the small tile — it is another
+        // NB: dit_int8_rowwise_gemm_bf16out is NOT the small tile; it is another
         // 128x128x64 (dit_int8_rowwise_v2_cuda.cu). The 64-row tile is the
         // explicitly named variant from the tiles TU.
         bool const smallTile = (M <= 64);  // action-expert row counts only
@@ -279,7 +279,7 @@ PluginFieldCollection const* FusedRmsNormLinearInt8Plugin::getFieldsToSerialize(
     mDataToSerialize.emplace_back(PluginField("N", &mN, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("K", &mK, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("eps", &mEps, PluginFieldType::kFLOAT32, 1));
-    // MUST be serialized — configurePlugin does not re-run on deserialize, and
+    // MUST be serialized: configurePlugin does not re-run on deserialize, and
     // the baked weights are already folded with W·Hᵀ.
     mDataToSerialize.emplace_back(
         PluginField("rot_block_size", &mRotBlockSize, PluginFieldType::kINT32, 1));

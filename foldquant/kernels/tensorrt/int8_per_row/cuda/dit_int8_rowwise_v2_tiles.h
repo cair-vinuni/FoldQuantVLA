@@ -1,4 +1,4 @@
-// Phase 1 — Tile-size sweep for DiT INT8 rowwise GEMM.
+// Phase 1: Tile-size sweep for DiT INT8 rowwise GEMM.
 // Each entry has the same signature as dit_int8_rowwise_gemm_bf16out but uses
 // a different CUTLASS Threadblock/Warp tile shape. Naming convention:
 //   dit_int8_rowwise_gemm_bf16out_t<TBM>x<TBN>x<TBK>_w<WM>x<WN>x<WK>_s<Stages>

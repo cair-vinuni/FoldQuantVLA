@@ -8,8 +8,8 @@
 #   python scripts/results_tables.py --table drift
 #
 # The protocol file states that its tables are regenerated from the records
-# rather than transcribed; this is what does it. It reads only results/ — no
-# GPU, no engines, no upstream environment — so any reader can reproduce every
+# rather than transcribed; this is what does it. It reads only results/ (no
+# GPU, no engines, no upstream environment), so any reader can reproduce every
 # cell, and a stale table shows up as a diff.
 #
 # Tables:

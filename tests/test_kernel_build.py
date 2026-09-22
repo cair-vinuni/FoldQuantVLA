@@ -7,7 +7,7 @@
 involved), so it is testable without a real toolchain: a plugin build cache
 directory outlives repo checkouts (it lives under ``~/.cache/foldquant/``), and a
 kernel-source-tree reorg leaves behind a ``CMakeCache.txt`` pointing at a source
-dir that no longer matches — CMake then refuses to reconfigure in place, which
+dir that no longer matches. CMake then refuses to reconfigure in place, which
 is otherwise a permanent, non-self-healing failure.
 """
 

@@ -13,7 +13,7 @@ unattended:
 
 * the observation and action conversion is upstream's own ``GR00TPolicy``
   class, subclassed only to hold the in-process policy instead of the ZMQ
-  client — the dictionaries the model sees are byte-identical to the served
+  client. The dictionaries the model sees are byte-identical to the served
   path;
 * the environment loop (``env.reset``, ``set_init_state``, the
   ``num_steps_wait`` no-op steps, the per-suite ``max_steps``) follows
@@ -186,7 +186,7 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
                     if done:
                         break
                     t += 1
-            except Exception as exc:  # noqa: BLE001 — upstream counts the episode as failed and moves on
+            except Exception as exc:  # noqa: BLE001 - upstream counts the episode as failed and moves on
                 logger.warning("%s/%s episode %d: %s", suite, task.name, episode_idx, exc)
                 errors += 1
                 done = False

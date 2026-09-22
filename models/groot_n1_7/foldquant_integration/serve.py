@@ -10,11 +10,11 @@ endpoints and observation / action dictionaries are upstream's ``PolicyServer``,
 so an unmodified client talks to a FoldQuant arm exactly as it talks to the
 bf16 policy::
 
-    # terminal 1 — the arm under test
+    # terminal 1:  the arm under test
     python -m foldquant_integration.serve --model-path <ckpt> \\
         --embodiment-tag libero_panda --engine-dir exports/w4a4/engines
 
-    # terminal 2 — upstream's own client, unchanged
+    # terminal 2:  upstream's own client, unchanged
     from gr00t.policy.server_client import PolicyClient
     client = PolicyClient(host="127.0.0.1", port=5555)
     action = client.get_action(observation)
@@ -33,7 +33,7 @@ Unlike the other families, the engines are installed by **upstream's own**
 of ours: this integration has no runtime module because the N1.7 release ships
 the whole seven-component pipeline swap itself, and :mod:`.verify` and
 :mod:`.benchmark` already go through it. Reproducing that here keeps one
-install path for the family — a second one could drift from it silently. The
+install path for the family, since a second one could drift from it silently. The
 FoldQuant plugin libraries the manifest names are loaded first, exactly as
 ``verify`` loads them, or the engines refuse to deserialise.
 """
@@ -113,7 +113,7 @@ def main(args: ServeConfig) -> None:
         manifest = policy.model.baseline_manifest
         logger.info(
             "serving the EMULATED %s W4A4 baseline (%d LLM + %d DiT linears; rotation %s, "
-            "LLM activations %s, DiT activations %s) from %s — no INT4 kernel, not a latency arm",
+            "LLM activations %s, DiT activations %s) from %s; no INT4 kernel, not a latency arm",
             manifest.get("method"),
             summary.llm_linears,
             summary.dit_linears,
@@ -134,7 +134,7 @@ def main(args: ServeConfig) -> None:
         # absent, announcing it with a print and nothing else. Serving would then
         # log the scheme from the manifest while a robot talks to a policy that is
         # partly, or entirely, bf16 PyTorch. Check the files the mode needs before
-        # the server binds, and say which engines are actually in use — this is what
+        # the server binds, and say which engines are actually in use. This is what
         # runtime.install_engines does for N1.5 and N1.6.
         expected = _MODE_ENGINES.get(args.mode)
         if expected is not None:

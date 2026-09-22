@@ -1,4 +1,4 @@
-// FusedFfnBlockInt4 — full DiT FFN block as one TRT plugin, true W4A4 + FoldQuant
+// FusedFfnBlockInt4: full DiT FFN block as one TRT plugin, true W4A4 + FoldQuant
 // rotation. Clone of FusedFfnBlock (INT8) with int4 weights/GEMMs and the activation
 // rotation folded into each prologue.
 //
@@ -16,8 +16,8 @@
 // Plugin fields (baked):
 //   weight_proj0_i4  INT8 (inner_dim*K/2 packed) / weight_proj0_scale FP32 (inner_dim) / bias_proj0 FP32 (inner_dim)
 //   weight_proj2_i4  INT8 (K*inner_dim/2 packed) / weight_proj2_scale FP32 (K)         / bias_proj2 FP32 (K)
-//   perm0 INT32 (K)        rotation0 FP32 (K/bs * bs*bs)        — proj0 input rotation
-//   perm2 INT32 (inner_dim) rotation2 FP32 (inner_dim/bs * bs*bs) — proj2 input rotation
+//   perm0 INT32 (K)        rotation0 FP32 (K/bs * bs*bs)        - proj0 input rotation
+//   perm2 INT32 (inner_dim) rotation2 FP32 (inner_dim/bs * bs*bs) - proj2 input rotation
 //   inner_dim INT32, K INT32, block_size INT32, eps FP32
 #pragma once
 

@@ -9,22 +9,22 @@ dataset, ``--warmup`` untimed calls, then ``--num-iterations`` timed ones,
 CUDA-synchronised, medians reported. Per iteration it times the pieces of
 ``Policy.infer`` where they run:
 
-* ``input_transform`` — the upstream input transforms plus host-to-device;
-* ``embed_prefix``    — SigLIP on the three cameras + prompt embedding;
-* ``prefix_llm``      — the PaliGemma prefix pass that fills the KV cache;
-* ``denoise_loop``    — every ``denoise_step`` of the Euler loop, summed;
-* ``e2e``             — a separate, whole ``policy.infer`` call.
+* ``input_transform``:  the upstream input transforms plus host-to-device;
+* ``embed_prefix``:     SigLIP on the three cameras + prompt embedding;
+* ``prefix_llm``:       the PaliGemma prefix pass that fills the KV cache;
+* ``denoise_loop``:     every ``denoise_step`` of the Euler loop, summed;
+* ``e2e``:              a separate, whole ``policy.infer`` call.
 
 The three model pieces are timed by wrapping the bound methods
 ``sample_actions`` calls (``embed_prefix``, ``paligemma_with_expert.forward``
 for the prefix branch, ``denoise_step``) for the duration of one
-``sample_actions``; the e2e call runs unwrapped. Every arm — PyTorch Eager and
-each FoldQuant engine directory — goes through the same loop with
+``sample_actions``; the e2e call runs unwrapped. Every arm (PyTorch Eager and
+each FoldQuant engine directory) goes through the same loop with
 :func:`.runtime.install_engines` swapping the engines in.
 
 Upstream serves the model under ``torch.compile(mode="max-autotune")``
-(``Pi0Config.pytorch_compile_mode``). That arm is timed too — e2e only, since
-the compiled graph inlines the pieces the component wrappers would time — so
+(``Pi0Config.pytorch_compile_mode``). That arm is timed too (e2e only, since
+the compiled graph inlines the pieces the component wrappers would time), so
 the table shows the FoldQuant engines against both the eager policy and the
 policy as upstream deploys it. The engines themselves need the eager model
 (see :mod:`.runtime`), so it is the eager policy that hosts them.
@@ -297,7 +297,7 @@ def main(args: BenchmarkConfig) -> dict[str, Any]:
         results["PyTorch Eager"] = time_components(policy, observation, args)
     if not args.skip_compiled and compile_mode is not None:
         label = f"PyTorch torch.compile({compile_mode})"
-        logger.info("arm: %s — upstream's serving default, e2e only", label)
+        logger.info("arm: %s (upstream's serving default, e2e only)", label)
         with _Compiled(policy, compile_mode):
             results[label] = time_components(policy, observation, args, components=False)
 
