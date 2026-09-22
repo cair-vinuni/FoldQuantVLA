@@ -168,7 +168,7 @@ def main(args: ExportConfig) -> Path:
     # N1.7's FoldQuant graphs share upstream's full-pipeline I/O contract, so the float arm
     # of a tower IS upstream's ONNX for it: nothing is emitted here, the manifest records the
     # scheme, and build_engines sources the file from --float-onnx-dir like the other five
-    # components. (This is how results/groot_n1_7/float was produced.)
+    # components.
     float_towers = [t for t, sch in (("llm", llm_scheme), ("dit", dit_scheme)) if sch == FLOAT]
     if float_towers:
         logger.info("float tower(s) %s: taken from upstream's export at build time (--float-onnx-dir)", float_towers)

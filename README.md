@@ -62,9 +62,9 @@ Support covers export, engine build, held-out drift, latency, LIBERO, and
 policy serving. GR00T runs LIBERO in process; π₀.₅ uses a separate upstream
 client environment and a running policy server.
 
-[Results](results/README.md) hold the desktop drift and latency records and
-the protocol behind them; the LIBERO campaigns and Jetson latency are in the
-paper.
+[`results/`](results) holds the held-out drift and desktop latency records
+for the W8A8 and W4A4 arms; every table, the protocol and the LIBERO and
+Jetson figures are in the paper.
 
 ## Schemes
 
@@ -162,9 +162,14 @@ export/engines with the upstream pipeline → `export_foldquant` → `build_engi
 
 ## Results
 
-[`results/README.md`](results/README.md) describes the protocol (upstream
-harnesses, held-out drift, LIBERO success rate, latency on RTX 4070 Ti SUPER
-and Jetson AGX Orin) and holds the measured numbers per family and arm.
+[`results/`](results) holds the measured records behind the paper's drift
+and desktop latency tables: `results/<family>/<arm>/verify.json` (32 held-out
+observations, per-observation cosines) for the `w8a8` and `w4a4` arms, and
+`results/<family>/benchmark.json` (or `results/groot_n1_7/<arm>/benchmark.log`)
+for latency on an RTX 4070 Ti SUPER. `scripts/results_tables.py` prints the
+tables from those files and `scripts/check_records.py` checks their
+invariants; the protocol and the LIBERO and Jetson AGX Orin figures are in the
+paper.
 
 [`docs/REPRODUCING.md`](docs/REPRODUCING.md) lists what can be checked, and at
 what cost, from a clone upwards:

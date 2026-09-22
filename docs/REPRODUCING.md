@@ -17,10 +17,10 @@ python scripts/check_records.py
 python scripts/results_tables.py --table drift
 ```
 
-`check_records.py` checks float versus W8A8 drift, declared scope, held-out
-status, sample counts, and local paths in `results/`. It needs no GPU or model
-dependencies. `results_tables.py` prints tables derived from the records for
-comparison with [`results/README.md`](../results/README.md).
+`check_records.py` checks declared scope, held-out status, sample counts, and
+local paths in `results/`. It needs no GPU or model
+dependencies. `results_tables.py` prints the drift and latency tables from
+the records for comparison with the paper.
 
 ## Run export, build, and verification
 
@@ -72,7 +72,7 @@ These checks confirm that the pipeline runs. Published arms use 128 calibration
 observations, so the smoke results are not directly comparable to `results/`.
 All arms are compared against the PyTorch BF16 policy before engine installation.
 Tables report median action cosine; the records also retain mean and minimum
-values. See the [measurement protocol](../results/README.md) for interpretation.
+values. The paper describes the measurement protocol.
 
 ## Check serving and LIBERO
 

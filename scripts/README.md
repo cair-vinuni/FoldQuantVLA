@@ -12,7 +12,7 @@ through `models/<family>/foldquant_integration/`.
 | `smoke_eval.sh` | the LIBERO simulator stack in the family `.venv` | one LIBERO episode per task through `eval_libero`: does the rollout run |
 | `deploy_groot_n17_jetson.sh` | a Jetson AGX Orin, GR00T N1.7 `.venv` | plugins, float pipeline, export, engines, verify and serve in one resumable run; see [`docs/deploy/jetson_serve.md`](../docs/deploy/jetson_serve.md) |
 | `_gpu_busy.sh`, `_family_env.sh` | - | sourced helpers: which processes hold the GPU (Tegra-aware), and the `PYTHONPATH` a family's CLI needs |
-| `results_tables.py` | `results/` only | regenerates the tables in `results/README.md` from the records |
+| `results_tables.py` | `results/` only | prints the paper's drift and latency tables from the committed records |
 | `sweep_llm_quant_knobs.py` | a GR00T `.venv`, GPU | RTN grid then GPTQ rescoring over the LLM fold's `sq_alpha` × `act_clip_ratio` |
 | `llm_learn_calib.py` | a GR00T `.venv`, GPU | learns per-layer SmoothQuant scales, activation clips and weight clips for the INT4 LLM fold |
 | `_groot_family.py` | - | loader shared by the two tuning scripts (policy, decoder, calibration and held-out samples) |
@@ -24,7 +24,7 @@ family directory in its environment:
 cd models/groot_n1_6
 .venv/bin/python ../../scripts/sweep_llm_quant_knobs.py --family groot_n1_6 \
     --model-path <checkpoint> --embodiment-tag libero_panda --dataset-path <dataset> \
-    --output ../../results/groot_n1_6/w4a4/sweep_llm_quant_knobs.json
+    --output exports/n16_w4a4/sweep_llm_quant_knobs.json
 ```
 
 ## Tuning the LLM fold: `sweep_llm_quant_knobs.py`
@@ -84,7 +84,7 @@ The measured configurations below use JSON overrides in `--llm-params` and
 Reading notes:
 
 - **arc** = the LLM `(sq_alpha, act_clip_ratio)` the sweep above picked for
-  that checkpoint (`results/<family>/w4a4/sweep_llm_quant_knobs.json`); the
+  that checkpoint (written beside the arm's export); the
   clip is a W4A4-only knob and `w4a8_srg` therefore carries the alpha alone.
   The values are **selections on the LIBERO checkpoints**; applied to a
   different checkpoint of the same family they are borrowed constants, not

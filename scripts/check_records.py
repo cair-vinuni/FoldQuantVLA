@@ -6,7 +6,8 @@
 #
 #   python scripts/check_records.py
 #
-# Checks cover float/W8A8 drift, declared scope, held-out samples, and local paths.
+# Checks cover the float/W8A8 ladder where a float arm is committed, declared
+# scope, held-out samples, and local paths.
 
 from __future__ import annotations
 

@@ -2,23 +2,19 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 #
-# Regenerate the tables in results/README.md from the committed records.
+# Print the paper's drift and latency tables from the committed records.
 #
 #   python scripts/results_tables.py            # every table
 #   python scripts/results_tables.py --table drift
 #
-# The protocol file states that its tables are regenerated from the records
-# rather than transcribed; this is what does it. It reads only results/ (no
-# GPU, no engines, no upstream environment), so any reader can reproduce every
-# cell, and a stale table shows up as a diff.
+# It reads only results/ (no GPU, no engines, no upstream environment), so any
+# reader can reproduce every cell from the records.
 #
 # Tables:
 #   drift        per-arm action cosine from <family>/<arm>/verify.json
 #   latency      per-arm e2e median from <family>/benchmark.json, and for
 #                GR00T N1.7 from <family>/<arm>/benchmark.log, which upstream's
 #                script writes instead (one file per arm, eager re-timed in each)
-#   split        graph vs precision, where a float engine or a compile-only arm
-#                makes the separation possible
 #   correlation  per-sample backbone damage against action cosine
 
 from __future__ import annotations
@@ -34,7 +30,7 @@ from pathlib import Path
 
 RESULTS = Path(__file__).resolve().parent.parent / "results"
 FAMILIES = ("groot_n1_7", "groot_n1_6", "groot_n1_5", "pi05")
-ARMS = ("float", "w8a8", "w4a4", "w4a4_cascade")
+ARMS = ("w8a8", "w4a4")
 LABEL = {
     "groot_n1_7": "GR00T N1.7",
     "groot_n1_6": "GR00T N1.6",
@@ -44,12 +40,6 @@ LABEL = {
 # the per-sample worst backbone position cosine, named per family by what the
 # action module actually consumes
 PREFIX_FIELDS = ("backbone_token_cos_min", "kv_stack_position_cos_min")
-# the action module's own timer, named per family by what that module is
-ACTION_COMPONENT = {
-    "groot_n1_6": "action_head",
-    "groot_n1_5": "action_head",
-    "pi05": "denoise_loop",
-}
 N17_BLOCK = re.compile(
     r"^(PyTorch Eager|torch\.compile|TensorRT \(n17_full_pipeline\)):\s*\n"
     r"\s*E2E:\s*median=([\d.]+).*?\n\s*Data Processing:\s*([\d.]+).*?\n"
@@ -118,8 +108,8 @@ def _median_worst(record: dict) -> str:
 
 def latency_table() -> str:
     rows = [
-        "| family | eager | float TRT | W8A8 | W4A4 | W4A4 cascade | W4A4 vs eager |",
-        "|---|---|---|---|---|---|---|",
+        "| family | eager | W8A8 | W4A4 | W4A4 vs eager |",
+        "|---|---|---|---|---|",
     ]
     logs = n17_logs()
     if logs:
@@ -139,45 +129,6 @@ def latency_table() -> str:
         row += [f"{arms[a]['median_ms']['e2e']:.2f}" if a in arms else "-" for a in ARMS]
         row.append(f"{e / arms['w4a4']['median_ms']['e2e']:.2f}x" if "w4a4" in arms else "-")
         rows.append("| " + " | ".join(row) + " |")
-    return "\n".join(rows)
-
-
-def split_table() -> str:
-    """Graph versus precision, wherever a control holds precision fixed."""
-    rows = [
-        "| control | module | eager | no-quant control | W4A4 | graph | precision |",
-        "|---|---|---|---|---|---|---|",
-    ]
-    logs = n17_logs()
-    if logs:
-        for idx, name in ((2, "text tower"), (3, "action head")):
-            e = logs["float"]["PyTorch Eager"][idx]
-            fl, w4 = logs["float"]["TensorRT"][idx], logs["w4a4"]["TensorRT"][idx]
-            tot = e - w4
-            rows.append(
-                f"| float engine | N1.7 {name} | {e:.2f} | {fl:.2f} | {w4:.2f} "
-                f"| {e - fl:.2f} ({100 * (e - fl) / tot:.0f}%) | {fl - w4:.2f} ({100 * (fl - w4) / tot:.0f}%) |"
-            )
-    d = _load(RESULTS / "groot_n1_6" / "benchmark.json")
-    if d and "float" in d["arms"]:
-        k = ACTION_COMPONENT["groot_n1_6"]
-        e, fl, w4 = (d["arms"][a]["median_ms"][k] for a in ("PyTorch Eager", "float", "w4a4"))
-        tot = e - w4
-        rows.append(
-            f"| float engine | N1.6 action head | {e:.2f} | {fl:.2f} | {w4:.2f} "
-            f"| {e - fl:.2f} ({100 * (e - fl) / tot:.0f}%) | {fl - w4:.2f} ({100 * (fl - w4) / tot:.0f}%) |"
-        )
-    for fam, record in (("pi05", "benchmark.json"),):
-        d = _load(RESULTS / fam / record)
-        key = next((k for k in (d or {}).get("arms", {}) if "compile" in k), None)
-        if key is None:
-            continue
-        e, c, w4 = (d["arms"][a]["median_ms"]["e2e"] for a in ("PyTorch Eager", key, "w4a4"))
-        tot = e - w4
-        rows.append(
-            f"| `torch.compile` | {LABEL[fam]} e2e | {e:.2f} | {c:.2f} | {w4:.2f} "
-            f"| {e - c:.2f} ({100 * (e - c) / tot:.0f}%) | {c - w4:.2f} ({100 * (c - w4) / tot:.0f}%) |"
-        )
     return "\n".join(rows)
 
 
@@ -209,7 +160,7 @@ def correlation_table() -> str:
     return "\n".join(rows)
 
 
-TABLES = {"drift": drift_table, "latency": latency_table, "split": split_table, "correlation": correlation_table}
+TABLES = {"drift": drift_table, "latency": latency_table, "correlation": correlation_table}
 
 
 def main() -> None:

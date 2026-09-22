@@ -121,7 +121,7 @@ trip either way).
 The other three families do route through the runtime, and there the flag pays
 most for engines called many times per chunk (π₀.₅'s expert runs 10×). Launch overhead is relatively larger on an Orin than on x86, so it
 is worth measuring there even where it did not pay on a workstation
-(`results/README.md` notes the x86 replay measurement).
+(on the x86 card replay moved the π₀.₅ denoise loop by at most 1.5 ms).
 
 Absolute latency will be higher than a workstation's; the ordering between
 arms should hold, the magnitudes will not. Measure, do not extrapolate.
