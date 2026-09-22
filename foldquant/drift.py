@@ -1,23 +1,11 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Locate the largest action error, so a drift cell can name it.
+"""Locate the channel with the largest action error.
 
-A low action cosine with a max-abs near a channel's range is usually one
-channel saturating, not the whole chunk degrading. The summary already carries
-the magnitude; these helpers add *where*, from the same tensors the cosine is
-computed on.
-
-Two layouts occur across the families and they index oppositely:
-
-* **channel-major**: the action arrives as a dict of named channels, each a
-  whole chunk, concatenated in key order (GR00T). Element ``i`` belongs to
-  channel ``i // steps``.
-* **step-major**: the action is a ``(steps, width)`` chunk flattened (pi).
-  Element ``i`` belongs to channel ``i % width``.
-
-Getting it backwards names a plausible but wrong channel, so the caller states
-the layout instead of the helper guessing it.
+Callers specify the flattened action layout: GR00T concatenates named channels
+(channel-major, ``i // steps``), while pi flattens a ``(steps, width)`` chunk
+(step-major, ``i % width``).
 """
 
 from __future__ import annotations

@@ -1,13 +1,9 @@
 # Installing and testing a FoldQuant arm on Jetson AGX Orin
 
-An engine is compiled for exactly one `(GPU architecture, TensorRT version)`
-pair, and so is the plugin `.so`. An engine built on an x86 workstation
-(`sm89-x86_64-trt10.15`) **will not load** on an Orin (`sm87-aarch64-trt10.3`):
-the locator matches `sm<CC>-<machine>-trt<MAJ>.<MIN>` exactly, tolerating only
-an older minor within the same major.
-
-So: **ONNX crosses, binaries do not.** Export on the workstation, build and
-test on the board.
+Export ONNX on the workstation, then build engines and plugin libraries on
+the Orin. Workstation binaries cannot be reused on the board. The plugin
+locator requires matching GPU architecture, machine ABI, and TensorRT major;
+an older TensorRT minor is accepted with a warning.
 
 > The per-family scripts (`scripts/smoke_family.sh`, `smoke_serve.sh`,
 > `smoke_eval.sh`, `bench_all.sh`) have been run on a Jetson AGX Orin
@@ -17,9 +13,8 @@ test on the board.
 
 ## 1. Export, on the workstation
 
-The family's ordinary export, stopped before the build. Calibrating on the
-Orin would work (64 GB unified memory is enough) but GPTQ is CPU-heavy, so this
-is about wall-clock, not capability.
+Run the family's export without building engines. Calibration can also run
+on a 64 GB Orin, but workstation CPUs shorten GPTQ calibration time.
 
 ```bash
 cd models/groot_n1_7 && source .venv/bin/activate
@@ -39,7 +34,7 @@ python -m foldquant_integration.export_foldquant \
     --output-dir exports/w8a8
 ```
 
-`--steps export` omits the build deliberately. Keep `--num-calib` at 128 or
+`--steps export` skips engine building. Keep `--num-calib` at 128 or
 more for a GPTQ (`_g`) arm.
 
 ## 2. Copy to the board
@@ -49,9 +44,8 @@ rsync -avP exports/float/onnx  orin:<repo>/models/groot_n1_7/exports/float/
 rsync -avP exports/w8a8/onnx   orin:<repo>/models/groot_n1_7/exports/w8a8/
 ```
 
-Copy whole directories: a large graph keeps its weights in a sibling
-`.onnx.data` file and the `.onnx` alone is useless without it. Budget ~15-20 GB
-free for one arm (W8A8 engines are 4.5 GB, their ONNX 2.0 GB).
+Copy whole directories, including `.onnx.data` weight files. Budget 15 to
+20 GB free for one arm (W8A8 engines are 4.5 GB, their ONNX 2.0 GB).
 
 **The checkpoint and the dataset have to be on the board too**: `serve` builds
 the upstream policy around the engines, and step 5 opens the dataset to score
@@ -62,7 +56,7 @@ against it.
 ```bash
 git submodule update --init third_party/cutlass
 cd models/groot_n1_7
-# environment: the Orin recipe, not a plain `uv sync` -- see jetson_serve.md, section 1
+# Use the Orin environment recipe; see jetson_serve.md, section 1.
 uv sync --project scripts/deployment/orin --no-install-project
 export PYTHONPATH=$PWD/../..:$PWD
 TENSORRT_ROOT=/usr python -m foldquant.kernels build
@@ -74,8 +68,8 @@ comes from PyPI and does not run on the Orin's GPU. The full no-sudo setup is in
 [`jetson_serve.md`](jetson_serve.md), which also covers building everything on
 the board and serving it in one script.
 
-`status` must print an Orin slug (`sm87-aarch64-trt10.3`, or whatever
-TensorRT JetPack installed. An x86 slug means you are on the wrong machine.
+`status` should print an Orin target such as `sm87-aarch64-trt10.3`, matching
+the installed TensorRT version. An x86 target indicates the wrong machine.
 Headers are picked from the **installed** TensorRT major
 (`third_party/tensorrt-headers/include-trt10/` for TensorRT 10); compiling
 against the wrong one fails at plugin load, not at build.
@@ -99,11 +93,8 @@ python -m foldquant_integration.verify \
     --engine-dir exports/w8a8/engines --num-samples 32 --seed 42
 ```
 
-Not optional on a new board. An engine built against the wrong headers, or from
-a graph whose `.onnx.data` did not transfer, loads without complaint and
-returns wrong actions, with no error to catch. `verify` scores the engines
-against the bf16 policy on the same board, so a bad build shows up as a number
-before any hardware moves.
+Run `verify` on each new board to compare engine outputs against the BF16
+policy. This checks numerical agreement before serving the engines.
 
 ## 6. Serve
 
@@ -130,7 +121,7 @@ trip either way).
 The other three families do route through the runtime, and there the flag pays
 most for engines called many times per chunk (π₀.₅'s expert runs 10×). Launch overhead is relatively larger on an Orin than on x86, so it
 is worth measuring there even where it did not pay on a workstation
-(`results/FLOAT_ARMS.md` has the x86 numbers).
+(`results/README.md` notes the x86 replay measurement).
 
 Absolute latency will be higher than a workstation's; the ordering between
 arms should hold, the magnitudes will not. Measure, do not extrapolate.
@@ -143,15 +134,14 @@ arms should hold, the magnitudes will not. Measure, do not extrapolate.
 | plugin library not found / fails to load | `foldquant.kernels build` never run on this board, or `FOLDQUANT_CACHE_DIR` points elsewhere |
 | engines load, actions are wrong | a graph's `.onnx.data` did not transfer, or the engine directory does not match the checkpoint being served |
 
-The third is the dangerous one: nothing reports it. Step 5 is how you find it.
+Step 5 checks for numerical errors that engine loading alone cannot detect.
 
 ## Status on Orin
 
 Checked on a Jetson AGX Orin 64 GB, JetPack 6.2 (L4T R36.4.3), CUDA 12.6,
 TensorRT 10.3.0, with each family in its own virtualenv built from its
-`scripts/deployment/orin` recipe where one exists. "Runs" means the script
-completed on that board; these were checks that the path works, so no number
-from them belongs in `results/`.
+`scripts/deployment/orin` recipe where available. "Runs" records script
+completion; these checks did not record accuracy or latency measurements.
 
 | family | export → build → verify | serve (bf16 / engines) | LIBERO rollout | benchmark |
 |---|---|---|---|---|

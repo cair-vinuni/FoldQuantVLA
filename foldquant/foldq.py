@@ -1,27 +1,17 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""The FoldQuant fold, shared by every action-module emitter and both bit widths.
+"""Shared rotation, scale folding, and weight packing for action modules.
 
-One place decides what a folded site looks like: which rotation it uses, which
-axis the SmoothQuant scale lands on, what the packed weight is, and which node
-attributes describe the result. The per-(family, width) emitters only choose
-*where* the sites are.
-
-A separate INT8 copy of this logic once drifted and stopped folding: harmless
-on the Gemma expert (gate 0.9991), fatal on an outlier-heavy expert (0.6005
-cosine). Keep it single-sourced.
-
-Contract, identical at 4 and 8 bit:
+INT4 and INT8 emitters use the same folding contract:
 
     weight side (offline)   W' = rotate(W)·diag(s)      fold_order="after"
                             W' = rotate(W·diag(s))      fold_order="before"
     runtime                 quantize(rotate(x)/s)  resp. quantize(rotate(x/s))
 
-so ``W'·x_q ≈ W·x`` with the rotation and the scale both baked. A dense rotation
-can absorb the scale into its own coefficients; a fixed Hadamard butterfly has
-none, so the scale ships as its own vector and the kernel applies it on the
-matching side of the transform.
+Dense rotations absorb the scale into their coefficients. Fixed Hadamard
+butterflies pass a separate scale vector to the kernel, which applies it on
+the side selected by ``fold_order``.
 """
 
 from __future__ import annotations
@@ -30,7 +20,7 @@ from typing import Any, Dict, Tuple
 
 import numpy as np
 
-from . import omega_rotation as omega
+from . import rotation as rotations
 from .dit_common import to_bytes_f32
 from .weights import quant_weight_per_row
 
@@ -69,8 +59,8 @@ def rotation_block_for(k_in: int, block_size: int) -> int:
 def site_rotation(weight: Any, block_size: int, fwht: bool) -> Tuple[Any, Any]:
     """The ``(perm, R)`` pair for one site: fixed butterfly, or learned dense."""
     if fwht:
-        return omega.hadamard_blocks(int(weight.shape[1]), block_size)
-    return omega.build_rotation(weight, block_size)
+        return rotations.hadamard_blocks(int(weight.shape[1]), block_size)
+    return rotations.build_rotation(weight, block_size)
 
 
 def fold_macro_site(
@@ -83,21 +73,12 @@ def fold_macro_site(
     bits: int = 4,
     gptq: Any | None = None,
 ) -> Tuple[bytes, bytes, Any]:
-    """Fold + INT4-pack one site of a fused MACRO plugin.
+    """Fold and pack one site for a fused attention or FFN plugin.
 
-    Macro plugins (the DiT's attention/FFN blocks) bake several sites
-    into one node, so they need the packed weight and the paired rotation matrix
-    back rather than a ready-made attribute dict; the caller decides which of its
-    many ``rotation_*``/``act_scale_pre*`` slots each site fills.
-
-    Returns ``(packed_bytes, weight_scale_bytes, R_use)``: INT4 nibbles or INT8
-    bytes according to ``bits``, which is the only thing that differs between the
-    two widths. ``R_use`` is the
-    SmoothQuant-folded rotation, numerically paired with the packed weight, for
-    the dense arm to bake. A butterfly caller ships an empty rotation blob plus
-    ``rot_block_size`` and the raw scale vector instead, and ignores ``R_use``:
-    the kernel recomputes the fixed Hadamard per token, and the scale it applies
-    is the vector, not a matrix.
+    Returns ``(packed_bytes, weight_scale_bytes, R_use)`` with INT4 nibbles or
+    INT8 bytes according to ``bits``. Dense callers bake the folded ``R_use``
+    matrix. Butterfly callers ignore it and supply an empty rotation blob,
+    ``rot_block_size``, and the raw scale vector instead.
     """
     packed_b, scale_b, attrs = fold_site(
         weight,
@@ -113,31 +94,25 @@ def fold_macro_site(
 
 
 def fold_rotation(R: Any, perm: Any, s_ch: Any | None, fold_order: str) -> Any:
-    """The SmoothQuant-folded rotation matrix, for sites that bake one.
+    """Fold SmoothQuant into a rotation matrix on the weight's matching axis.
 
-    Some sites ship a matrix rather than a packed weight: the DiT's
-    encoder pre-quant shares one rotation across every cross block's KV pack. They
-    still have to fold on the same axis as the weights they pair with: a mismatch
-    breaks every cross-attention KV product (measured on the DiT, cosine 0.9996 ->
-    0.9923) with no error anywhere. Which axis that is belongs here, next to
-    :func:`fold_site`, not in each emitter.
+    Used by sites such as DiT encoder pre-quantization, which shares one
+    rotation across the cross-attention KV weights.
     """
     if s_ch is None:
         return R
     if fold_order == "before":
-        return omega.fold_rotation_sq_before(R, s_ch, perm)
+        return rotations.fold_rotation_sq_before(R, s_ch, perm)
     if fold_order == "after":
-        return omega.fold_rotation_sq(R, s_ch)
+        return rotations.fold_rotation_sq(R, s_ch)
     raise ValueError(f"fold_order must be 'before' or 'after', got {fold_order!r}")
 
 
 class FoldSpec(dict):
     """Node attributes describing a folded site.
 
-    A dict so it can be splatted straight into ``make_node(**spec)``. The folded
-    rotation tensor, which some emitters bake themselves, rides as a Python
-    attribute rather than a key. A key would be splatted into the node and
-    rejected as an unknown attribute.
+    Compatible with ``make_node(**spec)``. ``rotation_tensor`` is a Python
+    attribute so it is available to emitters without becoming a node field.
     """
 
     rotation_tensor: Any | None = None
@@ -190,13 +165,13 @@ def fold_site(
         if rotation is not None:
             perm, rot = rotation
             return (
-                *_pack(omega.apply_weight_rotation(weight.float(), perm, rot, bs), bits),
+                *_pack(rotations.apply_weight_rotation(weight.float(), perm, rot, bs), bits),
                 FoldSpec(rot_block_size=0 if not fwht else int(bs)),
             )
         return (*_pack(weight, bits, gptq), FoldSpec(rot_block_size=0))
 
     perm, rot = rotation if rotation is not None else site_rotation(weight, bs, fwht)
-    folded = omega.fold_weight_sq(weight, perm, rot, s_ch, bs, fold_order)
+    folded = rotations.fold_weight_sq(weight, perm, rot, s_ch, bs, fold_order)
     attrs: Dict[str, Any] = {
         "rot_block_size": int(bs),
         _SCALE_FIELD[fold_order]: to_bytes_f32(s_ch.detach().float().cpu().numpy()),
@@ -206,11 +181,11 @@ def fold_site(
         # vector would double-count it.
         attrs.pop(_SCALE_FIELD[fold_order])
         attrs["rot_block_size"] = 0
-        attrs["perm"] = omega.to_bytes_i32(perm.detach().cpu().numpy())
+        attrs["perm"] = rotations.to_bytes_i32(perm.detach().cpu().numpy())
         r_use = (
-            omega.fold_rotation_sq_before(rot, s_ch, perm)
+            rotations.fold_rotation_sq_before(rot, s_ch, perm)
             if fold_order == "before"
-            else omega.fold_rotation_sq(rot, s_ch)
+            else rotations.fold_rotation_sq(rot, s_ch)
         )
         attrs["rotation"] = to_bytes_f32(r_use.detach().float().cpu().numpy())
     spec = FoldSpec(**attrs)
@@ -247,10 +222,10 @@ def _pack(weight: Any, bits: int, gptq: Any | None = None) -> Tuple[bytes, bytes
         codes, scale = gptq_quant_codes(weight, gptq, qmax=_QMAX[bits])
         sb = _to_np_f32(scale).tobytes()
         if bits == 4:
-            return omega.pack_int4_nibbles(codes).tobytes(), sb
+            return rotations.pack_int4_nibbles(codes).tobytes(), sb
         return _to_np_i8(codes).tobytes(), sb
     if bits == 4:
-        packed, scale = omega.pack_int4_colmajor(weight)
+        packed, scale = rotations.pack_int4_colmajor(weight)
         return packed.tobytes(), scale.astype(np.float32).tobytes()
     w_i8, scale = quant_weight_per_row(weight)
     return w_i8.astype(np.int8).tobytes(), scale.astype(np.float32).tobytes()
@@ -374,12 +349,12 @@ def hessian_accumulator(rot: Dict[str, tuple], scales: Dict[str, Any], fold_orde
         if s is not None:
             s = s.to(xf.device)
             xr = (
-                omega.apply_rotation(xf / s, perm, rmat, bs)
+                rotations.apply_rotation(xf / s, perm, rmat, bs)
                 if fold_order == "before"
-                else (omega.apply_rotation(xf, perm, rmat, bs) / s)
+                else (rotations.apply_rotation(xf, perm, rmat, bs) / s)
             )
         else:
-            xr = omega.apply_rotation(xf, perm, rmat, bs)
+            xr = rotations.apply_rotation(xf, perm, rmat, bs)
         h32 = xr.T @ xr
         if key not in hess:
             hess[key] = torch.zeros(h32.shape, dtype=torch.float64)
@@ -427,7 +402,7 @@ def scale_accumulator(rot: Dict[str, tuple], block_size: int = 0, fold_order: st
             # SmoothRot order: the scale lands on the raw channel, so measure there.
             v = xf.abs().reshape(-1, xf.shape[-1]).amax(dim=0)
         else:
-            xr = omega.apply_rotation(xf, perm, rmat, bs)
+            xr = rotations.apply_rotation(xf, perm, rmat, bs)
             v = xr.abs().reshape(-1, xr.shape[-1]).amax(dim=0)
         amax[key] = v if key not in amax else torch.maximum(amax[key], v)
 

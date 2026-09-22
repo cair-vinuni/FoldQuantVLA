@@ -1,43 +1,19 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Kernel-matched fake-quant emulation of the folded per-row LLM schemes.
+"""Emulate folded per-row LLM quantization for cascade calibration.
 
-Cascade calibration fits the downstream modules (DiT/expert/action head) to the
-context a **quantized** LLM produces, not the float one. Without it the composed
-``act_w4a4_sr_llm_w4a4_srg`` arm degrades super-additively (Pi0: the interaction
-term is 44% of end-to-end error), because every static downstream parameter
-(SmoothQuant fold, rotated-activation amax, GPTQ/RTN rounding) was measured
-behind a full-precision LLM.
+``install_llm_per_row_emulation`` modifies the decoder in place: it folds and
+quantizes weights, then installs activation hooks for the runtime Hadamard
+transform and dynamic per-row QDQ. INT4 uses GPTQ rounding; INT8 uses RTN.
+The returned handle restores the original weights and removes the hooks.
 
-:func:`install_llm_per_row_emulation` mutates the live torch decoder in place so
-one more calibration replay reproduces the deployed LLM numerics exactly:
+This lets downstream modules calibrate on quantized LLM outputs. Floating
+QDQ matches the INT4 code products, with possible scale-multiply rounding
+differences from the integer kernel.
 
-* weights become the deployed frame: SmoothQuant fold (:func:`~.llm_rotation_sq.
-  apply_sq_fold`), block-Hadamard fold (:func:`~.llm_rotation_sq.apply_rot_fold`),
-  then per-output-row symmetric quantize-dequantize (GPTQ rounding at 4 bits via
-  the same :func:`~.llm_gptq.gptq_prepare`/:func:`~.llm_gptq.gptq_quant_codes`
-  the plugin-graph builder bakes, RTN at 8 bits);
-* every quantized Linear gets a forward-pre-hook applying the runtime activation
-  transform (block-64 FWHT then per-row dynamic symmetric QDQ) that the fused
-  ``RMSNorm→rotate→quant`` plugin performs. The SQ divide needs no hook: it is
-  already inside the folded gammas / up-proj rows, exactly as deployed.
-
-The returned handle restores the original weights bit-exact and removes every
-hook, so the policy leaves this function's scope unchanged.
-
-Float QDQ here is distribution-exact w.r.t. the s4 kernels: INT4 code products
-(≤49) summed over ≤2^18 columns stay inside fp32's exact-integer range, so the
-only divergence from the int32-accumulating tensor-core path is scale-multiply
-rounding, negligible against the 4-bit grid.
-
-Supported: Qwen2 / Qwen3 / Qwen3-VL decoders (GR00T families) and Gemma
-(Pi0/Pi0.5). Gemma's ``(1+γ)`` RMSNorm is handled by folding in the effective
-gamma and writing back ``gamma_folded − 1``, matching the deployed emitter's
-``gemma_mode``.
-
-Torch is imported lazily (build-time only). No ``tensorrt`` / ``.so`` /
-``foldquant.runtime`` imports.
+Supports Qwen2, Qwen3, Qwen3-VL, and Gemma. Gemma folds its effective ``1+gamma``
+gain and writes back ``gamma_folded - 1``. Torch is imported lazily.
 """
 
 from __future__ import annotations

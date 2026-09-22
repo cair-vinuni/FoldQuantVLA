@@ -31,7 +31,7 @@ ACTION_EMITTERS = (
     "dit_int4.py",
 )
 
-#: Fold primitives that belong to omega_rotation/foldq. An emitter naming one of
+#: Fold primitives that belong to rotation/foldq. An emitter naming one of
 #: these directly is re-deriving the fold instead of asking for it.
 _FOLD_PRIMITIVES = {
     "fold_rotation_sq",
@@ -80,10 +80,10 @@ def test_every_action_emitter_can_use_the_butterfly(name: str) -> None:
 
 @pytest.mark.parametrize("name", ACTION_EMITTERS)
 def test_no_emitter_reaches_past_foldq_into_the_fold_primitives(name: str) -> None:
-    """Fold maths belongs to foldq/omega_rotation, not to each emitter.
+    """Fold maths belongs to foldq/rotation, not to each emitter.
 
     Calling a primitive directly is how two copies drift apart. Emitters may still
-    import omega_rotation for packing and byte helpers; what they may not do is
+    import rotation for packing and byte helpers; what they may not do is
     re-derive which axis the scale lands on.
     """
     src = _source(name)

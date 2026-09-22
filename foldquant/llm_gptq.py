@@ -1,27 +1,15 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""GPTQ weight quantization for the LLM W4A4 plugins.
+"""GPTQ weight rounding for LLM W4A4 plugins.
 
-At 4 bits the weight axis costs real accuracy that round-to-nearest cannot
-recover: measured on the GR00T N1.6 LLM, RTN scores ``chan_rel_err`` 0.4199 where
-GPTQ scores 0.1586, 62% of the gap to the INT8 gate, closed by changing only the
-ROUNDING. That is why ``int4_dynamic_per_row_llm_{sq,rot_sq}`` quantize weights
-with GPTQ (Frantar et al.) while the INT8 schemes stay on RTN.
+The kernel supports one scale per output row. GPTQ preserves that scale and
+distributes each column's rounding error across unquantized columns using
+the inverse Hessian. Groupwise scales are not supported.
 
-GPTQ composes with the deployed kernel because it does **not** touch the scales.
-It keeps the same per-output-row scale RTN would pick and instead moves each
-column's quantization error onto the not-yet-quantized columns, weighted by the
-inverse Hessian. Group-wise scales (what GPTQ normally ships) are deliberately
-absent: the s4 epilogue can express one scale per output row and nothing finer,
-and a group-wise variant would be measuring a kernel that does not exist.
-
-**Hessian frame.** Weights are quantized *after* the SmoothQuant fold and the
-block-Hadamard rotation, so the second moment must be of ``x̂ = rot(x / s)``. A
-raw-activation Hessian gives an optimistic offline number the engine never reaches.
-
-Torch is imported lazily (build-time only). No ``tensorrt`` / ``.so`` /
-``foldquant.runtime`` imports.
+The Hessian must use the transformed activation ``rot(x / s)`` because weights
+are quantized after SmoothQuant and Hadamard folding. Torch is imported lazily;
+this module does not load TensorRT or plugin libraries.
 """
 
 from __future__ import annotations
@@ -57,9 +45,7 @@ class MissingHessianError(RuntimeError):
     """A GPTQ site was asked to quantize with no calibration Hessian."""
 
 
-# ---------------------------------------------------------------------------
 # Calibration: transformed-input second moment, per site
-# ---------------------------------------------------------------------------
 
 
 def _exact_gram(xx: Any) -> Any:
@@ -212,9 +198,7 @@ def compute_gptq_hessians_llm(
     return out
 
 
-# ---------------------------------------------------------------------------
 # Asymmetric calibration (GPTAQ-style): moments of the QUANTIZED model's input
-# ---------------------------------------------------------------------------
 
 
 def compute_gptaq_site_moments_llm(
@@ -351,9 +335,7 @@ def gptaq_refit_weight(weight: Any, h_hat: Any, g: Any, *, strength: float = 1.0
     return (w + float(strength) * (w @ m)).to(torch.float32)
 
 
-# ---------------------------------------------------------------------------
 # Factorization + quantization
-# ---------------------------------------------------------------------------
 
 
 def gptq_prepare(hessian: Any, *, percdamp: float = PERCDAMP, actorder: bool = ACT_ORDER) -> dict:
@@ -515,9 +497,7 @@ def gptq_quant_codes(
     return codes.to(torch.int32), scale.squeeze(1).to(torch.float32)
 
 
-# ---------------------------------------------------------------------------
 # Per-site factorization, one at a time
-# ---------------------------------------------------------------------------
 
 
 class GPTQSiteFactors:

@@ -3,7 +3,7 @@
 // INT4 counterpart of int8_per_row/rmsnorm_per_row_quant.h. Same RMSNorm math,
 // same block layout; the quantizer range becomes [-7, 7] and the output is
 // packed 2 nibbles per byte along K (the convention of dit_int4_rowwise.h and
-// the build-time packer omega_rotation.pack_int4_colmajor).
+// the build-time packer rotation.pack_int4_colmajor).
 //
 //   normed[b, s, k] = x[b, s, k] * rsqrt(mean_k(x[b, s, :]^2) + eps)
 //   y[b, s, k]      = normed * gamma[k]                    (per-channel affine)

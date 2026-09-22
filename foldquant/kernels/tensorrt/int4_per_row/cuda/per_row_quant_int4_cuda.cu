@@ -110,7 +110,7 @@ __global__ void per_row_fwht_quant_bf16_to_int4_kernel(
 
     // Two SmoothQuant orders exist in the folds this kernel serves, and they
     // divide on opposite axes: fold-before scales the RAW channel and then
-    // rotates (omega_rotation.fold_rotation_sq_before divides the rotation's
+    // rotates (rotation.fold_rotation_sq_before divides the rotation's
     // INPUT axis), fold-after scales the ROTATED channel (fold_rotation_sq
     // divides the OUTPUT axis). A dense matrix can absorb either; a fixed
     // butterfly absorbs neither, so both arrive as vectors and are applied on
@@ -131,8 +131,8 @@ __global__ void per_row_fwht_quant_bf16_to_int4_kernel(
     }
 
     // SmoothQuant, applied AFTER the rotation: the expert's per-channel scale is
-    // the amax of the *rotated* activation, which is why the dense Ω path folds
-    // it into the baked matrix (omega_rotation.fold_rotation_sq divides R[:,c] by
+    // the amax of the *rotated* activation, which is why the dense-rotation path folds
+    // it into the baked matrix (rotation.fold_rotation_sq divides R[:,c] by
     // s_ch[c], i.e. it scales the rotation's OUTPUT channel). A fixed butterfly
     // has no coefficients to absorb it, so it arrives as its own vector and is
     // applied here: same arithmetic, one extra pass over shared memory.

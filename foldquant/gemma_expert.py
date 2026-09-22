@@ -69,7 +69,7 @@ __all__ = ["build_gemma_expert_plugin_onnx"]
 # PLUGIN_VERSION is a STRING: TensorRT reads plugin_version as a string
 # attribute, and an INT attr fails creator lookup ("Plugin not found") at parse.
 from . import foldq  # noqa: E402  (contract imports kept next to their use)
-from . import omega_rotation as omega  # noqa: E402
+from . import rotation as rotations  # noqa: E402
 from .dit_common import PLUGIN_DOMAIN as _PLUGIN_DOMAIN  # noqa: E402
 from .dit_common import PLUGIN_NAMESPACE as _PLUGIN_NAMESPACE  # noqa: E402
 from .dit_common import PLUGIN_VERSION as _PLUGIN_VERSION  # noqa: E402
@@ -157,7 +157,7 @@ def build_gemma_expert_plugin_onnx(
         nodes.append(oh.make_node("Sigmoid", [x], [f"{name}_sig"]))
         nodes.append(oh.make_node("Mul", [x, f"{name}_sig"], [out]))
 
-    # ===== time embedding (constants baked from exact float64) =====
+    # time embedding (constants baked from exact float64)
     half = hidden // 2
     fraction = torch.linspace(0.0, 1.0, half, dtype=torch.float64)
     period = 4e-3 * (4.0 / 4e-3) ** fraction
@@ -171,7 +171,7 @@ def build_gemma_expert_plugin_onnx(
     nodes.append(oh.make_node("Concat", ["t_sin", "t_cos"], ["time_emb_f32"], axis=1))  # [1,hidden]
     nodes.append(oh.make_node("Cast", ["time_emb_f32"], ["time_emb"], to=onnx.TensorProto.BFLOAT16))
 
-    # ===== suffix embedding =====
+    # suffix embedding
     nodes.append(oh.make_node("Cast", ["x_t"], ["x_t_bf16"], to=onnx.TensorProto.BFLOAT16))
     _linear("act_in", "x_t_bf16", "action_in_proj.weight", "action_emb")  # [1,H,hidden]
 
@@ -205,7 +205,7 @@ def build_gemma_expert_plugin_onnx(
         nodes.append(oh.make_node("Concat", ["state_emb", "atm_o"], ["suffix_embs"], axis=1))  # [1,H+1,hidden]
         suffix_name = "suffix_embs"
 
-    # ===== positions and masks (shared by all layers) =====
+    # positions and masks (shared by all layers)
     nodes.append(oh.make_node("Shape", ["prefix_pad_masks"], ["_pp_shape"]))
     inits.append(_i64_init("_idx_1", [1]))
     nodes.append(oh.make_node("Gather", ["_pp_shape", "_idx_1"], ["_S"], axis=0))
@@ -487,7 +487,7 @@ def build_gemma_expert_plugin_onnx(
         _gated_add(f"{b}_res2", f"{b}_post_attn", f"{b}_dn_out", gate2, f"{b}_out")
         cur = f"{b}_out"
 
-    # ===== final norm (AdaRMS with cond / vanilla) + action_out_proj =====
+    # final norm (AdaRMS with cond / vanilla) + action_out_proj
     _adarms("final_norm", cur, ep + "norm", "suffix_normed")
     if not use_adarms:
         # Pi0: drop the state token; velocity reads the last H tokens.
@@ -578,7 +578,7 @@ def compute_gemma_expert_sq_scales(
         w_o = sd[p + "self_attn.o_proj.weight"]
         w_dn = sd[p + "mlp.down_proj.weight"]
         for key, wt in ((f"{b}_qkv", w_qkv), (f"{b}_o", w_o), (f"{b}_gu", w_gu), (f"{b}_dn", w_dn)):
-            group_w[key] = omega.pad_in_dim(wt, block_size)
+            group_w[key] = rotations.pad_in_dim(wt, block_size)
             rot[key] = foldq.site_rotation(group_w[key], block_size, fwht)
 
     # One set of taps, two accumulators: amax on the first pass, the GPTQ

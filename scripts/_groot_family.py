@@ -1,19 +1,11 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Shared plumbing for the GR00T LLM tuning scripts (ARC sweep, learned calibration).
+"""Shared policy and calibration loader for GR00T tuning scripts.
 
-The three GR00T integrations expose the same calibration API
-(``load_policy`` / ``load_dataset`` / ``sample_observations`` /
-``make_forward_loop``) and the same ``_module_paths`` map, so one loader
-serves all of them. Run from the family's own virtualenv (the integration is
-pinned to its upstream environment) with the family named on the command line;
-this module puts ``models/<family>`` on ``sys.path`` so
-``foldquant_integration`` resolves to that family's copy.
-
-The Pi0.5 integration drives inference through
-``calibration.infer(...)`` rather than ``policy.get_action`` and are not covered
-here; the ARC presets in ``results/`` were measured on the GR00T families only.
+Run in the selected family's virtualenv. The loader adds ``models/<family>``
+to ``sys.path`` and uses the common calibration API and ``_module_paths`` map.
+Pi0.5 uses a different inference API and is not supported.
 """
 
 from __future__ import annotations

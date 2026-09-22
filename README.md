@@ -43,18 +43,13 @@ INT4, and the expert's denoising loop reuses one engine for every step.
   </picture>
 </p>
 
-One plugin serves the GR00T DiT and the π₀.₅ expert through their own emitters; the LLM backbones use the INT8 per-row path (`w8a8_sr`) or the INT4 path (`w4a4_srg`) with the same weight contract.
+The GR00T DiT and π₀.₅ expert use shared plugin kernels through separate
+emitters. LLM backbones use the INT8 per-row path (`w8a8_sr`) or the INT4
+path (`w4a4_srg`) with the same weight contract.
 
-This repository is the paper's artifact, in two parts:
-
-- **[`foldquant/`](foldquant)**: the algorithm, the ONNX emitters and the
-  TensorRT plugin kernels. Model-agnostic; installed as a Python package into
-  each model's own environment.
-- **`models/<family>/`**: a trimmed copy of each upstream VLA release at a
-  pinned commit, plus a `foldquant_integration/` folder. Upstream code, data
-  path, evaluation harness and deployment tools are used **unchanged**; the
-  integration only emits the FoldQuant graphs for the modules it quantizes and
-  slots them into the upstream TensorRT pipeline.
+The repository contains the shared [`foldquant`](foldquant) package and
+pinned upstream releases under `models/<family>/`. Each release adds a
+`foldquant_integration/` adapter for export and runtime installation.
 
 | family | upstream | integration | support |
 |---|---|---|---|
@@ -63,20 +58,12 @@ This repository is the paper's artifact, in two parts:
 | GR00T N1.5 | NVIDIA Isaac GR00T, `n1.5-release` (`4af2b622`) | [`models/groot_n1_5`](models/groot_n1_5/foldquant_integration/README.md) | ✓ |
 | π₀.₅ | openpi, `main` (`215abfb2`) | [`models/pi05`](models/pi05/foldquant_integration/README.md) | ✓ |
 
-**✓ means the whole chain runs** for every scheme the family offers: export,
-engine build, held-out drift, latency benchmark, a LIBERO rollout and a policy
-server a real robot can use. The one difference on π₀.₅ is upstream's design:
-its LIBERO rollout drives an upstream client from a second environment against
-a running server, where the GR00T families run it in process.
+Support covers export, engine build, held-out drift, latency, LIBERO, and
+policy serving. GR00T runs LIBERO in process; π₀.₅ uses a separate upstream
+client environment and a running policy server.
 
-Measurements live in [`results/`](results/README.md): held-out drift and
-desktop latency for all four families, recorded by this release, beside the
-paper's closed-loop LIBERO campaigns (800 episodes per arm) and its Jetson AGX
-Orin latency.
-
-Every family has a float arm: `--llm-scheme float` traces the module through
-the deployed forward and emits an unquantized engine of the same scope, even
-where the upstream release ships no TensorRT path of its own.
+[Results](results/README.md) include desktop drift and latency records,
+the paper's LIBERO campaigns (800 episodes per arm), and Jetson latency.
 
 ## Schemes
 
@@ -88,19 +75,12 @@ LLM backbone `r` is the fixed block Hadamard (block 64), also applied as an
 FWHT inside the plugin. `w8a8` alone is the dynamic per-row baseline and folds
 nothing.
 
-`float` is a module's unquantized engine: the floor of every ladder and the
-compiled control the latency table divides by. `foldquant/float_export.py`
-traces the module's real call and exports it under the runtime's binding names,
-so `build_engines` and `install_engines` treat it like any other arm. `none`
-keeps the module in PyTorch. On GR00T N1.7, whose FoldQuant graphs share
-upstream's full-pipeline I/O contract, `float` is upstream's own export
-(`build_engines --float-onnx-dir`).
+`float` exports an unquantized engine with the same runtime bindings as the
+quantized graph; `none` keeps the module in PyTorch. GR00T N1.7 uses upstream
+float graphs through `build_engines --float-onnx-dir`.
 
-The float engine is built **strongly typed** and without plugins, like every
-quantized arm. A weakly-typed network lets TensorRT run some layers in fp32,
-which is *more* exact than the bf16 reference and once made a float engine
-drift further from PyTorch than its INT8 engine. Strong typing keeps float a
-control that differs from the quantized arms only in projection precision.
+Float and quantized engines use strong typing to preserve the graph's declared
+dtypes. This keeps the float baseline comparable to the BF16 reference.
 
 | target | schemes | plugin library |
 |---|---|---|
@@ -108,10 +88,9 @@ control that differs from the quantized arms only in projection precision.
 | LLM backbone | `w8a8_sr` · `w8a8_s` · `w4a4_srg` · `w4a4_sg` · `w4a8_srg` | same, by activation width |
 | W4A16 baseline | ModelOpt AWQ groupwise | `foldquant_int4_groupwise` |
 
-`foldquant/schemes.py` is the single source of these names and of the modules
-each is allowed on. GPTQ (`…g`) changes nothing at runtime (same kernel, node
-attributes and byte layout); it only spends the same 16 levels better, so every
-`_shg` engine runs at the `_sh` engine's latency.
+[`foldquant/schemes.py`](foldquant/schemes.py) defines supported keys and
+modules. GPTQ (`…g`) changes offline weight rounding while retaining the same
+runtime kernel, node attributes, and byte layout.
 
 ### Selective INT8 inside a W4A4 tower
 
@@ -122,13 +101,10 @@ A W4A4 language tower can hold chosen projection sites at INT8 with
 --llm-scheme w4a4_srg --llm-params '{"site_bits": {"o": 8, "down": 8}}'
 ```
 
-Valid sites are `qkv`, `o`, `gateup` and `down`. Holding `o_proj` and
-`down_proj` at INT8 ("o/d INT8") is the recommended configuration. These two
-sites have no preceding learned gain for a scale to fold into, and INT8 (rather
-than floating point) keeps every projection on the integer GEMM path in one
-plugin family, with no datatype boundary or extra kernel in the tower. It
-recovers most of the uniform-W4A4 cosine gap, though its cosine stays below the
-W8A8 engine's. Measurements are in [`results/RES8_SITE_SELECTIVE_INT8.md`](results/RES8_SITE_SELECTIVE_INT8.md).
+Valid sites are `qkv`, `o`, `gateup`, and `down`. Keeping `o_proj` and
+`down_proj` at INT8 improves action cosine over uniform W4A4 while retaining
+integer GEMMs at every projection. These sites have no preceding learned gain
+for scale folding. See the [accuracy and latency results](results/SITE_SELECTIVE_INT8.md).
 
 ## Layout
 
@@ -153,7 +129,10 @@ Each model directory pins its own environment (Python, torch, TensorRT); the
 
 ```bash
 git submodule update --init third_party/cutlass
-cd models/groot_n1_7 && uv sync && uv pip install -e ../..
+cd models/groot_n1_7
+uv sync
+source .venv/bin/activate
+uv pip install -e ../..
 python -m foldquant.kernels build      # compiles the plugin .so for this GPU / TensorRT
 python -m foldquant.kernels status
 ```
@@ -167,11 +146,12 @@ upstream's install steps).
 
 Kernels build with `nvcc`, the CUTLASS submodule and the vendored TensorRT
 headers. Binaries are cached per `(SM, machine, TensorRT major.minor)` under
-`~/.cache/foldquant` and matched exactly at load. Unit tests need only the
-package:
+`~/.cache/foldquant` with device and version checks at load. From the repository
+root, install the development dependencies and run the unit tests:
 
 ```bash
-pip install -e ".[dev]" && pytest tests -q
+pip install -e ".[dev]"
+pytest tests -q
 ```
 
 Then follow the family's integration README, e.g.

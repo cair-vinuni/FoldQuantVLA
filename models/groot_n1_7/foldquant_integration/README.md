@@ -1,10 +1,9 @@
 # FoldQuant on GR00T N1.7
 
-This folder is the whole of what FoldQuant adds to the upstream GR00T N1.7
-release. The `gr00t` package, its data path, its LIBERO rollout loop and its
-`scripts/deployment` TensorRT tools are used unchanged; the algorithm, the
-ONNX emitters and the TensorRT plugins are the top-level
-[`foldquant`](../../../foldquant) package.
+This adapter integrates FoldQuant with GR00T N1.7, using upstream
+data loading, LIBERO evaluation, and TensorRT deployment. The shared
+[`foldquant`](../../../foldquant) package provides quantization, ONNX export,
+and TensorRT plugins.
 
 Two modules of the policy are replaced by FoldQuant plugin graphs:
 
@@ -31,6 +30,7 @@ TensorRT 10.15). From this directory:
 
 ```bash
 uv sync                         # upstream environment
+source .venv/bin/activate
 uv pip install -e ../..         # the foldquant package into it
 python -m foldquant.kernels build   # compile the plugin libraries for this GPU / TensorRT
 ```
@@ -318,9 +318,9 @@ FoldQuant engines quantise those too; see `results/groot_n1_7/HOLOQ_LIBERO.md`).
 
 | | `--method holoq` (HoloQ-VLA style) | `--method duquant` (DuQuant style) |
 |---|---|---|
-| reference | HoloQ-VLA, arXiv 2605.28803 | DuQuant, as the baseline of Omega-QVLA / HoloQ-VLA Table 2 |
+| reference | HoloQ-VLA, arXiv 2605.28803 | DuQuant, as the baseline of HoloQ-VLA Table 2 |
 | input permutation | zigzag over input-channel weight energy, blocks of 64 | same |
-| block rotation (64×64) | `U · H_s`: left singular vectors of the weight block ᵀ times a sign-randomised normalised Hadamard | `U` alone: the eigenvectors of `WᵀW` per block (Omega-QVLA `rot_mode=svd`) |
+| block rotation (64×64) | `U · H_s`: left singular vectors of the weight block ᵀ times a sign-randomised normalised Hadamard | `U` alone: the eigenvectors of `WᵀW` per block (HoloQ-VLA `rot_mode=svd`) |
 | LLM weights | GPTQ, block 128, damping 0.01, per-output-channel INT4 | same |
 | DiT weights | RTN, per-output-channel INT4 | same |
 | LLM activations | dynamic per-token INT4 (`max|x|` of the token) | **static per-channel** INT4: q99.9 of each channel over the calibration tokens, running max across observations, frozen |
@@ -330,7 +330,7 @@ FoldQuant engines quantise those too; see `results/groot_n1_7/HOLOQ_LIBERO.md`).
 The two arms differ **only** in the rotation and in the activation-scale rule;
 solvers, scope, permutation, block sizes and calibration data are identical, so
 the DuQuant row isolates those two choices. The static per-channel rule is what
-Omega-QVLA's DuQuant layers do (`PercentileCalibrator`: per-channel quantile over
+HoloQ-VLA's DuQuant layers do (`PercentileCalibrator`: per-channel quantile over
 tokens, running max, then `scale = q / 7`); applying a per-token dynamic scale
 after the SVD-only rotation instead collapses the policy to 0 % success on every
 LIBERO suite, because `U` concentrates a token's energy into one channel per block

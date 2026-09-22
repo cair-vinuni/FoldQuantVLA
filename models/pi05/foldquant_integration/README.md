@@ -1,11 +1,9 @@
 # FoldQuant on Pi0 / Pi0.5 (openpi)
 
-This folder is the whole of what FoldQuant adds to the upstream openpi
-release. The `openpi` package, its PyTorch model (`PI0Pytorch`), its policy
-transforms, its websocket server and its LIBERO client
-(`examples/libero/main.py`) are used unchanged; the algorithm, the ONNX
-emitters and the TensorRT plugins are the top-level
-[`foldquant`](../../../foldquant) package.
+This adapter integrates FoldQuant with openpi, using upstream
+policy transforms, websocket serving, and LIBERO evaluation. The shared
+[`foldquant`](../../../foldquant) package provides quantization, ONNX export,
+and TensorRT plugins.
 
 Two modules of the policy are replaced by FoldQuant plugin graphs:
 
@@ -41,8 +39,8 @@ be installed alone: the runtime stacks the PyTorch `DynamicCache` when the
 LLM stays float, and rebuilds one from the engine's stack when the expert
 stays float.
 
-Upstream openpi ships no TensorRT path, so there is no float-engine floor
-arm here; `verify` compares against the bf16 PyTorch policy.
+Use `float` to export an unquantized engine baseline or `none` to keep a
+module in PyTorch. `verify` compares all engines against the BF16 PyTorch policy.
 
 Engines are served by [`runtime.py`](runtime.py), which rebinds
 `paligemma_with_expert.forward` (prefix branch only) and
@@ -255,7 +253,7 @@ resolved. Upstream keeps its configs in a module-level dict, so the plugin
 registers the entry itself:
 
 ```python
-# my_plugin.py  -- its directory goes on sys.path first, so siblings import
+# my_plugin.py: add its directory to sys.path so sibling imports resolve.
 from openpi.training import config as _config
 from openpi.training.config import DataConfig, TrainConfig
 import my_policy                      # the checkpoint's own transforms

@@ -1,10 +1,9 @@
 # FoldQuant on GR00T N1.5
 
-This folder is the whole of what FoldQuant adds to the upstream GR00T N1.5
-release. The `gr00t` package, its data path, its ZMQ inference service and
-its LIBERO client (`examples/Libero/eval/run_libero_eval.py`) are used
-unchanged; the algorithm, the ONNX emitters and the TensorRT plugins are the
-top-level [`foldquant`](../../../foldquant) package.
+This adapter integrates FoldQuant with GR00T N1.5, using upstream
+data loading, ZMQ serving, and LIBERO evaluation. The shared
+[`foldquant`](../../../foldquant) package provides quantization, ONNX export,
+and TensorRT plugins.
 
 Two modules of the policy are replaced by FoldQuant plugin graphs:
 
@@ -40,8 +39,8 @@ Upstream N1.5 ships its own TensorRT path (`deployment_scripts/`, fp16/fp8
 per-module engines behind `scripts/inference_service.py --use-tensorrt`).
 Its DiT graph has a different contract (`sa_embs`, `vl_embs`,
 `timesteps_tensor`) and its LLM graph is fp16, so the two engine sets are not
-interchangeable and there is no float-engine floor arm here; `verify`
-compares against the bf16 PyTorch policy.
+interchangeable. Use `float` to export an unquantized FoldQuant baseline;
+`verify` compares all engines against the BF16 PyTorch policy.
 
 Engines are served by [`runtime.py`](runtime.py), which rebinds the two
 modules' `forward`; nothing else in the policy changes, so the same

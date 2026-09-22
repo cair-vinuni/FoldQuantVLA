@@ -59,9 +59,7 @@ DIT_VL_SEQ_DIM = "vl_seq_len"
 DIT_BATCH_DIM = "batch"
 
 
-# ---------------------------------------------------------------------------
 # Byte / initializer helpers
-# ---------------------------------------------------------------------------
 
 
 def to_bytes_f32(arr_or_tensor: Any) -> bytes:
@@ -141,9 +139,7 @@ def emit_attend_all_mask(nodes: list, inits: list) -> None:
     inits.append(bf16_initializer(ATTEND_ALL_MASK, torch.zeros(1, 1, 1, 1, dtype=torch.bfloat16)))
 
 
-# ---------------------------------------------------------------------------
 # Live-module weight access: reads the real DiT submodule names directly.
-# ---------------------------------------------------------------------------
 
 
 class DiTWeights:
@@ -198,9 +194,7 @@ class DiTWeights:
         )
 
 
-# ---------------------------------------------------------------------------
 # Timestep encoder + mask routing emitters
-# ---------------------------------------------------------------------------
 
 
 def emit_timestep_encoding(w: DiTWeights, nodes: list, inits: list) -> None:
@@ -285,9 +279,7 @@ def emit_mask_routing(nodes: list, inits: list) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
 # Output head emitter
-# ---------------------------------------------------------------------------
 
 
 def emit_output_head(w: DiTWeights, cur_x: str, nodes: list, inits: list) -> None:

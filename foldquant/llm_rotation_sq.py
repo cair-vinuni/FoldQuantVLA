@@ -1,36 +1,16 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""SmoothQuant + block-diagonal Hadamard folds for the LLM INT8 per-row plugins.
+"""SmoothQuant and block Hadamard folds for LLM per-row plugins.
 
-Offline weight preparation for the ``w8a8_{s,sr}``
-schemes served by the compiled ``foldquant_int8_per_row`` plugins
-(``FusedRmsNormLinearInt8`` / ``PerRowInt8LinearResidual``). Two composable,
-mathematically exact folds sit on top of the plain dynamic-per-row scheme:
+``apply_sq_fold`` absorbs channel scales into RMSNorm gains or up-projection
+rows and compensates the consuming weight columns. ``apply_rot_fold`` folds
+the orthonormal Hadamard into weights; the plugin applies the matching FWHT
+to activations at runtime.
 
-  * **SmoothQuant per-channel fold** (:func:`apply_sq_fold`): migrates a static
-    per-channel activation scale ``s_ch = amax_act^α / amax_w^(1-α)`` into the
-    RMSNorm gamma (qkv/gateup) or the up_proj rows (down), compensated on the
-    weight columns. Pure weight prep: the runtime path is unchanged, no plugin
-    attribute, no kernel work.
-  * **Block-diagonal Hadamard fold** (:func:`apply_rot_fold`): folds ``W' = W·Hᵀ``
-    with the orthonormal Sylvester Hadamard so the runtime FWHT rotation
-    (``rot_block_size`` plugin attribute → ``fwht.cuh::block_fwht_smem``) cancels:
-    ``W'·(H·x) = W·x``. Unlike SQ this needs the kernel: the rotation mixes
-    channels, so it folds through neither the RMSNorm gamma nor SiLU.
-
-Per-row (per-token) INT8 covers the TOKEN axis and is blind to the CHANNEL axis;
-on the GR00T N1.6 Qwen3 LLM that costs ~14% median per-channel error. SQ recovers
-~31% of it for free and the residual channel spread is flattened by the rotation
-(simulated chan_rel_err 0.142 → 0.098 → 0.045). Defaults ``sq_alpha=0.4`` and
-``rot_block_size=64`` come from a measured sweep, not convention.
-
-``_hadamard`` MUST stay in lockstep with ``fwht.cuh::block_fwht_smem`` (same
-Sylvester natural-order construction, ``/sqrt(n)`` normalization); a
-:mod:`tests.unit.test_llm_rotation_sq` fold round-trip pins the convention.
-
-Torch is imported lazily (build-time only). No ``tensorrt`` / ``.so`` /
-``foldquant.runtime`` imports.
+Defaults are ``sq_alpha=0.4`` and ``rot_block_size=64``. ``_hadamard`` must
+match ``fwht.cuh::block_fwht_smem`` in Sylvester ordering and normalization.
+Torch is imported lazily; this module does not load TensorRT or plugins.
 """
 
 from __future__ import annotations
@@ -38,30 +18,21 @@ from __future__ import annotations
 import functools
 from typing import Any, Callable, Dict, Optional
 
-# ============================================================================
 # Scheme parameters (algorithm registry-key → fold defaults)
-# ============================================================================
 
-# The single source of truth for what each FoldQuant LLM INT8 scheme bakes.
-# ``sq_alpha`` drives :func:`apply_sq_fold`; ``rot_block_size`` (0 = disabled) drives
-# :func:`apply_rot_fold` and the plugins' ``rot_block_size`` attribute. The plain
-# no-fold per-row scheme is retired (it fails accuracy on the real robot), so it is
-# absent; every entry here folds SmoothQuant and needs calibration.
+
+# ``sq_alpha`` controls scale folding; ``rot_block_size=0`` disables rotation.
+# All entries require SmoothQuant calibration.
 LLM_INT8_ALGORITHMS: Dict[str, Dict[str, float]] = {
     "w8a8_s": {"sq_alpha": 0.4, "rot_block_size": 0},
     "w8a8_sr": {"sq_alpha": 0.4, "rot_block_size": 64},
 }
 
-# The LLM has a single deployable scheme, so omitting ``algorithm`` selects it. It
-# is the strongest (SmoothQuant + Hadamard rotation), the one validated on the robot.
+# Default to SmoothQuant with Hadamard rotation.
 DEFAULT_LLM_INT8_ALGORITHM = "w8a8_sr"
 
-# LLM W4A4 (per-row dynamic INT4 activations, GPTQ-rounded INT4 weights; the
-# ``gptq`` token in the key is what tells this apart from the *preset arm* name
-# ``act_w4a4_sr_llm_w8a8_sr``, which means "W4A4 action module + INT8 rotsq LLM").
-# ``ablation: True`` marks the rotation-off variant as a measurement arm only:
-# rotation-less W4A4 measured cosine 0.014 in simulation, so resolving it without
-# the flag fails closed rather than shipping a scheme known to emit noise.
+# W4A4 uses GPTQ-rounded weights and dynamic per-row activation scales.
+# Rotation-free W4A4 is restricted to ablation because of its accuracy loss.
 LLM_INT4_ALGORITHMS: Dict[str, Dict[str, Any]] = {
     "w4a4_sg": {"sq_alpha": 0.4, "rot_block_size": 0, "ablation": True},
     "w4a4_srg": {"sq_alpha": 0.4, "rot_block_size": 64},
@@ -168,9 +139,8 @@ def resolve_llm_plugin_params(
     return params
 
 
-# ============================================================================
 # SmoothQuant per-channel fold
-# ============================================================================
+
 
 # Sites that get a SmoothQuant channel fold. ``o`` is deliberately absent: it is
 # the mildest site in the model and its activation channel traces back to V
@@ -323,9 +293,8 @@ def apply_sq_fold(layer_state: dict, s_qkv: Any, s_gu: Any, s_dn: Any) -> dict:
     return ls
 
 
-# ============================================================================
 # Block-diagonal Hadamard rotation fold
-# ============================================================================
+
 
 # Every linear whose input the rotation kernel touches. Unlike the SQ fold this
 # INCLUDES o_proj: the rotation runs inside the quantizer, so GQA's shared V

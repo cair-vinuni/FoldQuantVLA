@@ -8,7 +8,7 @@ Two recipes, selected with ``--method``:
 * ``holoq``:  HoloQ-VLA style: zigzag permutation + block-64 SVD·Hadamard
   rotation, GPTQ LLM weights, RTN DiT weights, per-token INT4 LLM activations,
   static per-denoising-step per-channel INT4 DiT activations (q99.9).
-* ``duquant``:  DuQuant style as Omega-QVLA's baseline runs it: the same
+* ``duquant``:  DuQuant style as HoloQ-VLA's baseline runs it: the same
   permutation and solvers, block-64 SVD-only rotation (eigenvectors of
   ``W^T W``), and a frozen per-channel q99.9 activation scale on both towers.
 

@@ -1,21 +1,11 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Writing a plugin-node graph over the float graph the export driver produced.
+"""Save ONNX graphs without appending to stale external weights.
 
-Every FoldQuant scheme overwrites its module's ONNX **in place**: the
-driver runs ``torch.onnx.export`` first, then hands the scheme that path (see
-``foldquant/export.py``). The float graph's
-external-data sidecar is still sitting next to it at that point, and
-``onnx.save_model`` *appends* to an existing sidecar rather than truncating it.
-
-Appending is silently destructive: the new tensors land behind the dead float
-weights. On GR00T's DiT that pushed 18 MB of live tensors past the 2 GiB mark
-(behind 2.18 GB of float weights) and TensorRT's parser rejected the model with
-``Trying to access weights or a null tensor!``, although the graph was valid.
-
-Constructs ONNX only: no ``tensorrt`` import, no ``.so`` load, no
-``foldquant.runtime`` import.
+Plugin exports can overwrite a float graph at the same path. Because
+``onnx.save_model`` appends to an existing sidecar, remove it before saving;
+otherwise unused float weights inflate the file and can exceed parser limits.
 """
 
 from __future__ import annotations

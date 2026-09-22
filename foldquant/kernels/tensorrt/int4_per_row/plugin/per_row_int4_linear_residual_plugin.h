@@ -23,13 +23,13 @@
 //
 // Plugin fields (baked):
 //   "weight_i4"     INT8  (N*K/2 packed nibbles, column-major - see
-//                          omega_rotation.pack_int4_colmajor{,_sq})
+//                          rotation.pack_int4_colmajor{,_sq})
 //   "weight_scale"  FP32  (N,)
-//   "perm"          INT32 (K,)               - channel permutation (Ω mode)
-//   "rotation"      FP32  (K/bs * bs * bs)   - per-block rotation (Ω mode)
+//   "perm"          INT32 (K,)               - channel permutation (dense-rotation mode)
+//   "rotation"      FP32  (K/bs * bs * bs)   - per-block rotation (dense-rotation mode)
 //   "N"             INT32 scalar
 //   "K"             INT32 scalar
-//   "block_size"    INT32 scalar             - Ω rotation block
+//   "block_size"    INT32 scalar             - dense-rotation block
 //   "rot_block_size" INT32 scalar            - FWHT mode (see below)
 //
 // Two rotation modes, selected by the baked field set (one creator, two users):
@@ -125,7 +125,7 @@ private:
     int32_t mK{0};
     int32_t mBlockSize{0};
     int32_t mRotBlockSize{0};
-    float mActClipRatio{1.0f};  // FWHT mode; 0 when Ω fields drive the rotation
+    float mActClipRatio{1.0f};  // FWHT mode; 0 when dense-rotation fields drive the rotation
 
     // Non-owning views into the shared weight resource (attachToContext).
     SharedDeviceWeights* mShared{nullptr};

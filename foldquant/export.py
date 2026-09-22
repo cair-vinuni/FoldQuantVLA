@@ -1,32 +1,18 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Export a live module as a FoldQuant plugin-node ONNX graph.
+"""Export live PyTorch modules as FoldQuant plugin-node ONNX graphs.
 
-One entry point per module kind (:func:`export_llm`, :func:`export_dit`,
-:func:`export_expert`) plus :func:`export_module`,
-which dispatches on the module name. Each takes the live PyTorch module, a
-destination path, a scheme key from :mod:`.schemes` and, for every folded
-scheme, a ``forward_loop(module)`` that replays calibration observations
-through the host model. Nothing is traced: the graph is emitted node by node
-from the module's own weights, and the fold is applied to those weights on the
-way out.
+Use ``export_llm``, ``export_dit``, or ``export_expert`` directly, or dispatch
+through ``export_module``. Folded schemes require ``forward_loop(module)``
+to replay calibration observations through the host model.
 
-Calibration order is fixed and shared by every module kind:
+Calibration measures SmoothQuant scales first, then GPTQ Hessians in a second
+replay using the transformed activations. ``foldq.fold_site`` folds and packs
+the weights before the emitter constructs the graph.
 
-1. SmoothQuant scales: per-channel amax of the activation in the frame the
-   fold lands on (raw channel for fold-before, rotated for fold-after).
-2. GPTQ Hessians (``_g`` schemes only): a SECOND replay after the scales
-   exist, of the transformed activation ``rot(x / s)``: GPTQ compensates the
-   rounding error of the weight the engine stores, so its Hessian must be of
-   the activation that weight actually multiplies.
-3. Emit: :func:`foldquant.foldq.fold_site` folds scale, rotation and rounding
-   into each site's weights, in one place, for both bit widths.
-
-``params`` carries the per-module knobs a scheme exposes: ``sq_alpha``,
-``sq_fold_order`` (action modules), and the LLM overrides validated by
-:func:`foldquant.llm_rotation_sq.resolve_llm_plugin_params` (``sq_alpha``,
-``act_clip_ratio``, ``site_bits``, ``rot_block_size``, ``learned_calib``).
+Action-module params are ``sq_alpha`` and ``sq_fold_order``. LLM params are
+validated by ``llm_rotation_sq.resolve_llm_plugin_params``.
 """
 
 from __future__ import annotations
@@ -86,15 +72,12 @@ def _require_loop(scheme: str, forward_loop: Optional[ForwardLoop]) -> ForwardLo
 def _act_fold_knobs(scheme: str, params: Mapping[str, Any]) -> Dict[str, Any]:
     """``{"fwht", "fold_order", "alpha"?}`` for an action-module fold.
 
-    Butterfly arms default to fold-BEFORE (SmoothRot: scale the raw channel, then
-    rotate). It is the cheaper side of the kernel (the divide fuses into the
-    load loop where fold-after needs a second shared-memory pass), and on the
-    Gemma expert the two orders differ by 0.0006 of action cosine, far below what
-    800 LIBERO episodes resolve. "after" stays selectable as the ablation arm.
+    Butterfly schemes default to scaling before rotation, allowing the divide
+    to fuse into the kernel's load loop. Scaling after rotation requires a
+    second shared-memory pass and remains available for ablation.
 
-    ``alpha`` only has meaning in the raw frame: 1.0 normalizes the activation
-    completely and hands every outlier to per-ROW weight quantization, where one
-    cold channel then sets the row scale for all of them; 0.5 splits the burden.
+    ``alpha`` applies only before rotation: 1.0 moves activation outliers into
+    the weights, while 0.5 balances activation and weight ranges.
     """
     unknown = sorted(set(params) - _ACT_FOLD_PARAMS)
     if unknown:
@@ -120,7 +103,7 @@ def _act_fold_knobs(scheme: str, params: Mapping[str, Any]) -> Dict[str, Any]:
     return knobs
 
 
-#: The knobs :func:`_act_fold_knobs` reads; anything else was being dropped silently.
+#: Supported action-module fold parameters.
 _ACT_FOLD_PARAMS = frozenset({"sq_alpha", "sq_fold_order"})
 
 
@@ -133,7 +116,7 @@ def _refuse_params(module: str, scheme: str, params: Mapping[str, Any]) -> None:
         )
 
 
-# --------------------------------------------------------------------------- LLM
+# LLM
 
 
 def export_llm(
@@ -291,7 +274,7 @@ def install_llm_emulation(module: nn.Module, result: ExportResult) -> Any:
     )
 
 
-# --------------------------------------------------------------------------- DiT
+# DiT
 
 
 def export_dit(
@@ -351,7 +334,7 @@ def export_dit(
     return ExportResult("dit", scheme, onnx_path, libs)
 
 
-# ------------------------------------------------------------------------ expert
+# expert
 
 
 def export_expert(
@@ -399,7 +382,7 @@ def export_expert(
     return ExportResult("expert", scheme, onnx_path, schemes.plugin_libs(scheme, params=params))
 
 
-# ---------------------------------------------------------------------- dispatch
+# dispatch
 
 _EXPORTERS: Dict[str, Callable[..., ExportResult]] = {
     "llm": export_llm,

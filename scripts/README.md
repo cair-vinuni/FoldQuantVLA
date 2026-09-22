@@ -1,9 +1,8 @@
 # Repository-level scripts
 
-Everything under `models/<family>/foldquant_integration/` runs one family in
-that family's own upstream environment. The scripts here sit above that layer:
-they either drive several families in turn or tune the knobs the per-family
-`export_foldquant` then consumes.
+These scripts run checks across model families, generate result tables, and
+tune calibration parameters. Each model runs in its own upstream environment
+through `models/<family>/foldquant_integration/`.
 
 | script | needs | does |
 |---|---|---|
@@ -18,14 +17,8 @@ they either drive several families in turn or tune the knobs the per-family
 | `llm_learn_calib.py` | a GR00T `.venv`, GPU | learns per-layer SmoothQuant scales, activation clips and weight clips for the INT4 LLM fold |
 | `_groot_family.py` | - | loader shared by the two tuning scripts (policy, decoder, calibration and held-out samples) |
 
-The two tuning scripts are GR00T-only (N1.5 / N1.6 / N1.7). The three
-integrations expose the same `calibration.load_policy` / `load_dataset` /
-`sample_observations` / `make_forward_loop` surface and the same
-`export_foldquant._module_paths`, which is all `_groot_family.Loaded` uses;
-openpi goes through `calibration.infer(...)` instead and is
-refused with a message rather than half-supported. Run them **from the family
-directory, in its environment**: the loader imports `foldquant_integration`
-from `models/<family>/`, and the upstream `gr00t` package has to resolve:
+The tuning scripts support GR00T N1.5, N1.6, and N1.7. Run them from the
+family directory in its environment:
 
 ```bash
 cd models/groot_n1_6
@@ -36,22 +29,19 @@ cd models/groot_n1_6
 
 ## Tuning the LLM fold: `sweep_llm_quant_knobs.py`
 
-The shipped W4A4 defaults (`sq_alpha 0.4`, `act_clip_ratio 1.0`, rotation
-block 64) were chosen on one family. The sweep asks whether another point of
-the same two knobs does better on a given checkpoint, and does so cheaply:
+The sweep tunes `sq_alpha` and `act_clip_ratio` for a checkpoint. Defaults are
+0.4 and 1.0 respectively, with rotation block 64.
 
 1. **RTN stage**: every `(alpha, clip)` of the grid (default 5 × 4) is scored
    with round-to-nearest weights on `--max-samples` observations (default 16),
-   without GPTQ, so the grid costs seconds per cell.
+   without GPTQ.
 2. **GPTQ stage**: the top `--top` RTN cells plus the shipped point are
-   re-scored with the real GPTQ rounding; the Hessian is what the final export
-   uses, so this stage ranks the way the deployed engine will behave.
+   rescored with GPTQ using Hessians measured in the transformed activation frame.
 
-Two objectives: `seam` (cosine of the decoder's output hidden state against
-BF16, the LLM's own damage) and `actions` (cosine of the decoded action chunk,
-what the policy does with it). `--per-site` adds a coordinate descent over
-per-site clip ratios after the grid. The result records both stages, the best
-cell, the gain over the shipped point, and a ready-to-paste `llm_params`.
+`seam` scores decoder-output cosine against BF16; `actions` scores decoded
+action cosine. `--per-site` adds coordinate descent over site clip ratios.
+Results include both stages, the best parameters, the gain over defaults,
+and an `llm_params` value for export.
 
 ## Learning the calibration: `llm_learn_calib.py`
 
@@ -69,17 +59,14 @@ python -m foldquant_integration.export_foldquant ... \
     --llm-scheme w4a4_srg --llm-params '{"learned_calib": "path/to/calib.pt"}'
 ```
 
-Scoring is on `--score-samples` **held-out** observations (episodes disjoint
-from the calibration set) with GPTQ emulation, and reports the paired
-Wilcoxon test against the grid point given by `--alpha` / `--clip`, so a gain
-that does not survive 32 held-out observations is reported as such.
+Scoring uses `--score-samples` held-out observations from disjoint episodes
+with GPTQ emulation. It reports a paired Wilcoxon test against the baseline
+selected by `--alpha` and `--clip`.
 
 ## Tuned-arm recipes
 
-The tuned arms of the evaluation are the default schemes with explicit knob
-overrides; nothing else changes. Every override is a `--llm-params` /
-`--dit-params` JSON (`--expert-params` on pi), and cascade calibration is the `--cascade` flag. The values below are
-the ones the reported arms were built with.
+The measured configurations below use JSON overrides in `--llm-params` and
+`--dit-params` (`--expert-params` on pi). `--cascade` enables cascade calibration.
 
 | arm | family | `--llm-scheme` | `--llm-params` | action scheme | action params | `--cascade` |
 |---|---|---|---|---|---|---|

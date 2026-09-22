@@ -1,18 +1,12 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Resolve and load custom TensorRT plugin ``.so`` for the running device.
+"""Resolve TensorRT plugin libraries for the current device.
 
-A plugin binary is only usable on the device tuple it was compiled for: CUDA SM
-arch, machine ABI, and TensorRT minor (the ``IPluginV3`` ABI is tied to the TRT
-minor). Committed binaries are named ``<libname>.<target_slug>.so``; a
-device-mismatch rebuild is cached out-of-tree as ``<cache>/<slug>/<libname>.so``.
-
-Neutral by design: heavy imports (``torch``/``tensorrt``/``importlib.resources``)
-live inside functions, and the committed dir is reached by path navigation from
-this package only (``foldquant.kernels``, never the export code),
-so importing this module never pulls in build-time code or crosses the
-build->runtime boundary.
+Binaries are selected by CUDA SM, machine ABI, and TensorRT version.
+Packaged libraries use ``<libname>.<target_slug>.so``; cached builds use
+``<cache>/<slug>/<libname>.so``. Heavy dependencies are imported lazily,
+and resolution never triggers a build.
 """
 
 from __future__ import annotations

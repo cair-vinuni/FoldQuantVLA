@@ -2,42 +2,16 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""ARC: grid-sweep the W4A4 LLM calibration knobs and rank presets by decoded action.
+"""Tune W4A4 LLM SmoothQuant strength and activation clipping.
 
-The W4A4 LLM fold has two calibration constants with no closed-form optimum,
-both inherited from the INT8 recipe:
+An RTN grid screens ``sq_alpha`` and ``act_clip_ratio`` combinations. The top
+candidates and the default are rescored with GPTQ, remeasuring Hessians for
+each alpha in the transformed activation frame. GPTQ damping stays fixed.
 
-* ``sq_alpha``: the SmoothQuant migration strength (0.4 in the registry,
-  shared by every layer and site). The highest-leverage constant in the
-  pipeline; refitting it is an offline re-fold with no kernel or runtime change.
-* ``act_clip_ratio``: the per-row dynamic INT4 activation scale's clip (the
-  kernel ships 1.0). Saturates the largest entry per row for a finer grid on the
-  rest; deploys as one scalar plugin attribute.
-
-Two stages keep the search cheap: a fast RTN grid ranks every combination on a
-handful of calibration observations, then the top candidates plus the registry
-default are re-scored with GPTQ rounding (the deployed numerics); GPTQ Hessians
-are re-measured per alpha because they live in the transformed frame
-``rot(x / s_alpha)``. GPTQ damping is fixed (``foldquant.llm_gptq.PERCDAMP``)
-and is not a knob.
-
-Two objectives. ``seam`` ranks by the decoder-output cosine at the LM/expert
-seam, the customary criterion. ``actions`` runs the whole policy per combo and
-ranks by the cosine of the DECODED ACTION CHUNK against the BF16 reference (each
-observation seeded so both integrate from identical flow-matching noise). The
-two can disagree: on the Qwen3-VL backbone the seam-optimal preset lowers action
-fidelity, which is why the shipped ARC presets were picked on ``actions``.
-
-The winner is an ordinary export input::
-
-  python -m foldquant_integration.export_foldquant ... \\
-      --llm-scheme w4a4_srg --llm-params '{"sq_alpha": 0.6, "act_clip_ratio": 0.85}'
-
-Run from ``models/<family>/`` in that family's virtualenv::
-
-  python ../../scripts/sweep_llm_quant_knobs.py --family groot_n1_6 \\
-      --model-path <ckpt> --embodiment-tag libero_panda --dataset-path <libero_4suite> \\
-      --objective actions --output ../../results/groot_n1_6/w4a4/sweep_llm_quant_knobs.json
+``seam`` scores decoder-output cosine; ``actions`` scores decoded actions
+against BF16 with matched flow-matching noise. Results include ``llm_params``
+for export. Run from the selected GR00T family directory and virtualenv;
+see ``scripts/README.md`` for examples.
 """
 
 from __future__ import annotations

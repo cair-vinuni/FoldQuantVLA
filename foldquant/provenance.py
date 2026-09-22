@@ -1,18 +1,10 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Turn a caller's local path into something a committed result may carry.
+"""Normalize paths for committed export and verification records.
 
-Every integration records what an arm was built from (the checkpoint, the
-calibration dataset, the engine directory) into ``foldquant_export.json`` and
-``verify.json``, and those files are committed under ``results/``. Written
-verbatim they publish the operator's filesystem: ``/home/<user>/...`` names a
-person, and an absolute path names a machine layout nobody else can use.
-
-A Hugging Face cache directory (``models--ORG--NAME/snapshots/<sha>``) becomes
-``ORG/NAME``, which stays resolvable. Any other absolute path keeps its last
-component. Hub ids and repository-relative paths are already portable and are
-left unchanged.
+Hugging Face cache paths become ``ORG/NAME``. Other absolute paths retain only
+their basename; hub IDs and repository-relative paths remain unchanged.
 """
 
 from __future__ import annotations

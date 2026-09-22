@@ -1,12 +1,7 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Weight quantization + packing for the custom TensorRT plugins.
-
-These produce the exact byte layouts the compiled plugins read from their
-``PluginField`` attributes, so the math is reproduced verbatim from the GR00T
-reference and must not drift from the kernels.
-"""
+"""Quantize and pack weights in the byte layouts required by TensorRT plugins."""
 
 from __future__ import annotations
 

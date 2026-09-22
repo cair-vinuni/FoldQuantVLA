@@ -96,9 +96,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["build_dit_plugin_onnx"]
 
 
-# ---------------------------------------------------------------------------
 # Per-block AdaLN scale/shift emitter
-# ---------------------------------------------------------------------------
 
 
 def _emit_adaln(w: _DiTWeights, idx: int, nodes: list, inits: list) -> None:
@@ -119,9 +117,7 @@ def _emit_adaln(w: _DiTWeights, idx: int, nodes: list, inits: list) -> None:
     nodes.append(oh.make_node("Split", [f"{b}_lin", f"{b}_split"], [f"{b}_scale", f"{b}_shift"], axis=-1))
 
 
-# ---------------------------------------------------------------------------
 # Graph builder
-# ---------------------------------------------------------------------------
 
 
 def _build_v2_dynamic_graph(
@@ -180,7 +176,7 @@ def _build_v2_dynamic_graph(
     def _rot_attr() -> dict:
         return {"rot_block_size": int(block_size)} if (fwht and sq_scales is not None) else {}
 
-    # === Graph inputs / output ===
+    # Graph inputs / output
     #
     # Batch is pinned to 1 - the fused attention plugins' cuBLAS strided-batched
     # addressing is only correct at B == 1.
@@ -362,9 +358,7 @@ def _build_v2_dynamic_graph(
     return graph
 
 
-# ---------------------------------------------------------------------------
 # Public entry point
-# ---------------------------------------------------------------------------
 
 
 def build_dit_plugin_onnx(

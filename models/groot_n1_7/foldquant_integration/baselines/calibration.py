@@ -46,7 +46,7 @@ CALIBRATION_ALGORITHMS = frozenset({"holoq-vla-calibration", "foldquant-baseline
 METHODS: dict[str, tuple[str, str, str]] = {
     # HoloQ-VLA style: SVD·Hadamard blocks, per-token LLM, per-step per-channel DiT.
     "holoq": ("svd_hadamard", "dynamic-per-token", "static-per-step-per-channel"),
-    # DuQuant style as Omega-QVLA runs it: SVD-only blocks, frozen per-channel q99.9 everywhere.
+    # DuQuant style as HoloQ-VLA runs it: SVD-only blocks, frozen per-channel q99.9 everywhere.
     "duquant": ("svd", "static-per-channel", "static-per-channel"),
 }
 
@@ -163,7 +163,7 @@ class BaselineCalibrationCollector:
                 self._dit_rows[target.name] = [0] * self.num_steps
             self._handles.append(target.module.register_forward_pre_hook(self._hook(target)))
 
-    # ------------------------------------------------------------------ hooks
+    # hooks
     def _hook(self, target: QuantTarget):
         def collect(_module: nn.Module, args: tuple[Any, ...]) -> None:
             if not args or not isinstance(args[0], torch.Tensor):
@@ -187,7 +187,7 @@ class BaselineCalibrationCollector:
         return collect
 
     def _collect_channel_max(self, name: str, rows: torch.Tensor) -> None:
-        """Omega-QVLA ``PercentileCalibrator``: per-channel quantile, running max."""
+        """HoloQ-VLA ``PercentileCalibrator``: per-channel quantile, running max."""
 
         quantile = _per_channel_quantile(rows, self.percentile / 100.0).cpu()
         previous = self._channel_max.get(name)
@@ -248,7 +248,7 @@ class BaselineCalibrationCollector:
         self._handles.clear()
         self._closed = True
 
-    # --------------------------------------------------------------- finalize
+    # finalize
     def _static_per_channel_scale(self, name: str) -> torch.Tensor:
         values = self._channel_max.get(name)
         if values is None:

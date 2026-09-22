@@ -1,10 +1,9 @@
 # FoldQuant on GR00T N1.6
 
-This folder is the whole of what FoldQuant adds to the upstream GR00T N1.6.1
-release. The `gr00t` package, its data path, its LIBERO rollout loop and the
-timing loop of `scripts/deployment/benchmark_inference.py` are used unchanged;
-the algorithm, the ONNX emitters and the TensorRT plugins are the top-level
-[`foldquant`](../../../foldquant) package.
+This adapter integrates FoldQuant with GR00T N1.6.1, using upstream
+data loading, LIBERO evaluation, and benchmarking. The shared
+[`foldquant`](../../../foldquant) package provides quantization, ONNX export,
+and TensorRT plugins.
 
 Two modules of the policy are replaced by FoldQuant plugin graphs:
 
@@ -36,6 +35,7 @@ TensorRT ≥ 10.14). From this directory:
 
 ```bash
 uv sync --python 3.10           # upstream environment
+source .venv/bin/activate
 uv pip install -e ../..         # the foldquant package into it
 python -m foldquant.kernels build   # compile the plugin libraries for this GPU / TensorRT
 ```

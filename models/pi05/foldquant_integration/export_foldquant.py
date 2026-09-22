@@ -150,11 +150,9 @@ def capture_shape_metadata(policy, observation: dict[str, Any], *, seed: int) ->
     return seen
 
 
-
-# ---------------------------------------------------------------------------
 # Float engines under the KV-stack contract. Pi0.5's
 # prefix seam already receives upstream's 4-D additive mask, so it passes through.
-# ---------------------------------------------------------------------------
+
 class _Stop(Exception):
     pass
 

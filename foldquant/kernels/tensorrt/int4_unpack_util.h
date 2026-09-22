@@ -1,7 +1,7 @@
 #pragma once
 // Host-side INT4 nibble unpack shared by the INT8 per-row plugins' W4A8 mode.
 //
-// The packing is omega_rotation.pack_int4_nibbles (the single producer): for
+// The packing is rotation.pack_int4_nibbles (the single producer): for
 // each output row, byte b holds column 2b in the LOW nibble and column 2b+1 in
 // the HIGH nibble, two's-complement signed. The unpacked INT8 tensor keeps the
 // INT4 grid (-8..7) and the per-row INT4 scale, so an INT8 GEMM over it is the

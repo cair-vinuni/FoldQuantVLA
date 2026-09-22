@@ -68,9 +68,8 @@ from foldquant.weights import (
 
 __all__ = ["build_llm_plugin_onnx", "resolve_qwen3_decoder"]
 
-# ============================================================================
+
 # Byte / initializer helpers
-# ============================================================================
 
 
 def _bytes_f32(arr: Any) -> bytes:
@@ -112,9 +111,8 @@ def _torch() -> Any:
     return torch
 
 
-# ============================================================================
 # Quantization width (W8A8 vs W4A4)
-# ============================================================================
+
 
 # The graph topology is identical at both widths: ``bits`` selects only the
 # plugin pair, the weight-attribute name, and the weight packer. INT4 weights
@@ -123,7 +121,7 @@ def _torch() -> Any:
 # per-output-row scale RTN would pick, so the packed layout and the s4 epilogue
 # are untouched.
 
-# Must stay in lockstep with omega_rotation._QMAX_I4; both feed pack_int4_nibbles.
+# Must stay in lockstep with rotation._QMAX_I4; both feed pack_int4_nibbles.
 _QMAX_I4 = 7.0
 
 
@@ -149,7 +147,7 @@ def _pack_int8(weight: Any, prep: "dict | None", row_clip: Any = None) -> "tuple
 def _pack_int4(weight: Any, prep: "dict | None", row_clip: Any = None) -> "tuple[bytes, bytes]":
     """Per-output-row symmetric INT4 via GPTQ: ``(N, K/2)`` nibbles + ``(N,)`` scales.
 
-    The nibble packing is :func:`omega_rotation.pack_int4_nibbles`, the one
+    The nibble packing is :func:`rotation.pack_int4_nibbles`, the one
     place the byte order lives, shared with the DiT/expert packers, because a
     flipped order builds, loads and runs, and produces noise rather than an
     error.
@@ -158,7 +156,7 @@ def _pack_int4(weight: Any, prep: "dict | None", row_clip: Any = None) -> "tuple
         MissingHessianError,
         gptq_quant_codes,
     )
-    from foldquant.omega_rotation import pack_int4_nibbles
+    from foldquant.rotation import pack_int4_nibbles
 
     if prep is None:
         raise MissingHessianError(
@@ -183,9 +181,7 @@ _LLM_WIDTH: "dict[int, _WidthSpec]" = {
 _LLM_W4A8 = _WidthSpec("FusedRmsNormLinearInt8", "PerRowInt8LinearResidual", "weight_i4", _pack_int4, True, 8)
 
 
-# ============================================================================
 # RoPE / causal mask precomputation
-# ============================================================================
 
 
 def _compute_qwen3_rope(max_s: int, head_dim: int, theta: float = 1000000.0) -> Any:
@@ -304,9 +300,7 @@ def resolve_qwen3_decoder(qwen3_model: Any) -> Any:
     return qwen3_model
 
 
-# ============================================================================
 # Per-layer ONNX emitter
-# ============================================================================
 
 
 def _emit_gelu_tanh(nodes: list, inits: list, name: str, x: str, out: str) -> None:
@@ -427,7 +421,7 @@ def _emit_layer(
     kv_dim = hkv * d
     qkv_out = q_dim + 2 * kv_dim
 
-    # ===== Plugin 1: input_layernorm + merged QKV =====
+    # Plugin 1: input_layernorm + merged QKV
     torch = _torch()
     w_q = layer_state["self_attn.q_proj.weight"]
     w_k = layer_state["self_attn.k_proj.weight"]
@@ -495,7 +489,7 @@ def _emit_layer(
     nodes.append(oh.make_node("Transpose", [f"{b}_k_4"], [f"{b}_k_t"], perm=[0, 2, 1, 3]))
     nodes.append(oh.make_node("Transpose", [f"{b}_v_4"], [f"{b}_v_t"], perm=[0, 2, 1, 3]))
 
-    # ===== q_norm / k_norm: head-dim RMSNorm in BF16 ONNX ops =====
+    # q_norm / k_norm: head-dim RMSNorm in BF16 ONNX ops
     # Qwen3 only. Qwen2 has no per-head norms; RoPE reads the raw heads.
     has_qk_norm = "self_attn.q_norm.weight" in layer_state
     inits.append(_bf16_initializer(f"{b}_eps_bf16", torch.tensor(eps, dtype=torch.bfloat16)))
@@ -519,7 +513,7 @@ def _emit_layer(
     else:
         q_for_rope, k_for_rope = f"{b}_q_t", f"{b}_k_t"
 
-    # ===== RoPE =====
+    # RoPE
     half = d // 2
     inits.append(_i64_init(f"{b}_split_half", [half, half]))
 
@@ -534,7 +528,7 @@ def _emit_layer(
     _emit_rope(q_for_rope, f"{b}_q_r")
     _emit_rope(k_for_rope, f"{b}_k_r")
 
-    # ===== repeat_kv (GQA): (B, HKV, S, D) -> (B, H, S, D) =====
+    # repeat_kv (GQA): (B, HKV, S, D) -> (B, H, S, D)
     # Target shape is a runtime tensor (KV_SHAPE_DYN), not a constant: a baked
     # [1, h, -1, d] would pin the graph to batch 1, with every later sample reading
     # sample 0's K/V and no shape error to signal it.
@@ -549,7 +543,7 @@ def _emit_layer(
     _emit_repeat_kv(f"{b}_k_r", f"{b}_k_full")
     _emit_repeat_kv(f"{b}_v_t", f"{b}_v_full")
 
-    # ===== SDPA (BF16 ONNX, Myelin fuses to a single flash-attention kernel) =====
+    # SDPA (BF16 ONNX, Myelin fuses to a single flash-attention kernel)
     nodes.append(oh.make_node("Transpose", [f"{b}_k_full"], [f"{b}_k_T"], perm=[0, 1, 3, 2]))
     nodes.append(oh.make_node("MatMul", [f"{b}_q_r", f"{b}_k_T"], [f"{b}_qk"]))
     inits.append(_bf16_initializer(f"{b}_attn_scale", torch.tensor(1.0 / math.sqrt(d), dtype=torch.bfloat16)))
@@ -562,7 +556,7 @@ def _emit_layer(
     nodes.append(oh.make_node("Reshape", [f"{b}_attn_perm", f"{b}_attn_flat_shape"], [f"{b}_attn_flat"], allowzero=0))
     attn_flat_name = f"{b}_attn_flat"
 
-    # ===== Plugin 2: o_proj + residual =====
+    # Plugin 2: o_proj + residual
     w_o = layer_state["self_attn.o_proj.weight"]
     nodes.append(
         oh.make_node(
@@ -581,7 +575,7 @@ def _emit_layer(
         )
     )
 
-    # ===== Plugin 3: post_attention_layernorm + merged gate+up GEMM =====
+    # Plugin 3: post_attention_layernorm + merged gate+up GEMM
     w_g = layer_state["mlp.gate_proj.weight"]
     w_u = layer_state["mlp.up_proj.weight"]
     w_gu = torch.cat([w_g, w_u], dim=0)
@@ -615,7 +609,7 @@ def _emit_layer(
         nodes.append(oh.make_node("Mul", [f"{b}_gate", f"{b}_gate_sig"], [f"{b}_gact"]))
     nodes.append(oh.make_node("Mul", [f"{b}_gact", f"{b}_up"], [f"{b}_ff_mid"]))
 
-    # ===== Plugin 4: down_proj + residual =====
+    # Plugin 4: down_proj + residual
     w_d = layer_state["mlp.down_proj.weight"]
     out_name = f"{b}_layer_out"
     nodes.append(
@@ -637,14 +631,10 @@ def _emit_layer(
     return out_name
 
 
-# ============================================================================
 # Public entry point
-# ============================================================================
 
 
-# ============================================================================
 # GR00T N1.7 (Qwen3-VL) extras: M-RoPE computed in-graph + deepstack residuals
-# ============================================================================
 
 
 def _emit_mrope_compute(
@@ -806,9 +796,7 @@ def _emit_deepstack_add(
     nodes.append(oh.make_node("Add", [cur_x_name, f"_ds{suffix}_delta"], [out_name]))
 
 
-# ============================================================================
 # Public entry point
-# ============================================================================
 
 
 def build_llm_plugin_onnx(

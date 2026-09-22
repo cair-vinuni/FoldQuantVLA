@@ -1,13 +1,10 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Rebuild the custom TensorRT plugin ``.so`` from vendored source (build-time).
+"""Build TensorRT plugins from the packaged CUDA sources.
 
-When no committed binary matches the running device, the build path compiles the
-kernels under :mod:`foldquant.kernels` for the current CUDA arch into the
-out-of-tree cache (never the committed dir). This is build-time only: the runtime
-loader (:mod:`foldquant.kernels.locator`) reads committed/cache
-``.so`` and never triggers a compile.
+Binaries are compiled for the current device and written to the external
+cache. Runtime loading is handled separately by ``kernels.locator``.
 """
 
 from __future__ import annotations

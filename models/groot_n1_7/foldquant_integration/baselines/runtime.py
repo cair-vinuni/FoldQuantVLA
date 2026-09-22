@@ -15,7 +15,7 @@ Three activation-scaling modes are supported, selected per layer record:
 * ``static-per-step-per-channel``:  a calibrated ``[steps, in]`` table indexed
   by the active denoising step (HoloQ-style DiT);
 * ``static-per-channel``:  one calibrated ``[1, in]`` table, frozen, used at
-  every call (DuQuant-style / Omega-QVLA ``PercentileCalibrator``: per-channel
+  every call (DuQuant-style / HoloQ-VLA ``PercentileCalibrator``: per-channel
   q99.9 over the calibration tokens, running max across observations).
 """
 

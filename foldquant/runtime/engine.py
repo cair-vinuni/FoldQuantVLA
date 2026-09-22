@@ -1,26 +1,14 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""TensorRT engine wrapper: deserialize, bind, run.
+"""Run TensorRT engines with torch CUDA tensors.
 
-Binds torch CUDA tensors to the TensorRT execution context by raw device
-pointer (``tensor.data_ptr()``), with no host-side buffer copies. Per-module
-engines run inline inside a larger PyTorch forward pass, where staging through
-host buffers would be pure overhead.
+Device pointers are bound directly to the execution context. Each engine uses
+a dedicated CUDA stream ordered against the caller's stream with events.
 
-Execution uses a dedicated per-engine CUDA stream ordered against the caller's
-stream with events (TensorRT self-synchronizes on the legacy default stream,
-which the caller's ``current_stream()`` usually is).
-
-**CUDA-graph replay** (opt-in, ``FOLDQUANT_TRT_CUDA_GRAPH=1``): per input-shape
-key, the first call captures ``execute_async_v3`` into a ``torch.cuda.CUDAGraph``
-against stable staging buffers; later calls copy inputs into the staging
-buffers and replay. This removes per-call launch overhead (the same benefit
-NVIDIA's ``openpi_on_thor`` reference gets from ``trtexec --useCudaGraph``)
-and matters most for engines called many times per action chunk (Pi0.5's
-expert runs 10×). Outputs keep the existing
-buffer-reuse contract: callers that hold a result across another call of the
-SAME engine must copy.
+``FOLDQUANT_TRT_CUDA_GRAPH=1`` enables capture and replay per input shape,
+using stable staging buffers. Outputs are reused in both modes: copy any
+result that must survive another call to the same engine.
 """
 
 from __future__ import annotations
@@ -118,9 +106,9 @@ class TensorRTEngine:
             else:
                 self.out_meta.append((name, shape, dtype))
 
-    # ------------------------------------------------------------------
+
     # Shape / I/O contract validation
-    # ------------------------------------------------------------------
+
 
     def set_runtime_tensor_shape(self, name: str, shape: tuple[int, ...]) -> None:
         """Validate *shape* against the compiled profile bounds, then bind it.
@@ -159,9 +147,9 @@ class TensorRTEngine:
                 f"missing outputs={sorted(missing_out)}, unexpected outputs={sorted(extra_out)}."
             )
 
-    # ------------------------------------------------------------------
+
     # Execution
-    # ------------------------------------------------------------------
+
 
     def _bind_input(self, name: str, dtype: torch.dtype, tensor: torch.Tensor, skip_checks: bool) -> torch.Tensor:
         if not skip_checks:

@@ -124,7 +124,7 @@ def build_svd_hadamard_transform(
 
     ``rotation_mode="svd_hadamard"`` (HoloQ-style) multiplies each block's left
     singular vectors by a sign-randomised Hadamard; ``"svd"`` (DuQuant-style,
-    Omega-QVLA ``rot_mode=svd``) keeps the singular vectors alone.
+    HoloQ-VLA ``rot_mode=svd``) keeps the singular vectors alone.
 
     PyTorch stores a linear weight as ``[out, in]``. For row-vector inputs the
     invariant transform is ``X' = X[:, perm] R`` and

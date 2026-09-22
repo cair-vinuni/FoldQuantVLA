@@ -10,8 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [{ name = "The FoldQuant Authors" }]
-# Deliberately loose: the package is installed INTO each model's own
-# environment (models/*/), which pins its own torch / numpy / TensorRT.
+# Model environments under models/ pin their own dependency versions.
 dependencies = [
     "torch>=2.4",
     "numpy>=1.26",
@@ -20,9 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# TensorRT is needed to build and run engines; the model environments pin their
-# own version (10.x on Jetson / the upstream releases, 11.x on newer hosts), so it
-# is not a hard dependency of the algorithm package.
+# TensorRT is optional for quantization and required for engine build/runtime.
 trt = ["tensorrt>=10.3"]
 dev = ["pytest>=7.4", "ruff>=0.7"]
 
@@ -30,8 +27,7 @@ dev = ["pytest>=7.4", "ruff>=0.7"]
 include = ["foldquant*"]
 
 [tool.setuptools.package-data]
-# The plugin sources ship with the package so `python -m foldquant.kernels build`
-# can compile them for whatever device it runs on.
+# Include sources for device-specific builds via `python -m foldquant.kernels build`.
 "foldquant.kernels" = [
     "tensorrt/CMakeLists.txt",
     "tensorrt/**/kernel.cmake",

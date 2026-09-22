@@ -29,10 +29,10 @@ from .llm_rotation_sq import (
 )
 from .modelopt_int8 import MODELOPT_W4A16_AWQ, MODELOPT_W8A8_SMOOTHQUANT
 
-# --- dynamic per-row baseline (every module) --------------------------------
+# dynamic per-row baseline (every module)
 W8A8 = "w8a8"
 
-# --- action-module schemes ----------------------------------------------------
+# action-module schemes
 #: SmoothQuant fold + learned dense block rotation, INT4 weights and activations.
 W4A4_SR = "w4a4_sr"
 #: Same fold with the fixed Sylvester butterfly (FWHT) instead of a stored matrix:
@@ -50,7 +50,7 @@ ACT_FWHT_SCHEMES: FrozenSet[str] = frozenset({W4A4_SH, W4A4_SHG, W8A8_SH})
 ACT_FOLDED_SCHEMES: FrozenSet[str] = ACT_W4A4_SCHEMES | {W8A8_SH}
 ACT_MODULES: FrozenSet[str] = frozenset({"dit", "expert"})
 
-# --- LLM schemes ------------------------------------------------------------
+# LLM schemes
 #: The LLM defaults at each width: SmoothQuant + block rotation, GPTQ at 4 bit.
 W8A8_SR = DEFAULT_LLM_INT8_ALGORITHM
 W4A4_SRG = DEFAULT_LLM_INT4_ALGORITHM
@@ -72,7 +72,7 @@ FLOAT = "float"
 Valid for every module, needs no calibration, loads no plugin. ``none`` keeps PyTorch instead."""
 ALL_SCHEMES: FrozenSet[str] = frozenset({W8A8}) | ACT_FOLDED_SCHEMES | LLM_FOLDED_SCHEMES
 
-# --- comparison baselines (not FoldQuant graphs) ------------------------------
+# comparison baselines (not FoldQuant graphs)
 #: NVIDIA ModelOpt Q/DQ graphs, built strongly typed like every other graph; see
 #: :mod:`.modelopt_int8`. Not in :data:`ALL_SCHEMES`: no emitter here produces
 #: them. The GR00T N1.7 integration routes them for its LLM and DiT, the Pi0.5

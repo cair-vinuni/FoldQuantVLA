@@ -1,24 +1,15 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""FoldQuant rotation + INT4 packing for the W4A4 DiT macro plugins.
+"""Rotation, SmoothQuant folding, and INT4 packing for FoldQuant exports.
 
-These reproduce, byte-for-byte, the weight preprocessing the compiled
-``foldquant_int4_per_row`` plugins expect in their ``PluginField`` attributes:
+Provides Hadamard and SVD-based block rotations, channel padding, scale
+folding, and weight serialization. Shared by calibration, action-module
+folding, and the LLM INT4 packer.
 
-  * a composite **SVD·Hadamard input rotation** per weight (``build_rotation`` +
-    ``apply_weight_rotation``), stored as a channel permutation ``perm`` (int32)
-    and a per-block orthogonal matrix stack ``R`` (BF16);
-  * **column-major INT4** packing of the rotated weight (``pack_int4_colmajor``),
-    matching CUTLASS ``ColumnMajor int4b_t`` (see ``dit_int4_rowwise.h``);
-  * an optional **SmoothQuant per-channel activation fold** (``fold_rotation_sq``
-    / ``pack_int4_colmajor_sq``) that absorbs a static per-channel activation
-    scale into the rotation and weight, giving deployable static W4A4;
-  * the ``AdaLNModInt4`` weight-only GEMV packing (``adaln_pack_int4``).
-
-Reproduced verbatim from the GR00T FoldQuant reference; the math must not drift from
-the kernels. Torch is imported lazily (offline, build-time only) so importing
-this module stays cheap. No ``tensorrt``/``.so``/``foldquant.runtime`` imports.
+Packed weights use the column-major layout expected by the TensorRT plugins.
+Byte helpers serialize their INT32 and BF16 fields. Torch is imported inside
+the functions that need it; this module does not load TensorRT plugins.
 """
 
 from __future__ import annotations
@@ -33,15 +24,12 @@ logger = logging.getLogger(__name__)
 _QMAX_I4 = 7  # symmetric INT4: values in [-7, 7]
 
 
-# ---------------------------------------------------------------------------
 # PluginField byte helpers (exact layouts the plugins read)
-# ---------------------------------------------------------------------------
 
 
 def to_bytes_i32(arr: Any) -> bytes:
     """Flatten to contiguous INT32 bytes (PluginField ``kINT32`` payload)."""
-    # bytes(...) so the declared return type holds: numpy stubs type tobytes()
-    # as Any, which this repo's mypy config rejects as an implicit Any return.
+    # Keep the return type explicit for NumPy stubs that type tobytes() as Any.
     return bytes(np.ascontiguousarray(arr).flatten().astype(np.int32).tobytes())
 
 
@@ -63,9 +51,7 @@ def to_bytes_bf16(arr_or_tensor: Any) -> bytes:
     return bytes(rounded.tobytes())
 
 
-# ---------------------------------------------------------------------------
 # Rotation builders
-# ---------------------------------------------------------------------------
 
 
 def normalized_hadamard(n: int) -> Any:
@@ -223,9 +209,7 @@ def fold_rotation_sq(R: Any, s_ch: Any) -> Any:
     return R / s_ch.to(R.device).float().reshape(nbk, 1, bs)
 
 
-# ---------------------------------------------------------------------------
 # INT4 weight packing
-# ---------------------------------------------------------------------------
 
 
 def pack_int4_nibbles(codes: Any) -> np.ndarray:

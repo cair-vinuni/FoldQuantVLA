@@ -24,14 +24,14 @@ constexpr char const* kPLUGIN_NAMESPACE{"gr00t::v1"};
 
 inline size_t alignUp128(size_t n) { return (n + 127) & ~static_cast<size_t>(127); }
 
-inline size_t workspaceBytes(int64_t M, int32_t K, bool omega) {
-    // packed int4 activation (M, K/2 bytes) + per-row FP32 scale (M,). Ω mode
+inline size_t workspaceBytes(int64_t M, int32_t K, bool dense_rotation) {
+    // packed int4 activation (M, K/2 bytes) + per-row FP32 scale (M,). dense-rotation mode
     // adds two BF16 staging buffers (permuted x, rotated x) for the cuBLAS
     // rotation; FWHT mode asks for exactly what it always did, so engines built
     // before that path existed keep a valid memory plan.
     size_t a = alignUp128(static_cast<size_t>(M) * (K / 2));
     size_t s = alignUp128(static_cast<size_t>(M) * sizeof(float));
-    if (!omega) return a + s;
+    if (!dense_rotation) return a + s;
     size_t x = alignUp128(static_cast<size_t>(M) * K * sizeof(uint16_t));
     return a + s + 2 * x;
 }
@@ -241,20 +241,20 @@ int32_t PerRowInt4LinearResidualPlugin::enqueue(PluginTensorDesc const* inputDes
         // Hadamard, weight side folded offline with W·Hᵀ. An engine baked with
         // NEITHER field set quantizes un-rotated (rot_bs <= 1 delegates).
         //
-        // Fail LOUD on a mis-baked Ω field set: perm-without-rotation would
+        // Fail LOUD on a mis-baked dense-rotation field set: perm-without-rotation would
         // dereference a null device pointer inside the kernel, and block_size
         // <= 0 makes the rotate-quant launcher an empty *success* that leaves
         // the workspace uninitialized, and the GEMM would then emit confident
-        // garbage with no symptom. Mixing Ω fields with an FWHT rot_block_size
+        // garbage with no symptom. Mixing dense-rotation fields with an FWHT rot_block_size
         // is contradictory (two different rotations for one baked weight).
         int rc;
         if (!mPermHost.empty() || !mRotationHost.empty()) {
-            const bool omega_complete =
+            const bool dense_rotation_complete =
                 !mPermHost.empty() && !mRotationHost.empty() && mBlockSize > 0 &&
                 static_cast<int32_t>(mPermHost.size()) == mK &&
                 static_cast<int32_t>(mRotationHost.size()) == (mK / mBlockSize) * mBlockSize * mBlockSize &&
                 mRotBlockSize <= 1;
-            if (!omega_complete) return -2;
+            if (!dense_rotation_complete) return -2;
             if (mCublasHandle == nullptr) return -3;
             // permute -> cuBLAS strided-batched block rotation -> per-row quant.
             // The single fused kernel this replaces launched grid(M) blocks (10
@@ -327,7 +327,7 @@ PluginFieldCollection const* PerRowInt4LinearResidualPlugin::getFieldsToSerializ
     mDataToSerialize.emplace_back(PluginField("rotation", mRotationHost.data(),
         PluginFieldType::kFLOAT32, static_cast<int32_t>(mRotationHost.size())));
     // FWHT + SmoothQuant: the butterfly has no coefficients to absorb the
-    // per-channel scale the dense Ω rotation folds away, so it ships beside it.
+    // per-channel scale the dense rotation folds away, so it ships beside it.
     mDataToSerialize.emplace_back(PluginField("act_scale_ch", mActScaleChHost.data(),
         PluginFieldType::kFLOAT32, static_cast<int32_t>(mActScaleChHost.size())));
     mDataToSerialize.emplace_back(PluginField("act_scale_pre", mActScalePreHost.data(),
@@ -335,7 +335,7 @@ PluginFieldCollection const* PerRowInt4LinearResidualPlugin::getFieldsToSerializ
     mDataToSerialize.emplace_back(PluginField("N", &mN, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("K", &mK, PluginFieldType::kINT32, 1));
     mDataToSerialize.emplace_back(PluginField("block_size", &mBlockSize, PluginFieldType::kINT32, 1));
-    // FWHT mode must survive engine serialize exactly like the Ω fields: the
+    // FWHT mode must survive engine serialize exactly like the dense-rotation fields: the
     // baked weights are already folded with W·Hᵀ and a deserialized engine that
     // lost rot_block_size would run un-rotated with no visible symptom.
     mDataToSerialize.emplace_back(PluginField("rot_block_size", &mRotBlockSize, PluginFieldType::kINT32, 1));

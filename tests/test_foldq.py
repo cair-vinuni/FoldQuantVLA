@@ -16,7 +16,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from foldquant import foldq  # noqa: E402
-from foldquant import omega_rotation as omega  # noqa: E402
+from foldquant import rotation as rotations  # noqa: E402
 from foldquant.foldq import fold_site, rotation_block_for  # noqa: E402
 
 
@@ -60,12 +60,12 @@ def test_the_fold_is_exact_before_quantization(fold_order: str) -> None:
     w = torch.randn(48, k)
     x = torch.randn(6, k)
     s = torch.rand(k) + 0.5
-    perm, rot = omega.hadamard_blocks(k, bs)
-    folded = omega.fold_weight_sq(w, perm, rot, s, bs, fold_order)
+    perm, rot = rotations.hadamard_blocks(k, bs)
+    folded = rotations.fold_weight_sq(w, perm, rot, s, bs, fold_order)
     if fold_order == "before":
-        xq = omega.apply_rotation(x / s, perm, rot, bs)
+        xq = rotations.apply_rotation(x / s, perm, rot, bs)
     else:
-        xq = omega.apply_rotation(x, perm, rot, bs) / s
+        xq = rotations.apply_rotation(x, perm, rot, bs) / s
     assert torch.allclose(xq @ folded.T, x @ w.T, atol=1e-3)
 
 
@@ -98,19 +98,19 @@ def test_the_fold_is_exact_through_zero_padding(k_real: int, fold_order: str) ->
     w = torch.randn(48, k_real)
     x = torch.randn(6, k_real)
 
-    w_pad = omega.pad_in_dim(w, bs)
-    x_pad = omega.pad_in_dim(x, bs)
+    w_pad = rotations.pad_in_dim(w, bs)
+    x_pad = rotations.pad_in_dim(x, bs)
     assert w_pad.shape[1] == x_pad.shape[1] == ((k_real + bs - 1) // bs) * bs
 
     # what the capture stores: amax of the padded activation, floored like finalize_scales
     s = x_pad.abs().amax(dim=0).clamp_min(1e-8)
 
     perm, rot = foldq.site_rotation(w_pad, bs, True)
-    folded = omega.fold_weight_sq(w_pad, perm, rot, s, bs, fold_order)
+    folded = rotations.fold_weight_sq(w_pad, perm, rot, s, bs, fold_order)
     if fold_order == "before":
-        xq = omega.apply_rotation(x_pad / s, perm, rot, bs)
+        xq = rotations.apply_rotation(x_pad / s, perm, rot, bs)
     else:
-        xq = omega.apply_rotation(x_pad, perm, rot, bs) / s
+        xq = rotations.apply_rotation(x_pad, perm, rot, bs) / s
 
     # the padded product must equal the UNPADDED float product
     assert torch.allclose(xq @ folded.T, x @ w.T, atol=1e-3), (
@@ -129,7 +129,7 @@ def test_the_padded_site_keeps_the_nominal_block(k_real: int) -> None:
     """
     w = torch.randn(48, k_real)
     _, _, spec = foldq.fold_site(
-        omega.pad_in_dim(w, 64),
+        rotations.pad_in_dim(w, 64),
         bits=4,
         block_size=64,
         s_ch=torch.ones(((k_real + 63) // 64) * 64),
@@ -211,7 +211,7 @@ def test_the_hessian_accumulates_the_exact_fp32_per_call_sum(device: str) -> Non
     for _ in range(3):
         x = torch.randn(64, k, device=device)
         accum("s", x)
-        xr = omega.apply_rotation(x.float() / s.to(device), perm, rmat, bs)
+        xr = rotations.apply_rotation(x.float() / s.to(device), perm, rmat, bs)
         expected += (xr.T @ xr).double().cpu()
     assert hess["s"].dtype == torch.float64 and hess["s"].device.type == "cpu"
     assert torch.equal(hess["s"], expected)

@@ -1,44 +1,17 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""NVIDIA ModelOpt Q/DQ baseline arms to compare the FoldQuant folds against.
+"""Export NVIDIA ModelOpt INT8 SmoothQuant and W4A16 AWQ baselines.
 
-Nothing here is a FoldQuant fold. The arms reproduce the authors' framework presets
-``groot_n1_7/tensorrt/modelopt_w8a8_smoothquant``,
-``pi05/tensorrt/modelopt_w8a8_smoothquant`` and
-``groot_n1_7/tensorrt/modelopt_w4a16_awq`` step for step, so its engines
-behave like the ones the framework builds, but it emits graphs under each family's
-FoldQuant I/O contract that the FoldQuant engine builder, verifier and server
-load unchanged:
+Calls are captured from the BF16 policy and replayed per module without
+cascade calibration. ModelOpt quantizes eligible projections, then the
+TorchScript exporter emits opset-20 Q/DQ graphs with each family's bindings.
+Export helpers repair dtypes, cast outputs, consolidate external data, and
+check that Q/DQ nodes survived.
 
-1. **Capture.** Every call a quantized module receives is recorded while the
-   whole bf16 policy replays the calibration observations (seeded per
-   observation). All quantized modules are captured in one float pass, so a
-   downstream module calibrates on float upstream activations (no cascade).
-2. **Quantize.** The key's base config (:data:`BASE_CFG`) with the norm /
-   action-projection leaves excluded, calibrated by replaying the captured calls
-   through the module (:func:`quantize_module`): ``mtq.INT8_SMOOTHQUANT_CFG``
-   (per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant
-   pre-quant scales) for ``modelopt_w8a8_smoothquant``; ``mtq.INT4_AWQ_CFG``
-   (INT4 weights in groups of 128, activations untouched, AWQ ``pre_quant_scale``
-   from the ``awq_lite`` search) for ``modelopt_w4a16_awq``.
-3. **Export.** The legacy TorchScript exporter at opset 20, which ModelOpt's
-   quantizers export as ``QuantizeLinear`` / ``DequantizeLinear`` pairs, then
-   the dtype repairs TensorRT's parser needs (:func:`repair_onnx_dtypes`), a
-   cast of the graph outputs back to the dtype the runtime binds
-   (:func:`cast_graph_outputs`), one external-data sidecar
-   (:func:`consolidate_external_data`) and a check that the Q/DQ nodes survived
-   (:func:`require_qdq`).
-4. **Surgery (weight-only keys only).** TensorRT 10.3 has no INT4 weight-only
-   kernel, so a ``modelopt_w4a16_awq`` graph's ``trt::DequantizeLinear`` weights
-   are rewritten to ``Int4GroupwiseGemmPlugin`` nodes by
-   :mod:`foldquant.int4_groupwise` and the engine loads that plugin library.
-5. **Build.** Strongly typed, like every other graph: the ModelOpt provider
-   records ``builder_flags: {strongly_typed: true}`` for its quantized modules,
-   so the Q/DQ pairs and the bf16 tensors the graph declares are what TensorRT
-   runs. The families' ``build_engines`` already build that way; nothing here.
-
-``modelopt`` is imported lazily; only :func:`quantize_module` needs it.
+W4A16 AWQ weights are rewritten to ``Int4GroupwiseGemmPlugin`` nodes for
+TensorRT 10.3. The family engine builders compile quantized modules with
+strong typing. Only ``quantize_module`` requires the lazy ModelOpt import.
 """
 
 from __future__ import annotations
@@ -144,7 +117,7 @@ def is_weight_only(scheme: Optional[str]) -> bool:
     return scheme in WEIGHT_ONLY_ALGORITHMS
 
 
-# ---------------------------------------------------------------------- capture
+# capture
 
 
 def _snapshot(value: Any) -> Any:
@@ -199,7 +172,7 @@ def replay_loop(calls: Sequence[Tuple[tuple, dict]], target: Optional[nn.Module]
     return _loop
 
 
-# --------------------------------------------------------------------- quantize
+# quantize
 
 
 def apply_layer_exclusions(cfg: Dict[str, Any], module: nn.Module) -> List[str]:
@@ -314,7 +287,7 @@ def quantizer_state(module: nn.Module) -> Dict[str, Dict[str, Any]]:
     return state
 
 
-# ----------------------------------------------------------------------- export
+# export
 
 
 def onnx_export(

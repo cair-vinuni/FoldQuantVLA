@@ -15,7 +15,7 @@ namespace gr00t {
 // ELEMENT count. Reading f.length as elements on the parser path over-reads
 // the payload sizeof(elem)x. That is harmless where only the prefix is consumed, but
 // it bloats every serialized engine by the same factor and breaks any size
-// validation (PerRowInt4LinearResidual's omega-mode check rejected every
+// validation (PerRowInt4LinearResidual's dense-rotation check rejected every
 // correctly-baked expert engine). Normalize to an element count.
 //
 // A 4-byte payload disambiguates the NUL by modulo; 1-byte payloads cannot and

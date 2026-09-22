@@ -55,7 +55,7 @@ int dit_int4_per_row_quant_bf16(
 //                 butterfly bakes no matrix at all.
 //   act_scale_ch: (K,) FP32 post-rotation SmoothQuant scale, or nullptr. The
 //                 rotated value is divided by it before amax/quant, the same
-//                 effect the dense Ω path gets from folding s_ch into its baked
+//                 effect the dense-rotation path gets from folding s_ch into its baked
 //                 matrix (fold_rotation_sq). Requires rot_bs > 1.
 int dit_int4_per_row_quant_fwht_bf16(
     void const* in_bf16,

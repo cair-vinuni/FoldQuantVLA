@@ -1,18 +1,12 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Calibration capture: recover a module's real inputs from a replay callable.
+"""Capture module inputs during calibration replay.
 
-Every FoldQuant export takes a ``forward_loop(module)``: a callable that runs
-the host model over calibration observations so *module* is invoked the way the
-deployment invokes it. The fold needs those inputs (SmoothQuant scales are the
-per-channel amax of the rotated activation; GPTQ Hessians are of the same
-tensor), so the helpers here run the loop under forward-pre-hooks and hand back
-the captured calls in the shape each capture function wants.
-
-Also here: structural detection of the LLM architecture (from the module's own
-config, never a model-family name), the Qwen3-VL graph parameters that are only
-knowable from a captured call, and the loader for learned SmoothQuant scales.
+Forward pre-hooks record calls made by ``forward_loop(module)`` for
+SmoothQuant and GPTQ calibration. This module also detects LLM architectures
+from their configs, extracts Qwen3-VL graph parameters from captured calls,
+and loads learned SmoothQuant scales.
 """
 
 from __future__ import annotations
@@ -146,7 +140,7 @@ def captured_prefix_len(snapshots: list) -> int:
     raise ValueError("No captured decoder call carries a 3-D hidden-states tensor to pin the prefix length from.")
 
 
-# --- LLM architecture, decided from the module's config ----------------------
+# LLM architecture, decided from the module's config
 
 
 def _model_type(module: nn.Module) -> str:

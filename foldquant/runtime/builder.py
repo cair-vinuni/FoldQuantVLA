@@ -1,13 +1,11 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Compile a FoldQuant plugin-node ONNX graph into a TensorRT engine.
+"""Compile ONNX graphs into TensorRT engines.
 
-The one rule: the STRONGLY_TYPED vs weakly-typed(+INT8) choice is the
-caller's, recorded next to the export and never re-derived here by inspecting
-the graph. Every plugin-node graph FoldQuant emits is strongly typed (the
-plugins declare their own I/O dtypes); the weakly-typed path exists for the
-float modules of a hybrid deployment (an fp16/bf16 ViT beside a quantized LLM).
+The caller selects strong or weak typing from the export configuration.
+FoldQuant plugin graphs use strong typing; the weakly typed path supports
+float components in hybrid deployments.
 """
 
 from __future__ import annotations

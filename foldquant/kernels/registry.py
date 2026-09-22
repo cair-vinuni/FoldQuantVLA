@@ -1,22 +1,11 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""What each custom kernel is and what it needs to build: the single source of truth.
+"""Kernel metadata shared by the build driver and runtime loader.
 
-Before this existed, "which libraries need CUTLASS" was a set literal inside the
-build driver, one package away from the sources it described. Nothing tied the
-two together, so a kernel could be added with a CUTLASS dependency while the
-driver still believed it had none. That is exactly how ``foldquant_int4_per_row``
-came to be declared CUTLASS-free while its GEMM includes ``<cutlass/cutlass.h>``.
-The failure surfaced as a bare "No such file or directory" mid-compile.
-
-Declaring it here, beside the kernel, means the build driver, the CMake glue and
-the environment report all read one answer. ``test_kernel_registry.py`` checks the
-declarations against the sources on disk, so a drift fails a test rather than a
-build.
-
-This module is import-light and neutral: no torch, no CUDA, no
-the export code. Both the runtime loader and the build path read it.
+Each entry declares its sources, dependencies, and initialization symbols.
+``tests/test_kernel_registry.py`` checks these against the source tree.
+This module requires neither torch nor CUDA.
 """
 
 from __future__ import annotations

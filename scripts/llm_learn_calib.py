@@ -2,37 +2,19 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Learnable calibration for the FoldQuant W4A4 LLM (OmniQuant-style, kernel unchanged).
+"""Learn W4A4 LLM scales and clipping parameters by layer reconstruction.
 
-Per decoder layer, three fold-compatible parameter sets are learned by block-wise
-reconstruction against the float layer under the deployed W4A4 numerics (STE):
+Optimizes SmoothQuant channel scales, activation clips, and per-row weight
+clips with a straight-through estimator. The Hadamard rotation stays fixed.
+Layers use quantized upstream outputs as inputs and float outputs as targets.
 
-* ``s``:     the SmoothQuant per-channel scales of the qkv / gateup / down sites
-             (learnable equivalent transform; folded into gamma / up rows exactly
-             as ``apply_sq_fold`` does), initialised from the ARC ``sq_alpha``.
-* ``clip``:  the per-(layer, site) activation clip ratio (the plugin's
-             ``act_clip_ratio`` attribute, one value per node), initialised from
-             the ARC global value.
-* ``gamma``: a per-output-row weight clipping (LWC) of the INT4 weight scale;
-             any per-row scale is what the plugin's ``weight_scale`` epilogue
-             consumes, so it deploys unchanged.
+Scores use GPTQ emulation on held-out episodes, paired against the ARC
+baseline at both the decoder output and decoded actions. Outputs are learned
+tensors in ``<out>.pt`` and scores in ``<out>.json``. Pass the tensor path via
+``--llm-params '{"learned_calib": "<out>.pt"}'`` during export.
 
-The rotation stays the fixed block Hadamard. Layers are trained in order with the
-quantized stack's own outputs as inputs (OmniQuant / BRECQ convention) and the
-float stack's outputs as targets. The result is scored on HELD-OUT observations
-(episodes disjoint from the calibration split) with the kernel-statistics-matched
-emulation (GPTQ weights, as deployed), paired per observation against the ARC
-baseline, on both the LLM seam and the decoded action.
-
-Outputs ``<out>.pt`` (learned tensors; consumed by the export through
-``--llm-params '{"learned_calib": "<out>.pt", ...}'``, see
-``foldquant.calibrate.load_learned_calib``) and ``<out>.json`` (scores).
-
-Run from ``models/<family>/`` in that family's virtualenv::
-
-  python ../../scripts/llm_learn_calib.py --family groot_n1_6 \\
-      --model-path <ckpt> --embodiment-tag libero_panda --dataset-path <libero_4suite> \\
-      --alpha 0.6 --clip 0.85 --output ../../exports/learn_calib_n16
+Run from the selected GR00T family directory and virtualenv;
+see ``scripts/README.md`` for examples.
 """
 
 from __future__ import annotations
@@ -165,7 +147,7 @@ def main() -> None:
     layers = list(decoder.layers)
     H = _hadamard(args.rot_block_size).to(device)
 
-    # ---------------- capture: decoder-level snapshots (calib + held-out) ----------------
+    # capture: decoder-level snapshots (calib + held-out)
     calib_snaps = run.capture()[: args.max_samples]
     ho_snaps = run.capture(run.heldout)[: args.score_samples]
     ho_observations = run.heldout[: len(ho_snaps)]
@@ -181,7 +163,7 @@ def main() -> None:
 
     sq0 = compute_sq_scales_llm(decoder, calib_snaps, alpha=args.alpha, forward_fn=_fwd)
 
-    # ---------------- capture: layer-0 inputs + per-layer kwargs on the float stack ----------------
+    # capture: layer-0 inputs + per-layer kwargs on the float stack
     x_f: List[torch.Tensor] = []
     kw_f: List[Dict[str, Any]] = []
 
@@ -211,7 +193,7 @@ def main() -> None:
         kw["use_cache"] = False
         return kw
 
-    # ---------------- per-layer reconstruction ----------------
+    # per-layer reconstruction
     learned_sq: Dict[str, torch.Tensor] = {}
     learned_clip: Dict[str, float] = {}
     learned_gamma: Dict[str, torch.Tensor] = {}
@@ -342,7 +324,7 @@ def main() -> None:
         )
         logger.info("saved per-layer stage to %s.layer.pt", args.output)
     if args.objective in ("e2e", "both"):
-        # ---------------- joint end-to-end stage: decoder-output cosine ----------------
+        # joint end-to-end stage: decoder-output cosine
         te = time.time()
         inner.to("cpu")
         decoder.to(device)
@@ -502,7 +484,7 @@ def main() -> None:
     )
     logger.info("saved %s.pt", args.output)
 
-    # ---------------- held-out scoring (deployed numerics: GPTQ weights) ----------------
+    # held-out scoring (deployed numerics: GPTQ weights)
     with torch.inference_mode():
         ho_ref = [_dec_out(decoder(*s[0], **s[1])).detach().clone() for s in ho_snaps]
 

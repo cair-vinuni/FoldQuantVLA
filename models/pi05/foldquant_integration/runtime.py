@@ -132,7 +132,7 @@ def expert_view(policy) -> Pi05ExpertView:
     return Pi05ExpertView(model_of(policy))
 
 
-# ------------------------------------------------------------------ KV cache
+# KV cache
 
 
 def stack_cache(cache: Any) -> torch.Tensor:
@@ -151,7 +151,7 @@ def cache_from_stack(kv_stack: torch.Tensor) -> Any:
     return cache
 
 
-# ------------------------------------------------------------------ the seams
+# the seams
 
 
 def _prefix_forward(pwe: torch.nn.Module, engine: TensorRTEngine | None) -> Callable[..., Any]:

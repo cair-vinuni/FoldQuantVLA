@@ -1,18 +1,11 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Make the FoldQuant TensorRT plugins available to this process.
+"""Load TensorRT plugins before graph parsing or engine deserialization.
 
-TensorRT resolves plugin creators (namespace / name / version) when the ONNX
-parser sees a plugin node and again when an engine is deserialized, so the
-``.so`` must be ``dlopen``-ed before either. Two call sites, two policies:
-
-* :func:`prepare_plugins`: at BUILD time, resolve the device-matched binary,
-  rebuilding from the vendored sources into the cache when this device matches
-  nothing committed, then load.
-* :func:`load_plugins`: at RUN time, resolve and load only; a missing binary is
-  a deployment error (:class:`foldquant.kernels.locator.MissingPluginError`),
-  never a silent mid-inference rebuild.
+``prepare_plugins`` resolves or builds libraries, then loads them for an
+engine build. ``load_plugins`` only resolves and loads existing binaries;
+missing libraries raise ``MissingPluginError`` at runtime.
 """
 
 from __future__ import annotations

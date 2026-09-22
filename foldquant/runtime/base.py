@@ -1,12 +1,7 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Structural contract shared by every compiled-engine wrapper.
-
-:class:`~foldquant.runtime.engine.TensorRTEngine` satisfies this, and so can
-any other compiled-engine wrapper a host model wants to swap in, so a drop-in
-module never branches on which runtime backs it.
-"""
+"""Common interface for compiled-engine wrappers used by model adapters."""
 
 from __future__ import annotations
 

@@ -2,25 +2,11 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 #
-# Invariants every committed record must satisfy. Reads results/ only (no GPU,
-# no engines, no upstream environment), so a reviewer can run it on a clone.
+# Check committed results without a GPU, engines, or model dependencies.
 #
 #   python scripts/check_records.py
 #
-# These are not style checks. Each one is here because violating it produced a
-# wrong number that looked plausible:
-#
-#   ladder      a float engine cannot drift further from the bf16 reference than
-#               an INT8 engine built from the same graph. When it did, the float
-#               arm had been compiled weakly typed and TensorRT ran layers in
-#               fp32: more exact than the reference, so further from it.
-#   scope       two arms called "float" existed in one family, one covering the
-#               action head alone and one covering both modules, with nothing in
-#               the record to tell them apart.
-#   provenance  a record must not carry the operator's filesystem. eval_libero
-#               wrote model_path verbatim while every other tool scrubbed it.
-#   split       a graph-versus-precision split is only meaningful if the float
-#               arm it divides by has the same scope as the quantized arm.
+# Checks cover float/W8A8 drift, declared scope, held-out samples, and local paths.
 
 from __future__ import annotations
 
@@ -32,9 +18,7 @@ from pathlib import Path
 RESULTS = Path(__file__).resolve().parent.parent / "results"
 FAMILIES = ("groot_n1_7", "groot_n1_6", "groot_n1_5", "pi05")
 SEAM_KEYS = ("backbone_features", "kv_stack")
-# Absolute home-directory paths, in the three shapes an operator's machine writes them.
-# Deliberately name-agnostic: hardcoding the current operator's username would pass on
-# anyone else's machine, and would put the name being hidden into the file that hides it.
+# Match Linux, macOS, and Windows home paths without depending on a username.
 LEAKY = re.compile(r"(?:/home/|/Users/)[^/\"\s]+/|[A-Za-z]:\\\\+Users\\\\+")
 
 
@@ -60,16 +44,10 @@ def check() -> list[str]:
         for p in sorted((RESULTS / fam).glob("*/verify*.json")):
             arms[p.parent.name] = json.loads(p.read_text())
 
-        # ---- ladder: float must be at least as close to bf16 as W8A8.
-        # Compared on the median. The mean mixes two modes of a clipped action
-        # space -- fully railed chunks score 1.000 by construction, barely-moving
-        # ones let a small error swing the cosine to near zero -- so it moves with
-        # how often the arm was railed, not with how faithful the engine was.
-        # Tolerance 1e-3, not 0: a float TensorRT kernel and an INT8 plugin reduce in
-        # different orders, and either can land marginally closer to PyTorch. Measured
-        # spread on sound arms is -5.4e-5 to +7.1e-3, so the action cosine alone does
-        # not discriminate; the seam check below is the one that caught every real
-        # defect (pi05 0.3981 against 0.9880, N1.6 0.3783 against 0.5667).
+        # ladder: float must be at least as close to bf16 as W8A8.
+        # Clipped actions produce a bimodal cosine distribution; compare medians.
+        # Allow 1e-3 for reduction-order differences, then check the backbone
+        # output separately to catch errors that action clipping can obscure.
         if "float" in arms and "w8a8" in arms:
             f = _action_cos(arms["float"])
             w = _action_cos(arms["w8a8"])
@@ -89,7 +67,7 @@ def check() -> list[str]:
                         f"the float engine is damaging the seam the quantized one preserves."
                     )
 
-        # ---- scope: a float record must say what it covers
+        # scope: a float record must say what it covers
         if "float" in arms:
             r = arms["float"]
             if not r.get("schemes") and not r.get("components"):
@@ -98,14 +76,14 @@ def check() -> list[str]:
                     f"scope is unstated; two arms with different scope have shared this name."
                 )
 
-        # ---- every arm records its held-out status and sample count
+        # every arm records its held-out status and sample count
         for name, r in arms.items():
             if r.get("num_samples") is None:
                 problems.append(f"{fam}/{name}: record has no num_samples")
             if r.get("held_out") is False:
                 problems.append(f"{fam}/{name}: scored on calibration episodes (held_out false)")
 
-    # ---- provenance: no operator filesystem anywhere under results/
+    # provenance: no operator filesystem anywhere under results/
     for p in RESULTS.rglob("*.json"):
         m = LEAKY.search(p.read_text())
         if m:

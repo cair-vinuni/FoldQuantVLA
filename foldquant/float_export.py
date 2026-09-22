@@ -1,17 +1,9 @@
-"""Float (unquantized) engine export: the floor arm of every ladder.
+"""Export unquantized modules with the same bindings as quantized engines.
 
-A module is traced with ``torch.onnx.export`` under the *runtime's* engine
-binding names, so :mod:`build_engines` compiles it and ``install_engines``
-serves it exactly like a plugin graph, with ``plugin_libs`` empty. Nothing
-downstream distinguishes the arms except the precision of the projections,
-which is the property the paper's latency table relies on.
-
-The example inputs are not invented: the module's real call is captured by a
-forward pre-hook during one iteration of the same ``forward_loop`` the
-quantized exports calibrate on, so shapes, dtypes and every non-tensor kwarg
-(``output_hidden_states``, ``return_all_hidden_states``, ...) are the deployed
-ones. Each family declares only the mapping from engine binding name to the
-module's keyword, the same mapping its ``runtime.py`` applies in reverse.
+A forward pre-hook captures a real call during calibration replay, preserving
+its shapes, dtypes, and non-tensor kwargs. Each family maps engine binding
+names to module keywords, matching its runtime adapter. The resulting graph
+uses the common engine build and installation path with no plugin libraries.
 """
 
 from __future__ import annotations

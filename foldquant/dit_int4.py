@@ -13,7 +13,7 @@ builder via :mod:`dit_common`; only the quantized macro nodes differ.
 
 The shipped scheme is **SmoothQuant-folded** W4A4 (``w4a4_sr``): per-row
 INT4 weights + composite SVD·Hadamard rotation, with a static per-channel activation
-scale absorbed into each rotation + weight (:func:`omega_rotation.fold_rotation_sq` /
+scale absorbed into each rotation + weight (:func:`rotation.fold_rotation_sq` /
 ``pack_int4_colmajor_sq``). The scales come from :func:`compute_dit_sq_scales`, which the
 GR00T N1.6 exporter runs in-process off the build's calibration replay; the builder
 only bakes what it is handed.
@@ -43,7 +43,7 @@ import onnx
 import onnx.helper as oh
 
 from . import foldq
-from . import omega_rotation as omega
+from . import rotation as rotations
 from .calibrate import dit_accepts_masks, dit_inputs_for
 from .dit_common import (
     ATTEND_ALL_MASK,
@@ -75,9 +75,7 @@ _DEFAULT_BLOCK_SIZE = 64
 # same group. Bounds how far the fold can amplify a channel that calibration saw as
 
 
-# ---------------------------------------------------------------------------
 # Per-weight FoldQuant rotation + INT4 pack
-# ---------------------------------------------------------------------------
 
 
 def _cross_kv_weights(w: DiTWeights) -> Any:
@@ -98,16 +96,14 @@ def _cross_kv_weights(w: DiTWeights) -> Any:
     return torch.cat(kv_stack, dim=0)
 
 
-# ---------------------------------------------------------------------------
 # AdaLN (INT4 weight-only) emitter
-# ---------------------------------------------------------------------------
 
 
 def _emit_adaln_int4(w: DiTWeights, idx: int, nodes: list, adaln_act_bits: int) -> None:
     """SiLU(temb) → ``AdaLNModInt4`` (INT4 weight-only GEMV) → split (scale, shift)."""
     wL, bL = w.adaln(idx)
     b = f"block{idx}"
-    w_bytes, sc_bytes, in_d, out_d = omega.adaln_pack_int4(wL)
+    w_bytes, sc_bytes, in_d, out_d = rotations.adaln_pack_int4(wL)
     nodes.append(oh.make_node("Sigmoid", ["temb"], [f"{b}_sig_temb"]))
     nodes.append(oh.make_node("Mul", ["temb", f"{b}_sig_temb"], [f"{b}_silu_temb"]))
     nodes.append(
@@ -121,7 +117,7 @@ def _emit_adaln_int4(w: DiTWeights, idx: int, nodes: list, adaln_act_bits: int) 
             plugin_version=PLUGIN_VERSION,
             weight_i4=w_bytes,
             weight_scale=sc_bytes,
-            bias=omega.to_bytes_bf16(bL),
+            bias=rotations.to_bytes_bf16(bL),
             in_dim=int(in_d),
             out_dim=int(out_d),
             act_bits=int(adaln_act_bits),
@@ -129,9 +125,7 @@ def _emit_adaln_int4(w: DiTWeights, idx: int, nodes: list, adaln_act_bits: int) 
     )
 
 
-# ---------------------------------------------------------------------------
 # Graph builder
-# ---------------------------------------------------------------------------
 
 
 def _build_w4a4_graph(
@@ -172,7 +166,7 @@ def _build_w4a4_graph(
     inits: list = []
     nodes: list = []
 
-    # === Graph inputs / output === (identical IO contract to the INT8 v2 graph)
+    # Graph inputs / output  (identical IO contract to the INT8 v2 graph)
     #
     # Batch is pinned to 1, not symbolic. The fused attention plugins address Q/K/V
     # with a single cuBLAS strided-batched call whose per-batch stride is only
@@ -224,7 +218,7 @@ def _build_w4a4_graph(
             plugin_version=PLUGIN_VERSION,
             **_rot_attr(),
             **_pre_vec("act_scale_pre_enc", (sq_scales or {}).get("encoder")),
-            perm_enc=omega.to_bytes_i32(enc_perm.detach().cpu().numpy()),
+            perm_enc=rotations.to_bytes_i32(enc_perm.detach().cpu().numpy()),
             rotation_enc=(b"" if fwht else to_bytes_f32(enc_R_use.detach().float().cpu().numpy())),
             K_enc=int(kv_dim),
             block_size=int(block_size),
@@ -256,8 +250,8 @@ def _build_w4a4_graph(
         o_i4, o_sc, RO_use = foldq.fold_macro_site(
             wO, permO, RO, block_size, s_o, fold_order=sq_fold_order, gptq=_g(f"block{idx}_o")
         )
-        perm_o_b = omega.to_bytes_i32(permO.detach().cpu().numpy())
-        rot_o_b = b"" if fwht else omega.to_bytes_bf16(RO_use)
+        perm_o_b = rotations.to_bytes_i32(permO.detach().cpu().numpy())
+        rot_o_b = b"" if fwht else rotations.to_bytes_bf16(RO_use)
         # Butterfly sites carry rot_block_size plus the SmoothQuant vector
         # instead of a baked matrix; the scale rides on the raw channel.
         bf_o = _pre_vec("act_scale_pre_o", s_o)
@@ -309,8 +303,8 @@ def _build_w4a4_graph(
                     weight_o_i4=o_i4,
                     weight_o_scale=o_sc,
                     bias_o=to_bytes_f32(bOf),
-                    perm_qkv=omega.to_bytes_i32(permQKV.detach().cpu().numpy()),
-                    rotation_qkv=(b"" if fwht else omega.to_bytes_bf16(RQKV_use)),
+                    perm_qkv=rotations.to_bytes_i32(permQKV.detach().cpu().numpy()),
+                    rotation_qkv=(b"" if fwht else rotations.to_bytes_bf16(RQKV_use)),
                     **bf_qkv,
                     perm_o=perm_o_b,
                     rotation_o=rot_o_b,
@@ -359,8 +353,8 @@ def _build_w4a4_graph(
                     weight_o_i4=o_i4,
                     weight_o_scale=o_sc,
                     bias_o=to_bytes_f32(bOf),
-                    perm_q=omega.to_bytes_i32(permQ.detach().cpu().numpy()),
-                    rotation_q=(b"" if fwht else omega.to_bytes_bf16(RQ_use)),
+                    perm_q=rotations.to_bytes_i32(permQ.detach().cpu().numpy()),
+                    rotation_q=(b"" if fwht else rotations.to_bytes_bf16(RQ_use)),
                     **bf_q,
                     perm_o=perm_o_b,
                     rotation_o=rot_o_b,
@@ -403,11 +397,11 @@ def _build_w4a4_graph(
                 weight_proj2_i4=p2_i4,
                 weight_proj2_scale=p2_sc,
                 bias_proj2=to_bytes_f32(bias_f32(bP2)),
-                perm0=omega.to_bytes_i32(perm0.detach().cpu().numpy()),
-                rotation0=(b"" if fwht else omega.to_bytes_bf16(R0_use)),
+                perm0=rotations.to_bytes_i32(perm0.detach().cpu().numpy()),
+                rotation0=(b"" if fwht else rotations.to_bytes_bf16(R0_use)),
                 **bf_0,
-                perm2=omega.to_bytes_i32(perm2.detach().cpu().numpy()),
-                rotation2=(b"" if fwht else omega.to_bytes_bf16(R2_use)),
+                perm2=rotations.to_bytes_i32(perm2.detach().cpu().numpy()),
+                rotation2=(b"" if fwht else rotations.to_bytes_bf16(R2_use)),
                 **bf_2,
             )
         )
@@ -432,9 +426,7 @@ def _build_w4a4_graph(
     return graph
 
 
-# ---------------------------------------------------------------------------
 # SmoothQuant calibration (offline; produces the sq_scales dict)
-# ---------------------------------------------------------------------------
 
 
 def compute_dit_sq_scales(
@@ -576,9 +568,7 @@ def compute_dit_sq_scales(
     return foldq.finalize_scales(amax)
 
 
-# ---------------------------------------------------------------------------
 # Public entry point
-# ---------------------------------------------------------------------------
 
 
 def build_dit_plugin_onnx_int4(

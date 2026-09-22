@@ -14,8 +14,8 @@
 //   out_i4[m, k/2] nibble(k&1) = q[k] & 0xF                         (even→low, odd→high)
 //
 // R is the per-block rotation stack (nb, bs, bs) FP32, with rx[c] = Σ_i xp[i]·R[i,c]
-// (matches OmegaExportLinear.forward / _omega_apply_weight_rotation in
-// profile_quantization_dit.py). bs (block_size) must be even and a multiple of 32
+// (matches apply_rotation / build_rotation in foldquant/rotation.py).
+// bs (block_size) must be even and a multiple of 32
 // (FoldQuant uses 64); K = nb*bs. Cloned from per_row_quant_int4_cuda.cu.
 //
 // One CUDA block per row, blockDim.x == block_size. The rotation is recomputed in a
