@@ -21,6 +21,12 @@ all four; where a paper table does that, it says so.
 | W8A8 | `w8a8_sr` | `w8a8_sh` | dynamic per-row INT8, folded |
 | W4A4 | `w4a4_srg` | `w4a4_shg` | INT4 weights and activations, folded, GPTQ |
 | W4A4 cascade | `w4a4_srg` | `w4a4_shg` (`--cascade`) | action expert calibrated under the quantized LLM |
+| W4A4 + o/d INT8 | `w4a4_srg` + `site_bits {o: 8, down: 8}` | as W4A4 | site-selective INT8: `o_proj` and `down_proj` held at INT8 inside W4A4 |
+
+Arm names are used the same way in every table here: "float TRT" is the
+unquantized TensorRT arm, "FoldQuant" prefixes this repository's engines where
+a table also lists other methods, and "o/d INT8" is the site-selective arm
+([`SITE_SELECTIVE_INT8.md`](SITE_SELECTIVE_INT8.md)).
 
 For GR00T N1.7 the untouched modules of every TensorRT arm (vision tower, VL
 self-attention, state / action encoders, action decoder) are the upstream float
@@ -163,7 +169,8 @@ timed chunks by default, observation to action chunk, on
 - a Jetson AGX Orin 64 GB (sm87, JetPack TensorRT 10.3),
 
 with float TRT and FoldQuant arms identical apart from the two quantized
-engines. Without a float TRT arm the reference is upstream's PyTorch serving
+engines. Every figure is measured without the runtime's opt-in CUDA-graph
+replay; on π₀.₅ replay moves the ten-step denoise loop by at most 1.5 ms. Without a float TRT arm the reference is upstream's PyTorch serving
 configuration: bf16 eager for N1.5 (served eagerly upstream), and for π₀.₅
 both eager and upstream's `torch.compile(max-autotune)` default (timed end to
 end only, since the FoldQuant seams need the eager model).
@@ -216,13 +223,25 @@ records do not separate the two.
 ## Results
 
 Measured outputs are committed beside this file as `<family>/<arm>/`:
-`verify.json`, `libero/summary.json`, `benchmark.log`, and the arm's
-`foldquant_export.json`. Tables are regenerated from those files, so every cell
-traces to a committed artifact.
+`verify.json` (drift), the arm's `foldquant_export.json` (calibration
+manifest), and latency as `<family>/benchmark.json` (all arms of one family in
+one run) or, for GR00T N1.7, `<family>/<arm>/benchmark.log` (upstream's script
+writes one log per arm). `groot_n1_7/bf16/libero/summary.json` is the
+release-harness LIBERO check below, and `<family>/w4a4/sweep_llm_quant_knobs*.json`
+are the LLM knob sweeps `scripts/README.md` describes. Tables are regenerated from those files,
+so every cell traces to a committed artifact.
 
-Family-specific notes (a reading the files do not support, a correction to
-something already pushed) sit in that family's folder:
-[`groot_n1_7/README.md`](groot_n1_7/README.md).
+The notes beside this file carry the paper's remaining figures:
+
+- [`SITE_SELECTIVE_INT8.md`](SITE_SELECTIVE_INT8.md): the o/d INT8 arm on
+  every checkpoint (fidelity, closed loop, latency, engine bytes).
+- [`EXPERT_PROFILE.md`](EXPERT_PROFILE.md): where a π₀.₅ expert step goes,
+  and the measured direction of the attention fix the paper cites.
+- [`groot_n1_7/HOLOQ_LIBERO.md`](groot_n1_7/HOLOQ_LIBERO.md) and
+  [`pi05/HOLOQ_LIBERO.md`](pi05/HOLOQ_LIBERO.md): FoldQuant engines beside
+  the W4A4 methods HoloQ-VLA tabulates.
+- [`groot_n1_7/README.md`](groot_n1_7/README.md): per-arm N1.7 tables and the
+  per-observation check behind the correlation figures above.
 
 Each integration README has a **smoke check** (16-observation calibration, 8
 held-out observations, one RTX 4070 Ti SUPER) that exercises export → build →
@@ -297,7 +316,7 @@ the graph (see the split above).
 The paper's latency figure, timed with three repeats of sixty iterations after
 ten warm-ups (five repeats for the GR00T eight- and four-bit arms):
 
-| family | eager | torch.compile | TRT bf16 | W8A8 | W4A4 | W4A4 + o/d INT8 | W4A4 vs eager |
+| family | eager | torch.compile | float TRT | W8A8 | W4A4 | W4A4 + o/d INT8 | W4A4 vs eager |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | GR00T N1.7 | 67.8 | 58.05 | 41.5 | 36.5 | 32.6 | 34.0 | 2.08× |
 | GR00T N1.6 | 74.2 | 59.85 | 44.1 | 37.7 | 33.9 | 35.3 | 2.19× |
@@ -317,7 +336,7 @@ uniform W4A4 engine of the same run.
 The paper's Orin figure: sm87, JetPack TensorRT 10.3, batch 1,
 observation-to-action milliseconds.
 
-| family | eager | torch.compile | TRT bf16 | W8A8 | W4A4 | W4A4 + o/d INT8 | ModelOpt W8A8 SQ | ModelOpt W4A16 AWQ |
+| family | eager | torch.compile | float TRT | W8A8 | W4A4 | W4A4 + o/d INT8 | ModelOpt W8A8 SQ | ModelOpt W4A16 AWQ |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | GR00T N1.7 | 351 | 231 | 146 | 127 | 119 | 120 | 137 | 167 |
 | GR00T N1.6 | 333 | 217 | 150 | 137 | 125 | 127 | 142 | 177 |
@@ -341,35 +360,35 @@ intervals describe each arm on its own and do not establish equivalence.
 | family (K) | arm | spatial | object | goal | long | all | 95% CI |
 |---|---|---:|---:|---:|---:|---:|---|
 | GR00T N1.7 (8) | BF16 PyTorch | 97.5 | 100.0 | 97.5 | 90.0 | 96.25 | [94.7, 97.4] |
-| | TRT bf16 | 96.5 | 99.5 | 97.5 | 88.5 | 95.50 | [93.8, 96.7] |
+| | float TRT | 96.5 | 99.5 | 97.5 | 88.5 | 95.50 | [93.8, 96.7] |
 | | ModelOpt W8A8 SQ | 97.0 | 98.5 | 97.5 | 90.0 | 95.75 | [94.1, 96.9] |
 | | ModelOpt W4A16 AWQ | 98.0 | 99.0 | 98.0 | 90.5 | 96.38 | [94.8, 97.5] |
-| | FQ W8A8 | 97.0 | 99.5 | 98.0 | 87.0 | 95.38 | [93.7, 96.6] |
-| | FQ W4A4 | 96.5 | 99.0 | 97.0 | 89.0 | 95.38 | [93.7, 96.6] |
-| | FQ W4A4 + o/d INT8 | 93.5 | 99.5 | 98.0 | 89.0 | 95.00 | [93.3, 96.3] |
+| | FoldQuant W8A8 | 97.0 | 99.5 | 98.0 | 87.0 | 95.38 | [93.7, 96.6] |
+| | FoldQuant W4A4 | 96.5 | 99.0 | 97.0 | 89.0 | 95.38 | [93.7, 96.6] |
+| | FoldQuant W4A4 + o/d INT8 | 93.5 | 99.5 | 98.0 | 89.0 | 95.00 | [93.3, 96.3] |
 | GR00T N1.6 (8) | BF16 PyTorch | 97.0 | 100.0 | 97.0 | 91.5 | 96.38 | [94.8, 97.5] |
-| | TRT bf16 | 98.0 | 100.0 | 96.5 | 96.5 | 97.75 | [96.5, 98.6] |
+| | float TRT | 98.0 | 100.0 | 96.5 | 96.5 | 97.75 | [96.5, 98.6] |
 | | ModelOpt W8A8 SQ | 98.0 | 100.0 | 97.5 | 89.5 | 96.25 | [94.7, 97.4] |
 | | ModelOpt W4A16 AWQ | 94.5 | 99.5 | 96.0 | 95.0 | 96.25 | [94.7, 97.4] |
-| | FQ W8A8 | 95.5 | 100.0 | 94.0 | 93.5 | 95.75 | [94.1, 96.9] |
-| | FQ W4A4 | 95.5 | 96.5 | 96.0 | 95.0 | 95.75 | [94.1, 96.9] |
-| | FQ W4A4 + o/d INT8 | 95.0 | 100.0 | 99.5 | 92.0 | 96.62 | [95.1, 97.7] |
+| | FoldQuant W8A8 | 95.5 | 100.0 | 94.0 | 93.5 | 95.75 | [94.1, 96.9] |
+| | FoldQuant W4A4 | 95.5 | 96.5 | 96.0 | 95.0 | 95.75 | [94.1, 96.9] |
+| | FoldQuant W4A4 + o/d INT8 | 95.0 | 100.0 | 99.5 | 92.0 | 96.62 | [95.1, 97.7] |
 | GR00T N1.5 (1) | BF16 PyTorch | 92.0 | 95.5 | 89.5 | 68.5 | 86.38 | [83.8, 88.6] |
-| | TRT bf16 | 93.0 | 95.5 | 87.0 | 68.5 | 86.00 | [83.4, 88.2] |
+| | float TRT | 93.0 | 95.5 | 87.0 | 68.5 | 86.00 | [83.4, 88.2] |
 | | ModelOpt W8A8 SQ | 91.0 | 93.5 | 87.5 | 63.5 | 83.88 | [81.2, 86.3] |
 | | ModelOpt W4A16 AWQ | 91.5 | 96.0 | 85.0 | 72.5 | 86.25 | [83.7, 88.5] |
-| | FQ W8A8 | 90.5 | 98.0 | 88.5 | 71.5 | 87.12 | [84.6, 89.3] |
-| | FQ W4A4 | 92.5 | 96.5 | 88.0 | 72.5 | 87.38 | [84.9, 89.5] |
-| | FQ W4A4 + o/d INT8 | 91.5 | 97.5 | 90.5 | 68.5 | 87.00 | [84.5, 89.2] |
+| | FoldQuant W8A8 | 90.5 | 98.0 | 88.5 | 71.5 | 87.12 | [84.6, 89.3] |
+| | FoldQuant W4A4 | 92.5 | 96.5 | 88.0 | 72.5 | 87.38 | [84.9, 89.5] |
+| | FoldQuant W4A4 + o/d INT8 | 91.5 | 97.5 | 90.5 | 68.5 | 87.00 | [84.5, 89.2] |
 | π₀.₅ (5) | BF16 PyTorch | 99.5 | 98.0 | 98.0 | 90.5 | 96.50 | [95.0, 97.6] |
-| | TRT bf16 | 100.0 | 100.0 | 99.0 | 93.0 | 98.00 | [96.8, 98.8] |
+| | float TRT | 100.0 | 100.0 | 99.0 | 93.0 | 98.00 | [96.8, 98.8] |
 | | ModelOpt W8A8 SQ | 98.5 | 98.5 | 97.0 | 93.0 | 96.75 | [95.3, 97.8] |
 | | ModelOpt W4A16 AWQ | 99.5 | 98.5 | 98.5 | 95.5 | 98.00 | [96.8, 98.8] |
-| | FQ W8A8 | 99.5 | 99.5 | 96.5 | 94.0 | 97.38 | [96.0, 98.3] |
-| | FQ W4A4 | 98.5 | 99.0 | 98.0 | 93.0 | 97.12 | [95.7, 98.1] |
-| | FQ W4A4 + o/d INT8 | 98.5 | 99.5 | 98.5 | 94.0 | 97.62 | [96.3, 98.5] |
+| | FoldQuant W8A8 | 99.5 | 99.5 | 96.5 | 94.0 | 97.38 | [96.0, 98.3] |
+| | FoldQuant W4A4 | 98.5 | 99.0 | 98.0 | 93.0 | 97.12 | [95.7, 98.1] |
+| | FoldQuant W4A4 + o/d INT8 | 98.5 | 99.5 | 98.5 | 94.0 | 97.62 | [96.3, 98.5] |
 
-The FQ W4A4 expert uses GPTQ and a butterfly rotation with fold-before. The N1.6
+The FoldQuant W4A4 expert uses GPTQ and a butterfly rotation with fold-before. The N1.6
 and N1.7 o/d INT8 arms were built on the dense-rotation calibration preset, whose
 matched uniform-W4A4 partners scored 95.38% and 94.62%; the N1.5 arm shares the
 preset of its printed W4A4 row. H100 executes four-bit operands through an INT8

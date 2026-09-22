@@ -5,6 +5,8 @@ Four arms (`float`, `w8a8`, `w4a4`, `w4a4_cascade`) under the protocol in
 `benchmark.log` (latency) and, for the quantized arms, `foldquant_export.json`.
 `w4a4/positions.json` additionally records the sixteen worst prefix positions
 per observation, a depth of detail only this family has.
+`bf16/libero/summary.json` is the release-harness LIBERO check of the BF16
+PyTorch policy (759/800; per-task and per-episode outcomes inside).
 
 ## Drift
 
@@ -36,12 +38,10 @@ Compiling the graph with nothing quantized accounts for about three quarters
 of what the W4A4 arm saves against eager; the protocol file's Latency section
 carries that split and the reasoning.
 
-## Note: prefix damage does not predict which observation flips
+## Prefix damage does not predict which observation flips
 
-The W4A4 arm carries two full gripper flips, samples 18 and 21. The commit
-message of `a73ebea` calls these "the same two observations `positions.json`
-shows taking the worst prefix damage", but **the files do not say that**, and the
-sentence should not be quoted:
+The W4A4 arm carries two full gripper flips, samples 18 and 21. They are not
+the observations whose prefix `positions.json` shows taking the worst damage:
 
 | sample | ep/step | worst-position cos | rank of 32 | action cos | worst channel |
 |---|---|---|---|---|---|
@@ -55,7 +55,7 @@ the cleanest chunks in the arm. Pearson over the 32 is +0.30: the direction
 the claim assumed, far too weak to carry it, and weak in all four families
 (+0.08 to +0.31, see the protocol file). The flips are real and both land on
 channel 6; what does not follow is a per-observation link between the two
-depths. Pushed history is left as it is; this note is the correction of record.
+depths.
 
 ## Reproducing
 

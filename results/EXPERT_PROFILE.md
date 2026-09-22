@@ -16,7 +16,7 @@ about 60× the bandwidth floor of the 1 MB of K/V it reads. Four bits cut the re
 from 1.78 to 1.44 ms and the step as a whole by 10 %. This is why `torch.compile` (100.3 ms), whose
 attention is PyTorch SDPA, is the stronger floating-point control on this family and the float
 engine (111.8) is not: the gap is the attention kernel, on every arm alike. CUDA-graph replay
-(`FLOAT_ARMS.md`) confirmed the same from the other side: it removed ≤1.5 ms of a 30 ms loop. An
+confirmed the same from the other side: it removed ≤1.5 ms of a 30 ms loop. An
 attention emission fit to the ten-query shape (a plugin, or a decomposed MatMul-Softmax-MatMul
 that lets the builder pick GEMV-class kernels) would move every π₀.₅ arm by a similar amount and
 is the next lever on this family; it is not a precision change, but it is a new engine, so it is
@@ -26,7 +26,7 @@ future work rather than a re-timing.
 
 `Softmax` rewritten as `ReduceMax → Sub → Exp → ReduceSum → Div` (the same function; the builder
 can no longer form its fused-MHA pattern), expert engine rebuilt, everything else unchanged
-(`exports/float_nomha/`). Per-layer profile: `_gemm_mha_v2` 18 → 0, step 3.34 → **2.82 ms**.
+Per-layer profile: `_gemm_mha_v2` 18 → 0, step 3.34 → **2.82 ms**.
 Held-out verify (n = 32): actions cosine 0.99035 / min 0.91525 against 0.99037 / 0.91556 for the
 fused engine, identical to the fourth digit, as expected from a kernel change. Benchmark in one
 process: eager 164.6, float 110.5 (loop 34.4), float-no-MHA **105.0** (loop 28.9); `torch.compile`

@@ -1,4 +1,4 @@
-# pi0.5, LIBERO: FoldQuant engines against the W4A4 methods tabulated by HoloQ-VLA
+# π₀.₅, LIBERO: FoldQuant engines against the W4A4 methods tabulated by HoloQ-VLA
 
 Same public checkpoint on both sides: OpenPI `pi05_libero`, converted to PyTorch. HoloQ-VLA
 (arXiv 2605.28803 v3, Table 2) reports it and four W4A4 baselines it ran itself, all as
@@ -15,7 +15,7 @@ percentage is a multiple of 0.5, consistent with 20 trials per task.
 | QuantVLA W4A4 (HoloQ-VLA harness) | fake-quant, sensitive layers float | 188 | 196 | 160 | 112 | 656 | 82.0 |
 | HoloQ-VLA W4A4 (HoloQ-VLA harness) | fake-quant | 198 | 194 | 200 | 192 | 784 | 98.0 |
 | BF16 PyTorch (our harness) | PyTorch | 199 | 196 | 196 | 181 | 772 | 96.5 |
-| TRT bf16 (our harness) | TensorRT float | 200 | 200 | 198 | 186 | 784 | 98.0 |
+| float TRT (our harness) | TensorRT float | 200 | 200 | 198 | 186 | 784 | 98.0 |
 | ModelOpt W8A8 SmoothQuant (our harness) | native INT8 | 197 | 197 | 194 | 186 | 774 | 96.8 |
 | ModelOpt W4A16 AWQ (our harness) | native weight-only | 199 | 197 | 197 | 191 | 784 | 98.0 |
 | FoldQuant W8A8 (our harness) | native INT8 | 199 | 199 | 193 | 188 | 779 | 97.4 |
@@ -36,7 +36,7 @@ percentage is a multiple of 0.5, consistent with 20 trials per task.
 * The three "other method" rows are HoloQ-VLA's own re-runs of those methods as fake
   quantisation; SmoothQuant and QuantVLA collapse on goal and long-horizon there, DuQuant loses
   23 episodes. FoldQuant W4A4 executes natively and loses none against its own BF16 reference
-  (+5). We have not re-run those methods ourselves on pi0.5.
+  (+5). We have not re-run those methods ourselves on π₀.₅.
 
 ## Site-selective INT8 and a second harness (this release, RTX 4070 Ti SUPER)
 
@@ -48,7 +48,7 @@ this harness; cross-harness to every row above.
 | method | spatial | object | goal | long | total /800 | % | Wilson 95% |
 |---|---:|---:|---:|---:|---:|---:|---|
 | FoldQuant W4A4 (this harness, sm89 native INT4) | 196 | 199 | 192 | 191 | 778 | 97.2 | [95.9, 98.2] |
-| FoldQuant W4A4 + `o_proj`/`down_proj` INT8 | 199 | 198 | 197 | 188 | 782 | 97.8 | [96.5, 98.6] |
+| FoldQuant W4A4 + o/d INT8 | 199 | 198 | 197 | 188 | 782 | 97.8 | [96.5, 98.6] |
 
 Paired over the 40 tasks: +4 episodes for the INT8 sites, t(39) = 0.81, p = 0.42; McNemar 17 vs 13
 discordant episodes, p = 0.59. Not separable at this budget, as on N1.7 (+6, p = 0.57) and N1.6
@@ -57,12 +57,12 @@ H100 (778 vs 777), so the two harnesses agree on this checkpoint.
 
 Offline, 16 held-out observations vs BF16 PyTorch: action cosine mean 0.99935 -> 0.99973 and
 min 0.99835 -> 0.99942; prefix KV-stack cosine 0.9665 -> 0.9864. Engine bytes: LLM 948 -> 1269 MB
-(+34%), expert 401 MB unchanged. A campaign-harness build of the same res8 arm on H100 gave the same
+(+34%), expert 401 MB unchanged. A campaign-harness build of the same o/d INT8 arm on H100 gave the same
 LLM growth (904 -> 1210 MB, +34%) and loaded the INT8 per-row plugin beside the INT4 one; its
 rollout was stopped after 73 episodes and is not a result.
 
 Latency on the same GPU (release `benchmark`, 60 iterations after 10 warm-ups, one repeat, 10
 denoising steps, E2E medians): eager 168.6--170.8 ms, `torch.compile(max-autotune)` 100.5 ms,
-W4A4 77.3--78.6 ms, W4A4 + `o_proj`/`down_proj` INT8 82.3--84.4 ms. The INT8 sites cost about
+W4A4 77.3--78.6 ms, W4A4 + o/d INT8 82.3--84.4 ms. The INT8 sites cost about
 5 ms, all in the PaliGemma prefix pass (17.1 -> 22.9 ms); the ten-step denoise loop is unchanged
 (31.0 ms). Ranges are two runs of the same engines.
