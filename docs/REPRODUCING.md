@@ -123,6 +123,6 @@ The sampling plan depends on the available episodes, so a changed dataset can
 produce different observations with the same seed. Rebuild engines and plugin
 libraries for the target device and TensorRT version.
 
-The [results guide](../results/README.md) includes the paper's Jetson AGX Orin
-figure. The [Orin deployment checks](deploy/jetson.md) recorded completion only,
+The paper reports the Jetson AGX Orin latency. The
+[Orin deployment checks](deploy/jetson.md) recorded completion only,
 with no separate latency or accuracy measurements.

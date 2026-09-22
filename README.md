@@ -62,8 +62,9 @@ Support covers export, engine build, held-out drift, latency, LIBERO, and
 policy serving. GR00T runs LIBERO in process; π₀.₅ uses a separate upstream
 client environment and a running policy server.
 
-[Results](results/README.md) include desktop drift and latency records,
-the paper's LIBERO campaigns (800 episodes per arm), and Jetson latency.
+[Results](results/README.md) hold the desktop drift and latency records and
+the protocol behind them; the LIBERO campaigns and Jetson latency are in the
+paper.
 
 ## Schemes
 
@@ -104,7 +105,7 @@ A W4A4 language tower can hold chosen projection sites at INT8 with
 Valid sites are `qkv`, `o`, `gateup`, and `down`. Keeping `o_proj` and
 `down_proj` at INT8 improves action cosine over uniform W4A4 while retaining
 integer GEMMs at every projection. These sites have no preceding learned gain
-for scale folding. See the [accuracy and latency results](results/SITE_SELECTIVE_INT8.md).
+for scale folding. The paper measures this arm on every checkpoint.
 
 ## Layout
 

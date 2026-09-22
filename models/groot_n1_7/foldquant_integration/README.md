@@ -314,7 +314,7 @@ projection Linears (`self_attn.{q,k,v,o}_proj`, `mlp.{gate,up,down}_proj` in the
 `F.linear`. No INT4 kernel runs, so these arms carry **no latency claim**; they
 measure what each recipe's rounding does to the policy. AdaLN modulation, the
 `vl_self_attention` blocks and the cross-attention encoder KV stay BF16 (the
-FoldQuant engines quantise those too; see `results/groot_n1_7/HOLOQ_LIBERO.md`).
+FoldQuant engines quantise those too).
 
 | | `--method holoq` (HoloQ-VLA style) | `--method duquant` (DuQuant style) |
 |---|---|---|
@@ -354,7 +354,7 @@ python -m foldquant_integration.baseline_w4a4 --command all --method duquant \
 #    -> exports/baseline_duquant_libero_10/{calibration.pt, pack.pt, pack.pt.sha256, check.json}
 #    --method holoq for the HoloQ-style arm.
 
-# 2a. closed loop, in process (the protocol of results/groot_n1_7/HOLOQ_LIBERO.md)
+# 2a. closed loop, in process (the paper's baseline-comparison protocol)
 MUJOCO_GL=egl python -m foldquant_integration.eval_libero \
     --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 \
     --baseline-pack exports/baseline_duquant_libero_10/pack.pt \

@@ -23,10 +23,10 @@ all four; where a paper table does that, it says so.
 | W4A4 cascade | `w4a4_srg` | `w4a4_shg` (`--cascade`) | action expert calibrated under the quantized LLM |
 | W4A4 + o/d INT8 | `w4a4_srg` + `site_bits {o: 8, down: 8}` | as W4A4 | site-selective INT8: `o_proj` and `down_proj` held at INT8 inside W4A4 |
 
-Arm names are used the same way in every table here: "float TRT" is the
+Arm names are used the same way here and in the paper: "float TRT" is the
 unquantized TensorRT arm, "FoldQuant" prefixes this repository's engines where
-a table also lists other methods, and "o/d INT8" is the site-selective arm
-([`SITE_SELECTIVE_INT8.md`](SITE_SELECTIVE_INT8.md)).
+a table also lists other methods, and "o/d INT8" is the site-selective arm,
+which the paper measures on every checkpoint.
 
 For GR00T N1.7 the untouched modules of every TensorRT arm (vision tower, VL
 self-attention, state / action encoders, action decoder) are the upstream float
@@ -231,22 +231,18 @@ release-harness LIBERO check below, and `<family>/w4a4/sweep_llm_quant_knobs*.js
 are the LLM knob sweeps `scripts/README.md` describes. Tables are regenerated from those files,
 so every cell traces to a committed artifact.
 
-The notes beside this file carry the paper's remaining figures:
-
-- [`SITE_SELECTIVE_INT8.md`](SITE_SELECTIVE_INT8.md): the o/d INT8 arm on
-  every checkpoint (fidelity, closed loop, latency, engine bytes).
-- [`EXPERT_PROFILE.md`](EXPERT_PROFILE.md): where a π₀.₅ expert step goes,
-  and the measured direction of the attention fix the paper cites.
-- [`groot_n1_7/HOLOQ_LIBERO.md`](groot_n1_7/HOLOQ_LIBERO.md) and
-  [`pi05/HOLOQ_LIBERO.md`](pi05/HOLOQ_LIBERO.md): FoldQuant engines beside
-  the W4A4 methods HoloQ-VLA tabulates.
-- [`groot_n1_7/README.md`](groot_n1_7/README.md): per-arm N1.7 tables and the
-  per-observation check behind the correlation figures above.
+The paper carries the figures that are not regenerated from these records:
+the closed-loop LIBERO campaigns (800 episodes per arm on an H100 MIG
+partition), the Jetson AGX Orin latency, the o/d INT8 arm on every checkpoint,
+and the comparisons against the W4A4 methods HoloQ-VLA tabulates. They are not
+transcribed here. [`groot_n1_7/README.md`](groot_n1_7/README.md) holds the
+per-arm N1.7 tables and the per-observation check behind the correlation
+figures above.
 
 Each integration README has a **smoke check** (16-observation calibration, 8
 held-out observations, one RTX 4070 Ti SUPER) that exercises export → build →
 verify → benchmark. Those are sanity gates; the tables below come from the
-128-observation exports and the full LIBERO sweeps.
+128-observation exports and the release-harness LIBERO check.
 
 `scripts/check_records.py` checks the invariants the records must satisfy: a
 float arm no less faithful than the INT8 one from the same graph, a stated
@@ -313,97 +309,18 @@ The last column is the deployment-path result against upstream's own serving
 configuration, **not** a quantization result: roughly three quarters of it is
 the graph (see the split above).
 
-The paper's latency figure, timed with three repeats of sixty iterations after
-ten warm-ups (five repeats for the GR00T eight- and four-bit arms):
-
-| family | eager | torch.compile | float TRT | W8A8 | W4A4 | W4A4 + o/d INT8 | W4A4 vs eager |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| GR00T N1.7 | 67.8 | 58.05 | 41.5 | 36.5 | 32.6 | 34.0 | 2.08× |
-| GR00T N1.6 | 74.2 | 59.85 | 44.1 | 37.7 | 33.9 | 35.3 | 2.19× |
-| GR00T N1.5 | 57.4 | 53.46 | 40.2 | 33.7 | 30.2 | 33.5 | 1.90× |
-| π₀.₅ | 169.4 | 100.3 | 111.8 | 89.9 | 76.6 | 82.3 | 2.21× |
-
-RTX 4070 Ti SUPER, batch 1. The compiled control supplies 74.7, 74.5, 63.2 and
-74.5% of each eager-to-W4A4 reduction, and W4A4 removes 10.7, 10.2, 10.5 and
-14.8% of the W8A8 latency. N1.7's torch.compile bar comes from a runtime whose
-eager is 71.8 ms and is not used for attribution; rebuilds of N1.6 and N1.5
-through this release's export path give float engines of 44.0 and 41.2 ms. The
-o/d INT8 bars are a re-timing in this release's export path against the
-uniform W4A4 engine of the same run.
-
-#### Jetson AGX Orin
-
-The paper's Orin figure: sm87, JetPack TensorRT 10.3, batch 1,
-observation-to-action milliseconds.
-
-| family | eager | torch.compile | float TRT | W8A8 | W4A4 | W4A4 + o/d INT8 | ModelOpt W8A8 SQ | ModelOpt W4A16 AWQ |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| GR00T N1.7 | 351 | 231 | 146 | 127 | 119 | 120 | 137 | 167 |
-| GR00T N1.6 | 333 | 217 | 150 | 137 | 125 | 127 | 142 | 177 |
-| GR00T N1.5 | 249 | 199 | 135 | 123 | 111 | 114 | 134 | 174 |
-| π₀.₅ | 861 | 861 | 229 | 226 | 172 | 203 | 211 | 326 |
-
-Uniform W4A4 reaches 1.23, 1.20, 1.22 and 1.33× the float engine, and the
-weight-only four-bit baseline is 13-30% slower than that engine on every
-checkpoint. Holding `o_proj`/`down_proj` at INT8 costs 1-3 ms on GR00T and
-31 ms on π₀.₅. The per-family scripts have also run on an Orin
+The paper's desktop latency figure (with `torch.compile` and o/d INT8
+columns), its Jetson AGX Orin figure and its LIBERO campaigns are reported
+there, not here. The per-family scripts have also run on an Orin
 (`docs/deploy/jetson.md` lists which), but those runs only checked that each
 path completes and recorded no number.
 
-### LIBERO success rate: all families
-
-The paper's closed-loop campaigns: one H100 MIG 3g.40gb partition, four suites,
-ten tasks, twenty initial states per task, 800 episodes per arm, seed 7;
-serving-time flow noise unseeded. Success rate in percent; Wilson 95%
-intervals describe each arm on its own and do not establish equivalence.
-
-| family (K) | arm | spatial | object | goal | long | all | 95% CI |
-|---|---|---:|---:|---:|---:|---:|---|
-| GR00T N1.7 (8) | BF16 PyTorch | 97.5 | 100.0 | 97.5 | 90.0 | 96.25 | [94.7, 97.4] |
-| | float TRT | 96.5 | 99.5 | 97.5 | 88.5 | 95.50 | [93.8, 96.7] |
-| | ModelOpt W8A8 SQ | 97.0 | 98.5 | 97.5 | 90.0 | 95.75 | [94.1, 96.9] |
-| | ModelOpt W4A16 AWQ | 98.0 | 99.0 | 98.0 | 90.5 | 96.38 | [94.8, 97.5] |
-| | FoldQuant W8A8 | 97.0 | 99.5 | 98.0 | 87.0 | 95.38 | [93.7, 96.6] |
-| | FoldQuant W4A4 | 96.5 | 99.0 | 97.0 | 89.0 | 95.38 | [93.7, 96.6] |
-| | FoldQuant W4A4 + o/d INT8 | 93.5 | 99.5 | 98.0 | 89.0 | 95.00 | [93.3, 96.3] |
-| GR00T N1.6 (8) | BF16 PyTorch | 97.0 | 100.0 | 97.0 | 91.5 | 96.38 | [94.8, 97.5] |
-| | float TRT | 98.0 | 100.0 | 96.5 | 96.5 | 97.75 | [96.5, 98.6] |
-| | ModelOpt W8A8 SQ | 98.0 | 100.0 | 97.5 | 89.5 | 96.25 | [94.7, 97.4] |
-| | ModelOpt W4A16 AWQ | 94.5 | 99.5 | 96.0 | 95.0 | 96.25 | [94.7, 97.4] |
-| | FoldQuant W8A8 | 95.5 | 100.0 | 94.0 | 93.5 | 95.75 | [94.1, 96.9] |
-| | FoldQuant W4A4 | 95.5 | 96.5 | 96.0 | 95.0 | 95.75 | [94.1, 96.9] |
-| | FoldQuant W4A4 + o/d INT8 | 95.0 | 100.0 | 99.5 | 92.0 | 96.62 | [95.1, 97.7] |
-| GR00T N1.5 (1) | BF16 PyTorch | 92.0 | 95.5 | 89.5 | 68.5 | 86.38 | [83.8, 88.6] |
-| | float TRT | 93.0 | 95.5 | 87.0 | 68.5 | 86.00 | [83.4, 88.2] |
-| | ModelOpt W8A8 SQ | 91.0 | 93.5 | 87.5 | 63.5 | 83.88 | [81.2, 86.3] |
-| | ModelOpt W4A16 AWQ | 91.5 | 96.0 | 85.0 | 72.5 | 86.25 | [83.7, 88.5] |
-| | FoldQuant W8A8 | 90.5 | 98.0 | 88.5 | 71.5 | 87.12 | [84.6, 89.3] |
-| | FoldQuant W4A4 | 92.5 | 96.5 | 88.0 | 72.5 | 87.38 | [84.9, 89.5] |
-| | FoldQuant W4A4 + o/d INT8 | 91.5 | 97.5 | 90.5 | 68.5 | 87.00 | [84.5, 89.2] |
-| π₀.₅ (5) | BF16 PyTorch | 99.5 | 98.0 | 98.0 | 90.5 | 96.50 | [95.0, 97.6] |
-| | float TRT | 100.0 | 100.0 | 99.0 | 93.0 | 98.00 | [96.8, 98.8] |
-| | ModelOpt W8A8 SQ | 98.5 | 98.5 | 97.0 | 93.0 | 96.75 | [95.3, 97.8] |
-| | ModelOpt W4A16 AWQ | 99.5 | 98.5 | 98.5 | 95.5 | 98.00 | [96.8, 98.8] |
-| | FoldQuant W8A8 | 99.5 | 99.5 | 96.5 | 94.0 | 97.38 | [96.0, 98.3] |
-| | FoldQuant W4A4 | 98.5 | 99.0 | 98.0 | 93.0 | 97.12 | [95.7, 98.1] |
-| | FoldQuant W4A4 + o/d INT8 | 98.5 | 99.5 | 98.5 | 94.0 | 97.62 | [96.3, 98.5] |
-
-The FoldQuant W4A4 expert uses GPTQ and a butterfly rotation with fold-before. The N1.6
-and N1.7 o/d INT8 arms were built on the dense-rotation calibration preset, whose
-matched uniform-W4A4 partners scored 95.38% and 94.62%; the N1.5 arm shares the
-preset of its printed W4A4 row. H100 executes four-bit operands through an INT8
-lowering, so these rows are closed-loop outcomes, not native INT4 latency.
-
-Paired over the 40 tasks with a two-sided t test and Holm correction across the
-41 arm-versus-reference comparisons, **no comparison survives**: no loss is
-detected at this campaign size, which does not establish equivalence.
-
-#### A release-harness check
+### LIBERO success rate: release-harness check
 
 GR00T N1.7 BF16 through this release's `eval_libero` (upstream's
 `MultiStepWrapper` rollout), one RTX 4070 Ti SUPER, 1h54m. Different harness
-and GPU from the campaigns above, so this checks that the release path runs
-end to end; it is not a row of that table:
+and GPU from the paper's campaigns, so this checks that the release path runs
+end to end; it is not a row of the paper's table:
 
 | suite | successes | % |
 |---|---|---|
