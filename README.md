@@ -21,7 +21,7 @@ W8A8 and W4A4 quantization of vision-language-action (VLA) models, executed
 natively on the device's INT8 / INT4 tensor cores (not simulated), via
 **consistent offline folding**.
 
-Paper: [arXiv 2609.24433](https://arxiv.org/abs/2609.24433). Reproduce: [`docs/REPRODUCING.md`](docs/REPRODUCING.md).
+Paper: [arXiv 2609.24433](https://arxiv.org/abs/2609.24433). Reproduce: [Results](#results).
 
 ## Highlights
 
@@ -162,30 +162,51 @@ export/engines with the upstream pipeline → `export_foldquant` → `build_engi
 
 ## Results
 
-[`results/`](results) holds the measured records behind the paper's drift
-and desktop latency tables: `results/<family>/<arm>/verify.json` (32 held-out
+[`results/`](results) holds the records behind the paper's held-out drift and
+desktop latency tables: `results/<family>/<arm>/verify.json` (32 held-out
 observations, per-observation cosines) for the `w8a8` and `w4a4` arms, and
 `results/<family>/benchmark.json` (or `results/groot_n1_7/<arm>/benchmark.log`)
-for latency on an RTX 4070 Ti SUPER. `scripts/results_tables.py` prints the
-tables from those files and `scripts/check_records.py` checks their
-invariants; the protocol and the LIBERO and Jetson AGX Orin figures are in the
-paper.
+for latency on an RTX 4070 Ti SUPER. Without a GPU:
 
-[`docs/REPRODUCING.md`](docs/REPRODUCING.md) lists what can be checked, and at
-what cost, from a clone upwards, and gives the `--protocol p3` command that
-reruns the paper's closed-loop LIBERO campaign in each family:
+```bash
+python scripts/check_records.py               # the invariants every record must satisfy
+python scripts/results_tables.py              # the drift (protocol P2) and latency tables
+```
 
-- `python scripts/check_records.py`: no GPU, no checkpoint; asserts the
-  invariants every record has to satisfy.
-- `scripts/smoke_family.sh`: one family's export → build → verify chain on
-  eight observations.
-- `scripts/smoke_serve.sh`: each family's policy server starts and binds,
-  over bf16 or over a built arm.
-- `scripts/smoke_eval.sh`: one LIBERO suite at one episode per task, through
-  the same `eval_libero` the sweeps use.
+### Reproduce the paper's LIBERO campaign (protocol P3)
 
-A smoke pass means the chain runs, not that a published number reproduces.
-That needs the checkpoint and dataset named in the number's record.
+Four suites, ten tasks each, episode `i` of every task from LIBERO's stored
+initial state `i` (`i = 0..19`), ten no-op settle steps, 520 environment
+steps, eight actions executed per policy call (five on π₀.₅), terminate on
+success: 800 episodes per arm. Build the arm with the family's integration
+README, then:
+
+```bash
+# GR00T N1.7 / N1.6, from models/groot_n1_7 or models/groot_n1_6
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
+    --model-path <checkpoint> --engine-dir exports/<arm>/engines --output <out>
+# GR00T N1.5, from models/groot_n1_5
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
+    --model-path <checkpoint> --embodiment-tag new_embodiment --denoising-steps 8 \
+    --engine-dir exports/<arm>/engines --output <out>
+# π₀.₅, from models/pi05 (the client runs in examples/libero/.venv)
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
+    --checkpoint-dir <checkpoint> --engine-dir exports/<arm>/engines \
+    --client-python examples/libero/.venv/bin/python --output <out>
+```
+
+Omit `--engine-dir` for the BF16 PyTorch arm. `<out>/summary.json` records
+every episode's initial state and outcome, resumes an interrupted sweep only
+into the same checkpoint, engines and protocol (`--no-resume` starts over),
+and pools success over episodes. Flow-matching noise is not seeded at serve
+time, so a rerun reproduces the protocol, not each episode; the paper's paired
+tests at this size do not separate the arms. `--protocol p3
+--max-episode-steps 720` on the NVIDIA per-suite N1.7 checkpoints is the
+paper's Table I setting.
+
+`scripts/smoke_family.sh`, `scripts/smoke_serve.sh` and `scripts/smoke_eval.sh`
+check that export → build → verify, the policy server, and one LIBERO episode
+per task run end to end; they say nothing about a published number.
 
 ## Deploying
 
