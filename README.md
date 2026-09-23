@@ -28,7 +28,7 @@ Paper: [arXiv 2609.24433](https://arxiv.org/abs/2609.24433). Reproduce: [Results
 - **Consistent folding.** One transform per shared activation site, a SmoothQuant scale composed with a block rotation, is fixed at calibration, folded into every consuming weight before GPTQ rounding, and applied at runtime as one fused prologue. Calibration, rounding and execution therefore share one coordinate system.
 - **Native low-bit kernels.** TensorRT plugins on CUTLASS integer GEMMs run W8A8 and W4A4 projections on the integer tensor cores of both the language backbone and the action expert. Four-bit is native INT4 on Ada (sm_89) and Jetson AGX Orin (sm_87); H100 lowers four-bit operands to its INT8 datapath.
 - **Selective INT8.** Holding `o_proj` and `down_proj` at INT8 inside a W4A4 tower improves held-out action fidelity on all four checkpoints for a checkpoint-dependent latency cost (about 1 ms on GR00T N1.7 on Orin). The paper reports its closed-loop and real-robot results.
-- **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ keep their upstream code, evaluation harness and policy server; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in projection precision.
+- **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ keep their upstream model code, simulator environments and policy servers; each integration adds the export, the engine install and a LIBERO evaluator with the paper's protocol. Float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in projection precision.
 
 ## How it works
 
