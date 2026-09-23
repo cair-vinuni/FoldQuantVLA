@@ -75,59 +75,64 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-_FULL_HASH_BYTES = 8 << 20
-_SAMPLE_BYTES = 1 << 20
-_SAMPLE_STRIDES = 16
+#: Where full-content digests are remembered, keyed by a directory's file
+#: listing (relative names, sizes, mtimes). Override with FOLDQUANT_CACHE_DIR.
+def _cache_dir() -> Path:
+    import os
+
+    return Path(os.environ.get("FOLDQUANT_CACHE_DIR", Path.home() / ".cache" / "foldquant")) / "artifact_digests"
 
 
-def _content_hash(p: Path, size: int) -> str:
-    """SHA-256 of the whole file up to ``_FULL_HASH_BYTES``; above that, of its
-    size, its first and last megabyte and sixteen 64 KiB windows spread over
-    it, which reads a few megabytes of a multi-gigabyte weight or engine file."""
+def _listing(root: Path) -> list:
+    if root.is_file():
+        files, base = [root], root.parent
+    else:
+        files, base = sorted(p for p in root.rglob("*") if p.is_file()), root
+    return [[p.relative_to(base).as_posix(), p.stat().st_size, p.stat().st_mtime_ns] for p in files], files
+
+
+def _stream_hash(files: list, base: Path) -> str:
     h = hashlib.sha256()
-    with p.open("rb") as f:
-        if size <= _FULL_HASH_BYTES:
-            for chunk in iter(lambda: f.read(1 << 20), b""):
+    for p in files:
+        h.update(p.relative_to(base).as_posix().encode())
+        h.update(b"\0")
+        with p.open("rb") as f:
+            for chunk in iter(lambda: f.read(8 << 20), b""):
                 h.update(chunk)
-            return h.hexdigest()
-        h.update(str(size).encode())
-        h.update(f.read(_SAMPLE_BYTES))
-        window = 64 << 10
-        for i in range(1, _SAMPLE_STRIDES + 1):
-            f.seek(max(0, (size * i) // (_SAMPLE_STRIDES + 1) - window // 2))
-            h.update(f.read(window))
-        f.seek(max(0, size - _SAMPLE_BYTES))
-        h.update(f.read(_SAMPLE_BYTES))
+        h.update(b"\0")
     return h.hexdigest()
 
 
-def artifact_digest(path: Any) -> Optional[Dict[str, Any]]:
-    """An identity for a checkpoint or engine directory, from file contents.
+def artifact_digest(path: Any, content: bool = True) -> Optional[Dict[str, Any]]:
+    """An identity for a checkpoint, engine or dataset directory.
 
-    Every regular file under *path* contributes its relative name, its size
-    and a content hash: complete for files up to 8 MiB (configs, manifests,
-    processor tables), sampled for larger ones (weights, engines) so that a
-    directory of gigabytes is digested in well under a second. Overwriting a
-    weight or engine file in place, even with one of the same size, changes
-    the digest; a file rewritten so that its sampled windows and size all
-    agree does not, which is not a case a build produces by accident.
+    With ``content=True`` the digest is the SHA-256 over the relative name and
+    the complete bytes of every regular file under *path*, so any change to
+    any file changes it. Reading a large checkpoint once is the cost of that
+    guarantee; the result is remembered under ``~/.cache/foldquant`` keyed by
+    the directory's listing (names, sizes, mtimes), so an unchanged directory
+    is not re-read. With ``content=False`` only the listing is digested, which
+    identifies a dataset by its files without reading them.
     """
     if not path:
         return None
-    root = Path(path)
+    root = Path(path).expanduser().resolve()
     if not root.exists():
         return {"path": str(root), "missing": True}
-    if root.is_file():
-        files = [root]
-        base = root.parent
-    else:
-        files = sorted(p for p in root.rglob("*") if p.is_file())
-        base = root
-    entries = []
-    for p in files:
-        size = p.stat().st_size
-        entries.append([p.relative_to(base).as_posix(), size, _content_hash(p, size)])
-    return {"files": len(entries), "digest": _sha256(json.dumps(entries).encode())}
+    listing, files = _listing(root)
+    listing_key = _sha256(json.dumps([str(root), listing]).encode())
+    if not content:
+        return {"files": len(files), "digest": listing_key, "content": False}
+    cache = _cache_dir() / listing_key
+    if cache.is_file():
+        return {"files": len(files), "digest": cache.read_text().strip(), "content": True}
+    digest = _stream_hash(files, root.parent if root.is_file() else root)
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(digest)
+    except OSError:
+        pass
+    return {"files": len(files), "digest": digest, "content": True}
 
 
 def run_fingerprint(run: Dict[str, Any]) -> str:
@@ -192,6 +197,21 @@ def libero_init_states(task_suite: Any, task_id: int) -> Any:
     return torch.load(path, weights_only=False)
 
 
+def _cli() -> None:
+    """``python -m foldquant.eval_protocol digest PATH [--listing]``: print an artifact's digest."""
+    import argparse
+
+    ap = argparse.ArgumentParser(description="print the content (or listing) digest of an artifact directory")
+    ap.add_argument("command", choices=["digest"])
+    ap.add_argument("path")
+    ap.add_argument("--listing", action="store_true", help="digest the file listing only, without reading the files")
+    args = ap.parse_args()
+    d = artifact_digest(args.path, content=not args.listing)
+    if d is None or d.get("missing"):
+        raise SystemExit(f"{args.path}: not found")
+    print(d["digest"])
+
+
 def protocol_record(
     protocol: Protocol, max_episode_steps: int, n_action_steps: int, n_episodes: int, seed: Optional[int] = None
 ) -> Dict[str, Any]:
@@ -200,3 +220,7 @@ def protocol_record(
     rec = asdict(protocol)
     rec.update(max_episode_steps=max_episode_steps, n_action_steps=n_action_steps, n_episodes=n_episodes, seed=seed)
     return rec
+
+
+if __name__ == "__main__":
+    _cli()

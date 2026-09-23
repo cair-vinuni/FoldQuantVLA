@@ -10,6 +10,11 @@ import pytest
 from foldquant.eval_protocol import PROTOCOLS, artifact_digest, prepare_summary, run_fingerprint
 
 
+@pytest.fixture(autouse=True)
+def _digest_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("FOLDQUANT_CACHE_DIR", str(tmp_path / "cache"))
+
+
 def test_p3_is_the_paper_protocol():
     p3 = PROTOCOLS["p3"]
     assert (p3.max_episode_steps, p3.n_action_steps, p3.n_episodes, p3.settle_steps, p3.seed) == (520, 8, 20, 10, 7)
@@ -48,17 +53,38 @@ def test_same_size_rewrite_of_a_weight_file_changes_the_digest(tmp_path):
     a = artifact_digest(ckpt)
     (ckpt / "model.safetensors").write_bytes(b"B" * 4096)
     assert artifact_digest(ckpt)["digest"] != a["digest"]
-    # a large file is sampled: its first and last megabyte and windows spread over it
+    # every byte counts, wherever it sits in a large file
     big = ckpt / "llm.engine"
     big.write_bytes(bytes(24 << 20))
     c = artifact_digest(ckpt)
-    for offset in (0, (24 << 20) * 8 // 17, (24 << 20) - 1):
+    for offset in (0, 2 << 20, (12 << 20) + 12345, (24 << 20) - 1):
         with big.open("r+b") as f:
             f.seek(offset)
             f.write(b"\xff")
         d = artifact_digest(ckpt)
         assert d["digest"] != c["digest"]
         c = d
+
+
+def test_digest_is_cached_by_listing_and_listing_only_mode_skips_contents(tmp_path):
+    import os
+
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    f = ckpt / "model.safetensors"
+    f.write_bytes(b"A" * 1000)
+    a = artifact_digest(ckpt)
+    assert a["content"] and artifact_digest(ckpt) == a
+    listing = artifact_digest(ckpt, content=False)
+    assert listing["content"] is False and listing["digest"] != a["digest"]
+    # same size and mtime, different bytes: the cached digest is reused (the listing is
+    # the cache key); a new mtime re-reads the file
+    st = f.stat()
+    f.write_bytes(b"B" * 1000)
+    os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert artifact_digest(ckpt) == a
+    os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+    assert artifact_digest(ckpt)["digest"] != a["digest"]
 
 
 def _run(**over):

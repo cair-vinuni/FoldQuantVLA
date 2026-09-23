@@ -85,28 +85,45 @@ engines_complete() {
   local d="$1" e
   for e in "${ENGINES[@]}"; do [ -s "$d/$e.engine" ] || return 1; done
 }
-# Identity of the checkpoint a float pipeline was built from: its resolved path
-# and the checksum of its config, so a different checkpoint in the same OUT
-# rebuilds the float engines instead of reusing another model's.
-ckpt_stamp() {
-  local cfg="$CKPT/config.json"
-  printf '%s %s\n' "$(cd "$CKPT" && pwd -P)" "$( [ -f "$cfg" ] && sha256sum "$cfg" | cut -c1-16 || echo noconfig )"
+# Identity of the checkpoint a pipeline was built from: the content digest of
+# every file in it (foldquant.eval_protocol, remembered per listing so an
+# unchanged checkpoint is read once), so new weights at the same path, like a
+# different path, rebuild instead of reusing another model's engines.
+# Both identities are computed once, up front, so a failure stops the script
+# (a `die` inside a command substitution would only leave its subshell).
+CKPT_ID=""
+DS_ID=""
+identify_inputs() {
+  CKPT_ID="$("$PYTHON" -m foldquant.eval_protocol digest "$CKPT")" || die "cannot digest CKPT=$CKPT"
+  [ -n "$CKPT_ID" ] || die "empty digest for CKPT=$CKPT"
+  if [ -n "${DS:-}" ]; then
+    # the calibration dataset by its file listing (names, sizes, mtimes), not
+    # its contents, which may be hours of video
+    DS_ID="$("$PYTHON" -m foldquant.eval_protocol digest --listing "$DS")" || die "cannot digest DS=$DS"
+    [ -n "$DS_ID" ] || die "empty digest for DS=$DS"
+  fi
 }
+ckpt_stamp() { printf 'ckpt=%s\n' "$CKPT_ID"; }
+ds_stamp()   { [ -n "$DS_ID" ] || die "set DS: the dataset identity is part of this arm's stamp"; printf 'dataset=%s\n' "$DS_ID"; }
 float_current() {
   engines_complete "$FLOAT/engines" || return 1
   [ -f "$FLOAT/.checkpoint" ] || return 1
   [ "$(cat "$FLOAT/.checkpoint")" = "$(ckpt_stamp)" ]
 }
 # Identity of a quantized arm: the checkpoint plus everything the export takes
-# as input. Export and engines carry it, so a changed checkpoint, scheme,
-# parameter set or calibration budget under the same ARM rebuilds instead of
-# serving a stale arm.
+# as input. Export and engines carry it (.stamp) and the calibration dataset
+# they were built from (.dataset), so a changed checkpoint, embodiment tag,
+# scheme, parameter set, calibration budget or dataset under the same ARM
+# rebuilds instead of serving a stale arm. serve, which needs no dataset,
+# checks the arm stamp alone.
 arm_stamp() {
-  printf '%s | llm=%s dit=%s params=%s calib=%s\n' "$(ckpt_stamp)" "$LLM_SCHEME" "$DIT_SCHEME" "${LLM_PARAMS:-{}}" "$NUM_CALIB"
+  printf '%s | tag=%s llm=%s dit=%s params=%s calib=%s backend=%s\n' "$(ckpt_stamp)" "${TAG:-auto}" \
+    "$LLM_SCHEME" "$DIT_SCHEME" "${LLM_PARAMS:-{}}" "$NUM_CALIB" "${VIDEO_BACKEND:-upstream}"
 }
-stamp_matches() { [ -f "$1" ] && [ "$(cat "$1")" = "$(arm_stamp)" ]; }
-export_current()  { [ -s "$ARMDIR/onnx/foldquant_export.json" ] && stamp_matches "$ARMDIR/onnx/.stamp"; }
-engines_current() { engines_complete "$ARMDIR/engines" && stamp_matches "$ARMDIR/engines/.stamp"; }
+stamp_matches() { [ -f "$1" ] && [ "$(cat "$1")" = "$2" ]; }
+export_current()  { [ -s "$ARMDIR/onnx/foldquant_export.json" ] && stamp_matches "$ARMDIR/onnx/.stamp" "$(arm_stamp)" && stamp_matches "$ARMDIR/onnx/.dataset" "$(ds_stamp)"; }
+engines_current() { engines_complete "$ARMDIR/engines" && stamp_matches "$ARMDIR/engines/.stamp" "$(arm_stamp)" && stamp_matches "$ARMDIR/engines/.dataset" "$(ds_stamp)"; }
+engines_match_arm() { engines_complete "$ARMDIR/engines" && stamp_matches "$ARMDIR/engines/.stamp" "$(arm_stamp)"; }
 need_ds() { [ -n "${DS:-}" ] || die "set DS to a LeRobot dataset (needed by the '$1' step)"; }
 
 model_args=(--model-path "$CKPT")
@@ -115,6 +132,7 @@ backend_args=()
 [ -n "$VIDEO_BACKEND" ] && backend_args=(--video-backend "$VIDEO_BACKEND")
 
 cd "$FAM"
+identify_inputs
 
 if has_step check; then
   say "check: platform and environment"
@@ -173,11 +191,11 @@ fi
 if has_step export; then
   say "export: FoldQuant graphs ($LLM_SCHEME / $DIT_SCHEME)"
   if [ "$FORCE" != 1 ] && export_current; then
-    echo "  already exported for this checkpoint and recipe: $ARMDIR/onnx (FORCE=1 to redo)"
+    echo "  already exported for this checkpoint, recipe and dataset: $ARMDIR/onnx (FORCE=1 to redo)"
   else
     need_ds export
     if [ -s "$ARMDIR/onnx/foldquant_export.json" ] && [ "$FORCE" != 1 ]; then
-      echo "  $ARMDIR/onnx was exported from another checkpoint or recipe; re-exporting"
+      echo "  $ARMDIR/onnx was exported from another checkpoint, recipe or dataset; re-exporting"
     fi
     rm -rf "$ARMDIR/onnx" "$ARMDIR/engines"
     args=("${model_args[@]}" --dataset-path "$DS" "${backend_args[@]}"
@@ -188,18 +206,20 @@ if has_step export; then
     "$PYTHON" -m foldquant_integration.export_foldquant "${args[@]}" >"$LOGS/export.log" 2>&1 \
       || die "export failed -- see $LOGS/export.log"
     arm_stamp >"$ARMDIR/onnx/.stamp"
+    ds_stamp >"$ARMDIR/onnx/.dataset"
   fi
 fi
 
 if has_step build; then
   say "build: TensorRT engines for $ARM"
+  need_ds build
   if [ "$FORCE" != 1 ] && engines_current; then
-    echo "  already complete for this checkpoint and recipe: $ARMDIR/engines (FORCE=1 to redo)"
+    echo "  already complete for this checkpoint, recipe and dataset: $ARMDIR/engines (FORCE=1 to redo)"
   else
-    export_current || die "no export for this checkpoint and recipe at $ARMDIR/onnx -- run the export step first"
+    export_current || die "no export for this checkpoint, recipe and dataset at $ARMDIR/onnx -- run the export step first"
     float_current || die "float engines at $FLOAT/engines are missing or from another checkpoint -- run the float step first"
     if engines_complete "$ARMDIR/engines" && [ "$FORCE" != 1 ]; then
-      echo "  $ARMDIR/engines was built from another checkpoint or recipe; rebuilding"
+      echo "  $ARMDIR/engines was built from another checkpoint, recipe or dataset; rebuilding"
     fi
     rm -rf "$ARMDIR/engines"
     echo "  building (log: $LOGS/build.log)"
@@ -209,13 +229,14 @@ if has_step build; then
       || die "engine build failed -- see $LOGS/build.log"
     engines_complete "$ARMDIR/engines" || die "build finished without all seven engines -- see $LOGS/build.log"
     arm_stamp >"$ARMDIR/engines/.stamp"
+    ds_stamp >"$ARMDIR/engines/.dataset"
   fi
 fi
 
 if has_step verify; then
   say "verify: engines against the bf16 policy on $NUM_VERIFY held-out samples"
   need_ds verify
-  engines_current || die "engines at $ARMDIR/engines are missing or from another checkpoint or recipe -- run the build step"
+  engines_current || die "engines at $ARMDIR/engines are missing or from another checkpoint, recipe or dataset -- run the build step"
   "$PYTHON" -m foldquant_integration.verify \
       "${model_args[@]}" --dataset-path "$DS" "${backend_args[@]}" \
       --engine-dir "$ARMDIR/engines" --num-samples "$NUM_VERIFY" --seed 42 \
@@ -234,7 +255,7 @@ fi
 
 if has_step serve; then
   say "serve: $ARMDIR/engines on $HOST:$PORT"
-  engines_current || die "engines at $ARMDIR/engines are missing or from another checkpoint or recipe -- run the build step"
+  engines_match_arm || die "engines at $ARMDIR/engines are missing or from another checkpoint or recipe -- run the build step"
   # Refuse an occupied port rather than failing after the ~30 s checkpoint load,
   # and never disturb whatever is already listening there.
   if command -v ss >/dev/null && ss -ltn | awk '{print $4}' | grep -qE "[:.]$PORT\$"; then
