@@ -12,10 +12,10 @@ from foldquant.eval_protocol import PROTOCOLS, artifact_digest, prepare_summary,
 
 def test_p3_is_the_paper_protocol():
     p3 = PROTOCOLS["p3"]
-    assert (p3.max_episode_steps, p3.n_action_steps, p3.n_episodes, p3.settle_steps) == (520, 8, 20, 10)
+    assert (p3.max_episode_steps, p3.n_action_steps, p3.n_episodes, p3.settle_steps, p3.seed) == (520, 8, 20, 10, 7)
     assert p3.fixed_init_states
     up = PROTOCOLS["upstream"]
-    assert not up.fixed_init_states and up.settle_steps == 0
+    assert not up.fixed_init_states and up.settle_steps == 0 and up.seed is None
 
 
 def test_resolve_prefers_explicit_then_protocol_then_family():
@@ -39,6 +39,26 @@ def test_artifact_digest_tracks_content_and_names(tmp_path):
     assert a["digest"] != b["digest"] != c["digest"] and a["digest"] != c["digest"]
     assert artifact_digest(None) is None
     assert artifact_digest(tmp_path / "nope")["missing"] is True
+
+
+def test_same_size_rewrite_of_a_weight_file_changes_the_digest(tmp_path):
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    (ckpt / "model.safetensors").write_bytes(b"A" * 4096)
+    a = artifact_digest(ckpt)
+    (ckpt / "model.safetensors").write_bytes(b"B" * 4096)
+    assert artifact_digest(ckpt)["digest"] != a["digest"]
+    # a large file is sampled: its first and last megabyte and windows spread over it
+    big = ckpt / "llm.engine"
+    big.write_bytes(bytes(24 << 20))
+    c = artifact_digest(ckpt)
+    for offset in (0, (24 << 20) * 8 // 17, (24 << 20) - 1):
+        with big.open("r+b") as f:
+            f.seek(offset)
+            f.write(b"\xff")
+        d = artifact_digest(ckpt)
+        assert d["digest"] != c["digest"]
+        c = d
 
 
 def _run(**over):

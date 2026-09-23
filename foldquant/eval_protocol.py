@@ -6,10 +6,11 @@
 ``PROTOCOLS`` names the LIBERO rollout settings a family evaluator can select
 with ``--protocol``. ``p3`` is the paper's closed-loop campaign: every task is
 rolled out from LIBERO's stored initial states (episode ``i`` starts from
-state ``i``), ten no-op steps with the gripper open let dropped objects
-settle, 520 environment steps are allowed per episode, eight actions of each
-chunk are executed and the episode ends after the chunk in which the task
-succeeds. ``upstream`` leaves every setting to the family's own release loop.
+state ``i``) in a simulator seeded with 7, ten no-op steps with the gripper
+open let dropped objects settle, 520 environment steps are allowed per
+episode, the family's executed prefix of each chunk is applied (eight actions
+on GR00T N1.7 and N1.6, one on N1.5, five on π₀.₅) and the episode ends after
+the chunk in which the task succeeds. ``upstream`` leaves every setting to the family's own release loop.
 
 A run fingerprint ties a ``summary.json`` to what produced it, so an
 interrupted sweep resumes only into the same run. Torch-free.
@@ -53,6 +54,8 @@ class Protocol:
     settle_steps: int
     #: True: episode i starts from LIBERO's stored initial state i
     fixed_init_states: bool
+    #: simulator seed applied to each task's environment; None = family default
+    seed: Optional[int] = None
 
     def resolve(self, value: Optional[int], field: str, family_default: int) -> int:
         """*value* if given on the command line, else this protocol's, else the family's."""
@@ -63,8 +66,8 @@ class Protocol:
 
 
 PROTOCOLS: Dict[str, Protocol] = {
-    "upstream": Protocol("upstream", None, None, None, 0, False),
-    "p3": Protocol("p3", 520, 8, 20, 10, True),
+    "upstream": Protocol("upstream", None, None, None, 0, False, None),
+    "p3": Protocol("p3", 520, 8, 20, 10, True, 7),
 }
 
 
@@ -72,13 +75,42 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def artifact_digest(path: Any, max_hashed_bytes: int = 4 << 20) -> Optional[Dict[str, Any]]:
-    """A cheap identity for a checkpoint or engine directory.
+_FULL_HASH_BYTES = 8 << 20
+_SAMPLE_BYTES = 1 << 20
+_SAMPLE_STRIDES = 16
 
-    Lists every regular file under *path* with its size, and hashes the small
-    files (configs, manifests, processor tables: up to *max_hashed_bytes*).
-    Weight and engine files are identified by name and size only, which is
-    enough to tell two builds apart without reading gigabytes.
+
+def _content_hash(p: Path, size: int) -> str:
+    """SHA-256 of the whole file up to ``_FULL_HASH_BYTES``; above that, of its
+    size, its first and last megabyte and sixteen 64 KiB windows spread over
+    it, which reads a few megabytes of a multi-gigabyte weight or engine file."""
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        if size <= _FULL_HASH_BYTES:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+            return h.hexdigest()
+        h.update(str(size).encode())
+        h.update(f.read(_SAMPLE_BYTES))
+        window = 64 << 10
+        for i in range(1, _SAMPLE_STRIDES + 1):
+            f.seek(max(0, (size * i) // (_SAMPLE_STRIDES + 1) - window // 2))
+            h.update(f.read(window))
+        f.seek(max(0, size - _SAMPLE_BYTES))
+        h.update(f.read(_SAMPLE_BYTES))
+    return h.hexdigest()
+
+
+def artifact_digest(path: Any) -> Optional[Dict[str, Any]]:
+    """An identity for a checkpoint or engine directory, from file contents.
+
+    Every regular file under *path* contributes its relative name, its size
+    and a content hash: complete for files up to 8 MiB (configs, manifests,
+    processor tables), sampled for larger ones (weights, engines) so that a
+    directory of gigabytes is digested in well under a second. Overwriting a
+    weight or engine file in place, even with one of the same size, changes
+    the digest; a file rewritten so that its sampled windows and size all
+    agree does not, which is not a case a build produces by accident.
     """
     if not path:
         return None
@@ -94,11 +126,7 @@ def artifact_digest(path: Any, max_hashed_bytes: int = 4 << 20) -> Optional[Dict
     entries = []
     for p in files:
         size = p.stat().st_size
-        rel = p.relative_to(base).as_posix()
-        if size <= max_hashed_bytes and p.suffix.lower() in {".json", ".yaml", ".yml", ".txt", ".sha256", ".cff"}:
-            entries.append([rel, size, _sha256(p.read_bytes())])
-        else:
-            entries.append([rel, size])
+        entries.append([p.relative_to(base).as_posix(), size, _content_hash(p, size)])
     return {"files": len(entries), "digest": _sha256(json.dumps(entries).encode())}
 
 
@@ -164,8 +192,11 @@ def libero_init_states(task_suite: Any, task_id: int) -> Any:
     return torch.load(path, weights_only=False)
 
 
-def protocol_record(protocol: Protocol, max_episode_steps: int, n_action_steps: int, n_episodes: int) -> Dict[str, Any]:
-    """The resolved protocol, as written into a summary."""
+def protocol_record(
+    protocol: Protocol, max_episode_steps: int, n_action_steps: int, n_episodes: int, seed: Optional[int] = None
+) -> Dict[str, Any]:
+    """The resolved protocol, as written into a summary: *n_action_steps* is the
+    number of actions the family executes per policy call."""
     rec = asdict(protocol)
-    rec.update(max_episode_steps=max_episode_steps, n_action_steps=n_action_steps, n_episodes=n_episodes)
+    rec.update(max_episode_steps=max_episode_steps, n_action_steps=n_action_steps, n_episodes=n_episodes, seed=seed)
     return rec

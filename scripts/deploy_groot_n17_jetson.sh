@@ -97,6 +97,16 @@ float_current() {
   [ -f "$FLOAT/.checkpoint" ] || return 1
   [ "$(cat "$FLOAT/.checkpoint")" = "$(ckpt_stamp)" ]
 }
+# Identity of a quantized arm: the checkpoint plus everything the export takes
+# as input. Export and engines carry it, so a changed checkpoint, scheme,
+# parameter set or calibration budget under the same ARM rebuilds instead of
+# serving a stale arm.
+arm_stamp() {
+  printf '%s | llm=%s dit=%s params=%s calib=%s\n' "$(ckpt_stamp)" "$LLM_SCHEME" "$DIT_SCHEME" "${LLM_PARAMS:-{}}" "$NUM_CALIB"
+}
+stamp_matches() { [ -f "$1" ] && [ "$(cat "$1")" = "$(arm_stamp)" ]; }
+export_current()  { [ -s "$ARMDIR/onnx/foldquant_export.json" ] && stamp_matches "$ARMDIR/onnx/.stamp"; }
+engines_current() { engines_complete "$ARMDIR/engines" && stamp_matches "$ARMDIR/engines/.stamp"; }
 need_ds() { [ -n "${DS:-}" ] || die "set DS to a LeRobot dataset (needed by the '$1' step)"; }
 
 model_args=(--model-path "$CKPT")
@@ -162,11 +172,14 @@ fi
 
 if has_step export; then
   say "export: FoldQuant graphs ($LLM_SCHEME / $DIT_SCHEME)"
-  if [ "$FORCE" != 1 ] && [ -s "$ARMDIR/onnx/foldquant_export.json" ]; then
-    echo "  already exported: $ARMDIR/onnx (FORCE=1 to redo)"
+  if [ "$FORCE" != 1 ] && export_current; then
+    echo "  already exported for this checkpoint and recipe: $ARMDIR/onnx (FORCE=1 to redo)"
   else
     need_ds export
-    rm -rf "$ARMDIR/onnx"
+    if [ -s "$ARMDIR/onnx/foldquant_export.json" ] && [ "$FORCE" != 1 ]; then
+      echo "  $ARMDIR/onnx was exported from another checkpoint or recipe; re-exporting"
+    fi
+    rm -rf "$ARMDIR/onnx" "$ARMDIR/engines"
     args=("${model_args[@]}" --dataset-path "$DS" "${backend_args[@]}"
           --num-calib "$NUM_CALIB" --seed 0
           --llm-scheme "$LLM_SCHEME" --dit-scheme "$DIT_SCHEME" --output-dir "$ARMDIR")
@@ -174,16 +187,20 @@ if has_step export; then
     echo "  calibrating on $NUM_CALIB samples (log: $LOGS/export.log)"
     "$PYTHON" -m foldquant_integration.export_foldquant "${args[@]}" >"$LOGS/export.log" 2>&1 \
       || die "export failed -- see $LOGS/export.log"
+    arm_stamp >"$ARMDIR/onnx/.stamp"
   fi
 fi
 
 if has_step build; then
   say "build: TensorRT engines for $ARM"
-  if [ "$FORCE" != 1 ] && engines_complete "$ARMDIR/engines"; then
-    echo "  already complete: $ARMDIR/engines (FORCE=1 to redo)"
+  if [ "$FORCE" != 1 ] && engines_current; then
+    echo "  already complete for this checkpoint and recipe: $ARMDIR/engines (FORCE=1 to redo)"
   else
-    [ -s "$ARMDIR/onnx/foldquant_export.json" ] || die "no export at $ARMDIR/onnx -- run the export step first"
-    engines_complete "$FLOAT/engines" || die "float engines incomplete at $FLOAT/engines -- run the float step first"
+    export_current || die "no export for this checkpoint and recipe at $ARMDIR/onnx -- run the export step first"
+    float_current || die "float engines at $FLOAT/engines are missing or from another checkpoint -- run the float step first"
+    if engines_complete "$ARMDIR/engines" && [ "$FORCE" != 1 ]; then
+      echo "  $ARMDIR/engines was built from another checkpoint or recipe; rebuilding"
+    fi
     rm -rf "$ARMDIR/engines"
     echo "  building (log: $LOGS/build.log)"
     "$PYTHON" -m foldquant_integration.build_engines \
@@ -191,12 +208,14 @@ if has_step build; then
         --float-onnx-dir "$FLOAT/onnx" --float-engine-dir "$FLOAT/engines" >"$LOGS/build.log" 2>&1 \
       || die "engine build failed -- see $LOGS/build.log"
     engines_complete "$ARMDIR/engines" || die "build finished without all seven engines -- see $LOGS/build.log"
+    arm_stamp >"$ARMDIR/engines/.stamp"
   fi
 fi
 
 if has_step verify; then
   say "verify: engines against the bf16 policy on $NUM_VERIFY held-out samples"
   need_ds verify
+  engines_current || die "engines at $ARMDIR/engines are missing or from another checkpoint or recipe -- run the build step"
   "$PYTHON" -m foldquant_integration.verify \
       "${model_args[@]}" --dataset-path "$DS" "${backend_args[@]}" \
       --engine-dir "$ARMDIR/engines" --num-samples "$NUM_VERIFY" --seed 42 \
@@ -215,7 +234,7 @@ fi
 
 if has_step serve; then
   say "serve: $ARMDIR/engines on $HOST:$PORT"
-  engines_complete "$ARMDIR/engines" || die "engines incomplete at $ARMDIR/engines"
+  engines_current || die "engines at $ARMDIR/engines are missing or from another checkpoint or recipe -- run the build step"
   # Refuse an occupied port rather than failing after the ~30 s checkpoint load,
   # and never disturb whatever is already listening there.
   if command -v ss >/dev/null && ss -ltn | awk '{print $4}' | grep -qE "[:.]$PORT\$"; then
