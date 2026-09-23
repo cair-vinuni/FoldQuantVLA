@@ -73,6 +73,21 @@ def test_aggregates_must_match_samples(results):
     assert any("cos_min" in p for p in check_records.check())
 
 
+def test_missing_or_nan_aggregate_fails(results):
+    r = _record()
+    r["actions"]["cos_min"] = float("nan")
+    _write(results, "groot_n1_6", "w4a4", r)
+    assert any("cos_min" in p and "finite" in p for p in check_records.check())
+    r = _record()
+    del r["actions"]["cos_median"]
+    _write(results, "groot_n1_6", "w4a4", r)
+    assert any("cos_median" in p for p in check_records.check())
+    r = _record()
+    r["samples"][0]["action_max_abs"] = -1.0
+    _write(results, "groot_n1_6", "w4a4", r)
+    assert any("action_max_abs" in p for p in check_records.check())
+
+
 def test_operator_paths_are_rejected(results):
     r = _record()
     r["dataset_path"] = "/home/someone/data"

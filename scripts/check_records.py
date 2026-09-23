@@ -81,10 +81,16 @@ def check() -> list[str]:
             if not all(_finite_unit(c) for c in cos):
                 problems.append(f"{where}: a per-sample action cosine is missing, non-finite or outside [-1, 1]")
                 continue
+            worst = [s.get("action_max_abs") for s in samples]
+            if not all(isinstance(w, (int, float)) and math.isfinite(w) and w >= 0 for w in worst):
+                problems.append(f"{where}: a per-sample action_max_abs is missing, non-finite or negative")
             a = r["actions"]
             for key, ref in (("cos_min", min(cos)), ("cos_median", statistics.median(cos)), ("cos_mean", sum(cos) / len(cos))):
-                if key in a and a[key] is not None and abs(float(a[key]) - ref) > 1e-6:
-                    problems.append(f"{where}: actions.{key} = {a[key]} does not equal the {key[4:]} of the samples ({ref:.7f})")
+                value = a.get(key)
+                if not _finite_unit(value):
+                    problems.append(f"{where}: actions.{key} is missing or not a finite number in [-1, 1]")
+                elif abs(float(value) - ref) > 1e-6:
+                    problems.append(f"{where}: actions.{key} = {value} does not equal the {key[4:]} of the samples ({ref:.7f})")
             if len({(s.get("episode"), s.get("step")) for s in samples}) != len(samples):
                 problems.append(f"{where}: two samples share an (episode, step)")
 

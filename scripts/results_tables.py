@@ -71,10 +71,8 @@ def drift_table() -> str:
 
     P2 reports the **minimum** decoded-action cosine over the 32 held-out
     observations and the median over observations of the largest coordinate
-    error. The median cosine is printed beside them because a VLA action
-    space is clipped: a chunk railed on every channel scores 1.000 whatever
-    the arm did, so the mean and the median track how often the policy was
-    railed, while the minimum is the observation the arm damaged most.
+    error. The median cosine is printed beside them: the minimum is the
+    observation the arm damaged most, the median the typical observation.
     """
     rows = [
         "| family | arm | n | action cos (min, P2) | action cos (median) | median worst \\|Δ\\| |",
