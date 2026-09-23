@@ -87,6 +87,22 @@ def test_digest_is_cached_by_listing_and_listing_only_mode_skips_contents(tmp_pa
     assert artifact_digest(ckpt)["digest"] != a["digest"]
 
 
+def test_empty_or_corrupt_cache_entry_is_recomputed(tmp_path):
+    from foldquant.eval_protocol import _cache_dir
+
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    (ckpt / "x.engine").write_bytes(b"abc" * 1000)
+    a = artifact_digest(ckpt)["digest"]
+    entries = list(_cache_dir().iterdir())
+    assert len(entries) == 1 and entries[0].read_text() == a
+    for bad in ("", "garbage", a[:-1], a + "\n0"):
+        entries[0].write_text(bad)
+        assert artifact_digest(ckpt)["digest"] == a
+        assert entries[0].read_text() == a  # the good entry is written back
+    assert not [p for p in _cache_dir().iterdir() if p.name.endswith(".tmp")]
+
+
 def _run(**over):
     run = {"protocol": {"name": "p3"}, "model": {"digest": "m1"}, "engines": None, "suites": ["libero_10"], "n": 20}
     run.update(over)

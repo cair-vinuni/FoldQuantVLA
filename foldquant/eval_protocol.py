@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -107,12 +108,16 @@ def artifact_digest(path: Any, content: bool = True) -> Optional[Dict[str, Any]]
     """An identity for a checkpoint, engine or dataset directory.
 
     With ``content=True`` the digest is the SHA-256 over the relative name and
-    the complete bytes of every regular file under *path*, so any change to
-    any file changes it. Reading a large checkpoint once is the cost of that
-    guarantee; the result is remembered under ``~/.cache/foldquant`` keyed by
-    the directory's listing (names, sizes, mtimes), so an unchanged directory
-    is not re-read. With ``content=False`` only the listing is digested, which
-    identifies a dataset by its files without reading them.
+    the complete bytes of every regular file under *path*. Reading a large
+    checkpoint once is the cost of that; the result is remembered under
+    ``~/.cache/foldquant`` keyed by the directory's listing (names, sizes,
+    mtimes), so an unchanged directory is not re-read. A file whose bytes
+    change while its size and mtime are kept identical is therefore served
+    from the cache; ordinary writes and copies always move the mtime. A cache
+    entry that is not a 64-digit hexadecimal string (empty, truncated,
+    corrupt) is ignored and recomputed. With ``content=False`` only the
+    listing is digested, which identifies a dataset by its files without
+    reading them.
     """
     if not path:
         return None
@@ -124,15 +129,36 @@ def artifact_digest(path: Any, content: bool = True) -> Optional[Dict[str, Any]]
     if not content:
         return {"files": len(files), "digest": listing_key, "content": False}
     cache = _cache_dir() / listing_key
-    if cache.is_file():
-        return {"files": len(files), "digest": cache.read_text().strip(), "content": True}
+    cached = _read_cached_digest(cache)
+    if cached is not None:
+        return {"files": len(files), "digest": cached, "content": True}
     digest = _stream_hash(files, root.parent if root.is_file() else root)
+    _write_cached_digest(cache, digest)
+    return {"files": len(files), "digest": digest, "content": True}
+
+
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _read_cached_digest(cache: Path) -> Optional[str]:
+    try:
+        text = cache.read_text().strip()
+    except OSError:
+        return None
+    return text if _HEX64.match(text) else None
+
+
+def _write_cached_digest(cache: Path, digest: str) -> None:
+    """Write through a private temporary file and replace, so a reader never sees a partial entry."""
+    import os
+
     try:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(digest)
+        tmp = cache.with_name(f".{cache.name}.{os.getpid()}.tmp")
+        tmp.write_text(digest)
+        tmp.replace(cache)
     except OSError:
         pass
-    return {"files": len(files), "digest": digest, "content": True}
 
 
 def run_fingerprint(run: Dict[str, Any]) -> str:
