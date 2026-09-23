@@ -98,7 +98,8 @@ Every step takes `--embodiment-tag` (the LIBERO post-trained checkpoints use
 `new_embodiment`), `--data-config` (defaults to upstream's
 `examples.Libero.custom_data_config:LiberoDataConfig`; the LIBERO-Goal
 checkpoint needs `LiberoDataConfigMeanStd`) and `--denoising-steps`
-(upstream serves LIBERO with 8; omitted, the checkpoint's own value is used).
+(the paper runs every GR00T checkpoint with 4, which `--protocol p3` selects;
+upstream's own client serves LIBERO with 8; omitted, the checkpoint's value is used).
 Calibration, verification and serving must agree on these, since they change
 the tensors the model sees.
 
@@ -110,7 +111,7 @@ the tensors the model sees.
 
    ```bash
    python -m foldquant_integration.export_foldquant \
-       --model-path <checkpoint> --embodiment-tag new_embodiment --denoising-steps 8 \
+       --model-path <checkpoint> --embodiment-tag new_embodiment --denoising-steps 4 \
        --dataset-path <calibration dataset> --num-calib 128 \
        --llm-scheme w8a8_sr --dit-scheme w4a4_shg \
        --output-dir exports/n15_w8a8_w4a4
@@ -153,17 +154,17 @@ the tensors the model sees.
 
    ```bash
    python -m foldquant_integration.verify --model-path ... --embodiment-tag new_embodiment \
-       --denoising-steps 8 --dataset-path ... --engine-dir exports/n15_w8a8_w4a4/engines
+       --denoising-steps 4 --dataset-path ... --engine-dir exports/n15_w8a8_w4a4/engines
 
    # upstream's client/server protocol, server side quantized:
    python -m foldquant_integration.serve --model-path ... --embodiment-tag new_embodiment \
-       --denoising-steps 8 --engine-dir exports/n15_w8a8_w4a4/engines --port 5555
+       --denoising-steps 4 --engine-dir exports/n15_w8a8_w4a4/engines --port 5555
    MUJOCO_GL=egl python examples/Libero/eval/run_libero_eval.py \
        --task_suite_name libero_spatial --num_trials_per_task 20 --headless
 
    # the same rollout loop in process, every suite, resumable:
    MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --model-path ... \
-       --embodiment-tag new_embodiment --denoising-steps 8 \
+       --embodiment-tag new_embodiment --denoising-steps 4 \
        --engine-dir exports/n15_w8a8_w4a4/engines --output exports/n15_w8a8_w4a4/libero
 
    python -m foldquant_integration.benchmark --model-path ... --embodiment-tag new_embodiment \

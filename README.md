@@ -187,7 +187,7 @@ MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
     --model-path <checkpoint> --engine-dir exports/<arm>/engines --output <out>
 # GR00T N1.5, from models/groot_n1_5
 MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
-    --model-path <checkpoint> --embodiment-tag new_embodiment --denoising-steps 8 \
+    --model-path <checkpoint> --embodiment-tag new_embodiment --denoising-steps 4 \
     --engine-dir exports/<arm>/engines --output <out>
 # π₀.₅, from models/pi05 (the client runs in examples/libero/.venv)
 MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \

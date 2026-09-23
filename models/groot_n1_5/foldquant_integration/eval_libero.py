@@ -28,7 +28,7 @@ in the environment, as upstream's client does.
 Example::
 
     MUJOCO_GL=egl python -m foldquant_integration.eval_libero \\
-        --model-path <ckpt> --embodiment-tag new_embodiment --denoising-steps 8 \\
+        --model-path <ckpt> --embodiment-tag new_embodiment --denoising-steps 4 \\
         --engine-dir exports/n15_w4a4/engines --output results/n15_w4a4
 """
 
@@ -80,7 +80,7 @@ class EvalConfig:
     embodiment_tag: str | None = None
     data_config: str = LIBERO_DATA_CONFIG
     denoising_steps: int | None = None
-    """Flow-matching steps (upstream serves the LIBERO checkpoints with 8)."""
+    """Flow-matching steps; default the checkpoint's own value, or 4 under ``--protocol p3`` (the paper's setting; upstream's client serves LIBERO with 8)."""
 
     suites: list[str] = field(default_factory=lambda: list(SUITES))
     protocol: str = "upstream"
@@ -243,6 +243,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
     args.n_episodes = protocol.resolve(args.n_episodes, "n_episodes", 20)
     if args.max_steps is None and protocol.max_episode_steps is not None:
         args.max_steps = protocol.max_episode_steps
+    if args.denoising_steps is None and protocol.name == "p3":
+        args.denoising_steps = 4  # the paper runs every GR00T checkpoint with four denoising steps
     run = {
         "protocol": protocol_record(protocol, args.max_steps if args.max_steps is not None else -1, 8, args.n_episodes),
         "max_steps": args.max_steps if args.max_steps is not None else dict(MAX_STEPS),
