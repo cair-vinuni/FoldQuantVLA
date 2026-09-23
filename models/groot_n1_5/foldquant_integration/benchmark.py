@@ -21,7 +21,7 @@ the same loop with :func:`.runtime.install_engines` swapping the engines in.
 Example::
 
     python -m foldquant_integration.benchmark --model-path <ckpt> --embodiment-tag new_embodiment \\
-        --dataset-path <calibration dataset> --denoising-steps 8 \\
+        --dataset-path <calibration dataset> --denoising-steps 4 \\
         --arms w4a4=exports/n15_w4a4/engines w8a8=exports/n15_w8a8/engines
 """
 

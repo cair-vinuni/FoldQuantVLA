@@ -11,7 +11,7 @@ client evaluates a FoldQuant arm exactly as it evaluates the bf16 policy::
 
     # terminal 1:  the arm under test
     python -m foldquant_integration.serve --model-path <ckpt> --embodiment-tag new_embodiment \\
-        --engine-dir exports/n15_w4a4/engines --denoising-steps 8
+        --engine-dir exports/n15_w4a4/engines --denoising-steps 4
 
     # terminal 2:  upstream's evaluation client, unchanged
     python examples/Libero/eval/run_libero_eval.py --task_suite_name libero_spatial --headless
