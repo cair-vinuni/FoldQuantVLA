@@ -1,21 +1,20 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""LIBERO success-rate sweep through upstream's own client, with a resumable summary.
+"""LIBERO success-rate sweep through a websocket client, with a resumable summary.
 
 Upstream evaluates Pi0.5 on LIBERO with a websocket client
-(``examples/libero/main.py``, which runs in its own Python 3.8 environment
-with LIBERO and robosuite) talking to ``scripts/serve_policy.py``, one suite
-per run, results in the client's log. This module runs exactly that pairing
-for several suites unattended: it starts :mod:`.serve` for the arm, waits for
-the port, runs the unmodified upstream client on each suite with the
-client environment's interpreter (``--client-python``), reads the final
-``Total success rate`` / ``Total episodes`` lines off the client log, and
-records them in ``<output>/summary.json`` per suite, so an interrupted sweep
-resumes where it stopped.
-
-The client saves a replay video of every episode; they are directed to
-``<output>/videos/<suite>/``.
+(``examples/libero/main.py``, in its own Python 3.8 environment with LIBERO
+and robosuite) talking to ``scripts/serve_policy.py``, one suite per run.
+This module runs that pairing for several suites unattended: it starts
+:mod:`.serve` for the arm, waits for the port, runs :mod:`.libero_client`
+(upstream's client loop with a selectable step budget, writing per-episode
+JSON) on each suite with the client environment's interpreter
+(``--client-python``), and records each suite in ``<output>/summary.json``,
+so an interrupted sweep resumes where it stopped, and only into the same
+run. ``--protocol p3`` is the paper's campaign (20 trials per task from
+LIBERO's stored initial states, 520 steps on every suite, seed 7, replan
+every 5 steps).
 
 Example::
 
@@ -199,7 +198,7 @@ def main(args: EvalConfig) -> dict[str, Any]:
     if args.max_steps is None and protocol.max_episode_steps is not None:
         args.max_steps = protocol.max_episode_steps
     run = {
-        "protocol": protocol_record(protocol, args.max_steps if args.max_steps is not None else -1, args.replan_steps, args.num_trials_per_task),
+        "protocol": protocol_record(protocol, args.max_steps if args.max_steps is not None else -1, args.replan_steps, args.num_trials_per_task, args.seed),
         "max_steps": args.max_steps if args.max_steps is not None else "upstream per-suite",
         "num_steps_wait": args.num_steps_wait,
         "checkpoint_dir": public_path(args.checkpoint_dir),

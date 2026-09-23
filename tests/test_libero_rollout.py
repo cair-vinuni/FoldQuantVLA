@@ -20,6 +20,9 @@ class FakeRawEnv:
         self.state = None
         self.t = 0
 
+    def seed(self, value):
+        self.log.append(("seed", value))
+
     def reset(self):
         self.log.append("reset")
         self.t = 0
@@ -108,9 +111,11 @@ def test_episode_i_starts_from_state_i_after_settle_steps():
 
     policy = FakePolicy()
     records = rollout_task(policy, make_env, FakeMultiStep, list(range(5)), n_episodes=5,
-                           max_episode_steps=24, n_action_steps=8, settle_steps=10)
+                           max_episode_steps=24, n_action_steps=8, settle_steps=10, seed=7)
     assert [r["init_state_id"] for r in records] == [0, 1, 2, 3, 4]
     log = raw_log[0]
+    # the simulator is seeded once per task, before the first episode
+    assert log[0] == ("seed", 7) and ("seed", 7) not in log[1:]
     # each episode: reset, set_init_state(i), ten no-op settle steps with the gripper open
     firsts = [i for i, e in enumerate(log) if e == "reset"]
     assert len(firsts) == 5
@@ -125,6 +130,7 @@ def test_episode_i_starts_from_state_i_after_settle_steps():
 
 def test_wrapper_reports_init_state_and_wraps_around():
     env = fixed_init_state_env(FakeLiberoEnv(), [10, 11], settle_steps=0)
+    assert ("seed", 7) not in env.unwrapped._env.log  # no seed unless asked
     _obs, info = env.reset()
     assert info["init_state_id"] == 0 and env.init_state_id == 0
     _obs, info = env.reset(options={"init_state_id": 5})

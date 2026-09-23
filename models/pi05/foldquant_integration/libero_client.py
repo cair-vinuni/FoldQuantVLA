@@ -98,6 +98,7 @@ def eval_libero(args: Args) -> dict:
             action_plan = collections.deque()
             obs = env.set_init_state(initial_states[episode_idx])
             t = 0
+            policy_steps = 0
             done = False
             replay_images = []
             while t < max_steps + args.num_steps_wait:
@@ -130,6 +131,7 @@ def eval_libero(args: Args) -> dict:
                         action_plan.extend(action_chunk[: args.replan_steps])
                     action = action_plan.popleft()
                     obs, reward, done, info = env.step(action.tolist())
+                    policy_steps += 1
                     if done:
                         break
                     t += 1
@@ -142,7 +144,7 @@ def eval_libero(args: Args) -> dict:
                     "episode": episode_idx,
                     "init_state_id": episode_idx,
                     "success": success,
-                    "steps": max(t - args.num_steps_wait, 0),
+                    "steps": policy_steps,
                 }
             )
             total_episodes += 1

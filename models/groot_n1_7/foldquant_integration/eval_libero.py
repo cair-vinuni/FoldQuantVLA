@@ -88,6 +88,9 @@ class EvalConfig:
     n_action_steps: Optional[int] = None
     """Actions executed per policy call; default 8."""
 
+    seed: Optional[int] = None
+    """Simulator seed applied once per task environment; default none (upstream) or 7 (p3)."""
+
     resume: bool = True
     """Continue an interrupted sweep in ``--output``; refused when it was a different run."""
 
@@ -147,8 +150,9 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     n_episodes = protocol.resolve(args.n_episodes, "n_episodes", 20)
     max_episode_steps = protocol.resolve(args.max_episode_steps, "max_episode_steps", 504)
     n_action_steps = protocol.resolve(args.n_action_steps, "n_action_steps", 8)
+    seed = args.seed if args.seed is not None else protocol.seed
     run = {
-        "protocol": protocol_record(protocol, max_episode_steps, n_action_steps, n_episodes),
+        "protocol": protocol_record(protocol, max_episode_steps, n_action_steps, n_episodes, seed),
         "model_path": public_path(args.model_path),
         "model": artifact_digest(args.model_path),
         "engine_dir": public_path(args.engine_dir),
@@ -170,6 +174,7 @@ def main(args: EvalConfig) -> Dict[str, Any]:
             "n_envs": args.n_envs,
             "max_episode_steps": max_episode_steps,
             "n_action_steps": n_action_steps,
+            "seed": seed,
         }
     )
 
@@ -268,6 +273,7 @@ def main(args: EvalConfig) -> Dict[str, Any]:
                     max_episode_steps=max_episode_steps,
                     n_action_steps=n_action_steps,
                     settle_steps=protocol.settle_steps,
+                    seed=seed,
                 )
                 successes = [bool(e["success"]) for e in episodes]
             else:

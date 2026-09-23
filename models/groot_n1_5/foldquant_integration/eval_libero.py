@@ -95,6 +95,9 @@ class EvalConfig:
     num_steps_wait: int = 10
     """No-op steps after reset while dropped objects settle, as upstream."""
 
+    seed: int | None = None
+    """Simulator seed applied once per task environment; default upstream's 0, or 7 under ``--protocol p3``."""
+
     resume: bool = True
     """Continue an interrupted sweep in ``--output``; refused when it was a different run."""
 
@@ -170,6 +173,8 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
     task = task_suite.get_task(task_id)
     initial_states = _task_init_states(task_suite, task_id)
     env, task_description = get_libero_env(task, resolution=args.resolution)
+    if args.seed is not None:
+        env.seed(args.seed)
     max_steps = args.max_steps if args.max_steps is not None else MAX_STEPS[suite]
     n_episodes = args.n_episodes if args.n_episodes is not None else 20
     successes = 0
@@ -181,6 +186,7 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
             env.reset()
             obs = env.set_init_state(initial_states[episode_idx])
             t = 0
+            policy_steps = 0
             done = False
             try:
                 while t < max_steps + args.num_steps_wait:
@@ -190,6 +196,7 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
                         continue
                     action = wrapper.get_action(obs, task.language)
                     obs, _reward, done, _info = env.step(action.tolist())
+                    policy_steps += 1
                     if done:
                         break
                     t += 1
@@ -204,7 +211,7 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
                     "episode": episode_idx,
                     "init_state_id": episode_idx,
                     "success": bool(done),
-                    "steps": max(t - args.num_steps_wait, 0),
+                    "steps": policy_steps,
                 }
             )
     finally:
@@ -245,8 +252,12 @@ def main(args: EvalConfig) -> dict[str, Any]:
         args.max_steps = protocol.max_episode_steps
     if args.denoising_steps is None and protocol.name == "p3":
         args.denoising_steps = 4  # the paper runs every GR00T checkpoint with four denoising steps
+    if args.seed is None:
+        args.seed = protocol.seed
     run = {
-        "protocol": protocol_record(protocol, args.max_steps if args.max_steps is not None else -1, 8, args.n_episodes),
+        # N1.5 executes one action per policy call (K = 1), as upstream's client does
+        "protocol": protocol_record(protocol, args.max_steps if args.max_steps is not None else -1, 1, args.n_episodes, args.seed),
+        "seed": args.seed,
         "max_steps": args.max_steps if args.max_steps is not None else dict(MAX_STEPS),
         "num_steps_wait": args.num_steps_wait,
         "model_path": public_path(args.model_path),
@@ -269,6 +280,7 @@ def main(args: EvalConfig) -> dict[str, Any]:
         "n_episodes": args.n_episodes,
         "num_steps_wait": args.num_steps_wait,
         "resolution": args.resolution,
+        "seed": args.seed,
     }
 
     benchmark_dict = benchmark.get_benchmark_dict()

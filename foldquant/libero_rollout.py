@@ -16,7 +16,7 @@ Imports gymnasium lazily; the module itself is importable without it.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -25,13 +25,15 @@ from .eval_protocol import LIBERO_DUMMY_ACTION
 __all__ = ["fixed_init_state_env", "rollout_task"]
 
 
-def fixed_init_state_env(env: Any, init_states: Any, settle_steps: int) -> Any:
+def fixed_init_state_env(env: Any, init_states: Any, settle_steps: int, seed: Optional[int] = None) -> Any:
     """Wrap an upstream ``LiberoEnv`` so ``reset(options={"init_state_id": i})`` starts from state *i*.
 
     Without ``options`` the episodes take states ``0, 1, 2, ...`` in order.
     After ``set_init_state`` the wrapper steps LIBERO's no-op action
-    ``settle_steps`` times, as the paper's harness and LIBERO's own evaluators
-    do, and reports ``init_state_id`` in the reset info.
+    ``settle_steps`` times, as LIBERO's own evaluators do, and reports
+    ``init_state_id`` in the reset info. *seed*, when given, seeds the
+    simulator once for the task, the way LIBERO's and openpi's evaluators do
+    (it affects object placement even from a stored initial state).
     """
     import gymnasium as gym
 
@@ -40,7 +42,9 @@ def fixed_init_state_env(env: Any, init_states: Any, settle_steps: int) -> Any:
             super().__init__(inner)
             self._states = init_states
             self._next = 0
-            self.init_state_id: int | None = None
+            self.init_state_id: Optional[int] = None
+            if seed is not None:
+                inner.unwrapped._env.seed(seed)
 
         def reset(self, seed=None, options=None):
             base = self.env.unwrapped  # the upstream LiberoEnv
@@ -82,6 +86,7 @@ def rollout_task(
     max_episode_steps: int,
     n_action_steps: int,
     settle_steps: int,
+    seed: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Roll out ``n_episodes`` episodes of one task, episode ``i`` from initial state ``i``.
 
@@ -91,7 +96,7 @@ def rollout_task(
     record per episode: ``episode``, ``init_state_id``, ``success`` and the
     number of environment steps taken after settling.
     """
-    fixed = fixed_init_state_env(make_env(), init_states, settle_steps)
+    fixed = fixed_init_state_env(make_env(), init_states, settle_steps, seed)
     env = multistep_wrapper(
         fixed,
         video_delta_indices=np.array([0]),

@@ -176,9 +176,10 @@ python scripts/results_tables.py              # the drift (protocol P2) and late
 ### Reproduce the paper's LIBERO campaign (protocol P3)
 
 Four suites, ten tasks each, episode `i` of every task from LIBERO's stored
-initial state `i` (`i = 0..19`), ten no-op settle steps, 520 environment
-steps, eight actions executed per policy call (five on π₀.₅), terminate on
-success: 800 episodes per arm. Build the arm with the family's integration
+initial state `i` (`i = 0..19`) in a simulator seeded with 7, ten no-op
+settle steps, 520 environment steps, the family's executed prefix per policy
+call (eight actions on N1.7 and N1.6, one on N1.5, five on π₀.₅), terminate
+on success: 800 episodes per arm. Build the arm with the family's integration
 README, then:
 
 ```bash
@@ -198,11 +199,8 @@ MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
 Omit `--engine-dir` for the BF16 PyTorch arm. `<out>/summary.json` records
 every episode's initial state and outcome, resumes an interrupted sweep only
 into the same checkpoint, engines and protocol (`--no-resume` starts over),
-and pools success over episodes. Flow-matching noise is not seeded at serve
-time, so a rerun reproduces the protocol, not each episode; the paper's paired
-tests at this size do not separate the arms. `--protocol p3
---max-episode-steps 720` on the NVIDIA per-suite N1.7 checkpoints is the
-paper's Table I setting.
+and pools success over episodes. `--protocol p3 --max-episode-steps 720` on
+the NVIDIA per-suite N1.7 checkpoints is the paper's Table I setting.
 
 `scripts/smoke_family.sh`, `scripts/smoke_serve.sh` and `scripts/smoke_eval.sh`
 check that export → build → verify, the policy server, and one LIBERO episode
