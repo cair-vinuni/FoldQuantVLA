@@ -73,26 +73,46 @@ def test_digest_is_cached_by_listing_and_listing_only_mode_skips_contents(tmp_pa
     ckpt.mkdir()
     f = ckpt / "model.safetensors"
     f.write_bytes(b"A" * 1000)
+    old = f.stat().st_mtime_ns - 3600 * 10**9  # an hour ago: settled, so the cache applies
+    os.utime(f, ns=(old, old))
     a = artifact_digest(ckpt)
     assert a["content"] and artifact_digest(ckpt) == a
     listing = artifact_digest(ckpt, content=False)
     assert listing["content"] is False and listing["digest"] != a["digest"]
-    # same size and mtime, different bytes: the cached digest is reused (the listing is
-    # the cache key); a new mtime re-reads the file
-    st = f.stat()
+    # same size and the same old mtime, different bytes: served from the cache (the
+    # listing is the key); a moved mtime re-reads the file
     f.write_bytes(b"B" * 1000)
-    os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns))
+    os.utime(f, ns=(old, old))
     assert artifact_digest(ckpt) == a
-    os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+    os.utime(f, ns=(old, old + 10**9))
     assert artifact_digest(ckpt)["digest"] != a["digest"]
 
 
-def test_empty_or_corrupt_cache_entry_is_recomputed(tmp_path):
+def test_recently_written_files_bypass_the_cache(tmp_path):
     from foldquant.eval_protocol import _cache_dir
 
     ckpt = tmp_path / "ckpt"
     ckpt.mkdir()
-    (ckpt / "x.engine").write_bytes(b"abc" * 1000)
+    f = ckpt / "model.safetensors"
+    f.write_bytes(b"A" * 1000)
+    a = artifact_digest(ckpt)["digest"]
+    assert not _cache_dir().exists() or not list(_cache_dir().iterdir())  # nothing cached while fresh
+    # a rewrite within the same kernel timestamp tick keeps size and mtime; still detected
+    f.write_bytes(b"B" * 1000)
+    assert artifact_digest(ckpt)["digest"] != a
+
+
+def test_empty_or_corrupt_cache_entry_is_recomputed(tmp_path):
+    import os
+
+    from foldquant.eval_protocol import _cache_dir
+
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    x = ckpt / "x.engine"
+    x.write_bytes(b"abc" * 1000)
+    old = x.stat().st_mtime_ns - 3600 * 10**9
+    os.utime(x, ns=(old, old))
     a = artifact_digest(ckpt)["digest"]
     entries = list(_cache_dir().iterdir())
     assert len(entries) == 1 and entries[0].read_text() == a

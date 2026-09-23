@@ -111,11 +111,14 @@ def artifact_digest(path: Any, content: bool = True) -> Optional[Dict[str, Any]]
     the complete bytes of every regular file under *path*. Reading a large
     checkpoint once is the cost of that; the result is remembered under
     ``~/.cache/foldquant`` keyed by the directory's listing (names, sizes,
-    mtimes), so an unchanged directory is not re-read. A file whose bytes
-    change while its size and mtime are kept identical is therefore served
-    from the cache; ordinary writes and copies always move the mtime. A cache
-    entry that is not a 64-digit hexadecimal string (empty, truncated,
-    corrupt) is ignored and recomputed. With ``content=False`` only the
+    mtimes), so an unchanged directory is not re-read. Kernel timestamps are
+    coarse (milliseconds), so a file rewritten within the same tick as an
+    earlier read keeps its mtime; the cache is therefore bypassed, and the
+    files hashed, whenever any file was modified in the last
+    ``_SETTLE_SECONDS``. A file whose bytes change while its size and mtime
+    are deliberately kept identical is served from the cache. A cache entry
+    that is not a 64-digit hexadecimal string (empty, truncated, corrupt) is
+    ignored and recomputed. With ``content=False`` only the
     listing is digested, which identifies a dataset by its files without
     reading them.
     """
@@ -128,16 +131,22 @@ def artifact_digest(path: Any, content: bool = True) -> Optional[Dict[str, Any]]
     listing_key = _sha256(json.dumps([str(root), listing]).encode())
     if not content:
         return {"files": len(files), "digest": listing_key, "content": False}
+    import time
+
+    settled = not listing or max(entry[2] for entry in listing) < (time.time() - _SETTLE_SECONDS) * 1e9
     cache = _cache_dir() / listing_key
-    cached = _read_cached_digest(cache)
+    cached = _read_cached_digest(cache) if settled else None
     if cached is not None:
         return {"files": len(files), "digest": cached, "content": True}
     digest = _stream_hash(files, root.parent if root.is_file() else root)
-    _write_cached_digest(cache, digest)
+    if settled:
+        _write_cached_digest(cache, digest)
     return {"files": len(files), "digest": digest, "content": True}
 
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+#: files modified more recently than this are hashed, never served from the cache
+_SETTLE_SECONDS = 5.0
 
 
 def _read_cached_digest(cache: Path) -> Optional[str]:
