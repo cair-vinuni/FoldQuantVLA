@@ -103,6 +103,41 @@ Ten episodes check rollout completion and summary writing; published sweeps use
 in a separate environment against a server. N1.5 uses a sibling's pinned LIBERO
 checkout unless `FOLDQUANT_LIBERO_DIR` is set.
 
+## Reproduce the closed-loop campaign (protocol P3)
+
+The paper's LIBERO table is protocol P3: four suites, ten tasks each, episode
+`i` of every task from LIBERO's stored initial state `i` for `i = 0..19`, ten
+no-op steps with the gripper open after the state is set, 520 environment
+steps per episode, eight actions executed per policy call (five on π₀.₅),
+terminate on success; 800 episodes per arm. `--protocol p3` selects it in every
+family's `eval_libero`, and `summary.json` records the initial state and
+outcome of every episode:
+
+```bash
+# GR00T N1.7 (N1.6: the same command in models/groot_n1_6)
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
+    --model-path <4-suite checkpoint> --engine-dir exports/<arm>/engines --output <out>
+# GR00T N1.5
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
+    --model-path <ckpt> --embodiment-tag new_embodiment --denoising-steps 8 \
+    --engine-dir exports/<arm>/engines --output <out>
+# π₀.₅ (the client runs in examples/libero/.venv)
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 \
+    --checkpoint-dir <ckpt> --engine-dir exports/<arm>/engines \
+    --client-python examples/libero/.venv/bin/python --output <out>
+```
+
+Omit `--engine-dir` for the BF16 PyTorch arm. `--max-episode-steps 720` with
+`--protocol p3` on the NVIDIA per-suite N1.7 checkpoints is the paper's
+Table I setting. Flow-matching noise is not seeded at serve time, so a rerun
+reproduces the protocol, not the episode-by-episode outcomes; the paper's
+paired tests at this size do not separate the arms, and neither will a rerun.
+
+A `summary.json` carries a fingerprint of the checkpoint, the engine
+directory and the protocol. An interrupted sweep resumes into the same
+`--output` only when that fingerprint matches; a different checkpoint, engine
+build, episode count or step cap is refused, and `--no-resume` starts over.
+
 ## Reproduce a measurement
 
 Inspect the target record before running `verify`:
@@ -113,12 +148,13 @@ import json
 from pathlib import Path
 
 record = json.loads(Path("results/groot_n1_7/w4a4/verify.json").read_text())
-keys = ("dataset_path", "episodes", "seed", "num_samples", "schemes")
+keys = ("dataset_path", "seed", "num_samples", "held_out", "schemes")
 print({key: record[key] for key in keys})
+print("held-out episodes:", sorted({s["episode"] for s in record["samples"]}))
 PY
 ```
 
-Match the checkpoint, dataset, episode range, seed, sample count, and schemes.
+Match the checkpoint, dataset, episode set, seed, sample count, and schemes.
 The sampling plan depends on the available episodes, so a changed dataset can
 produce different observations with the same seed. Rebuild engines and plugin
 libraries for the target device and TensorRT version.

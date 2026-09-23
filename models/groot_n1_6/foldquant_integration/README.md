@@ -150,8 +150,8 @@ upstream's loader as much as by these tools.
    ```bash
    python -m foldquant_integration.verify --model-path ... --embodiment-tag libero_panda \
        --dataset-path ... --engine-dir exports/n16_w8a8_w4a4/engines
-   MUJOCO_GL=egl python -m foldquant_integration.eval_libero --model-path ... \
-       --engine-dir exports/n16_w8a8_w4a4/engines --n-envs 1 --output exports/n16_w8a8_w4a4/libero
+   MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --model-path ... \
+       --engine-dir exports/n16_w8a8_w4a4/engines --output exports/n16_w8a8_w4a4/libero
    python -m foldquant_integration.benchmark --model-path ... --embodiment-tag libero_panda \
        --dataset-path ... --arms w4a4=exports/n16_w8a8_w4a4/engines
    ```
@@ -160,10 +160,12 @@ upstream's loader as much as by these tools.
    seeded flow-matching noise on held-out observations from episodes the
    calibration never saw, and records every observation's drift in
    `verify.json`; `--split-from <quantized engine dir>` scores a float
-   directory on that arm's held-out set. `eval_libero` runs upstream's
-   `MultiStepWrapper` rollout (8-step chunks, 504-step cap, terminate on
-   success) over every task of the requested suites with a resume-safe
-   `summary.json`; upstream's factory has no engine hook, so the tool builds
+   directory on that arm's held-out set. `eval_libero` rolls out every task of the requested suites through
+   upstream's `MultiStepWrapper`; `--protocol p3` is the paper's campaign
+   (LIBERO's stored initial state per episode, ten settle steps, 520 steps,
+   8-step chunks) and the default is upstream's own loop (random placements,
+   504 steps); `summary.json` records every episode and resumes only into
+   the same run; upstream's factory has no engine hook, so the tool builds
    `Gr00tPolicy`, installs the engines and wraps it in `Gr00tSimPolicyWrapper`
    itself. `benchmark` times upstream's component loop for the PyTorch arm and
    each `--arms` engine directory in one process, and prints upstream's

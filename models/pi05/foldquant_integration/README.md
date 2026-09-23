@@ -146,9 +146,9 @@ policy sees exactly what the websocket server hands it.
    MUJOCO_GL=egl <libero venv>/bin/python examples/libero/main.py --args.task-suite-name libero_spatial
 
    # the same pairing over every suite, resumable:
-   MUJOCO_GL=egl python -m foldquant_integration.eval_libero --checkpoint-dir ... \
+   MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --checkpoint-dir ... \
        --engine-dir exports/pi05_w8a8_w4a4/engines \
-       --client-python examples/libero/.venv/bin/python --output results/pi05_w8a8_w4a4
+       --client-python examples/libero/.venv/bin/python --output exports/pi05_w8a8_w4a4/libero
 
    python -m foldquant_integration.benchmark --checkpoint-dir ... --dataset-path ... \
        --arms w4a4=exports/pi05_w8a8_w4a4/engines
@@ -165,10 +165,12 @@ policy sees exactly what the websocket server hands it.
    websocket pings, which openpi-client treats as a dead connection; `serve`
    therefore runs one warm-up inference on upstream's example observation
    before it opens the port (`--no-warmup` skips it). `eval_libero` starts that server and
-   runs the unmodified upstream client per suite in its own environment,
-   reading the final success rate off its log into a resume-safe
-   `summary.json` (the client's replay videos land under
-   `<output>/videos/`). `benchmark` times the input transforms, prefix
+   runs `libero_client.py` (upstream's client loop with a selectable step
+   budget) per suite in the client environment; `--protocol p3` is the
+   paper's campaign (20 trials per task from LIBERO's stored initial states,
+   520 steps on every suite, seed 7, replan every 5 steps), the default keeps
+   upstream's 50 trials and per-suite budgets. `summary.json` records every
+   episode and resumes only into the same run. `benchmark` times the input transforms, prefix
    embedding, prefix LLM pass, the denoise loop and the whole
    `Policy.infer` for the eager PyTorch arm and each `--arms` engine
    directory in one process, plus upstream's `torch.compile(max-autotune)`
@@ -180,8 +182,8 @@ observation per request.
 
 ## ModelOpt INT8 SmoothQuant baseline
 
-`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It reproduces the authors' framework
-preset `pi05/tensorrt/modelopt_w8a8_smoothquant`, so a FoldQuant arm and the
+`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It applies NVIDIA ModelOpt's
+INT8 SmoothQuant recipe to the same two modules, so a FoldQuant arm and the
 ModelOpt baseline can be built, verified and served by the same tools and
 compared on a robot. It needs `nvidia-modelopt==0.45.0` (and `ninja`, for its
 CUDA extension) in the environment.
@@ -197,16 +199,15 @@ python -m foldquant_integration.verify --checkpoint-dir ... --dataset-path ... \
     --engine-dir exports/pi05_modelopt_w8a8_sq/engines --split-from exports/pi05_w8a8_w4a4/engines
 ```
 
-What the arm does, step for step with the preset (`foldquant/modelopt_int8.py`,
-`modelopt_export.py`):
+What the arm does (`foldquant/modelopt_int8.py`, `modelopt_export.py`):
 
 | step | this arm |
 |---|---|
-| calibration data | `--num-calib` observations (the preset uses 64), seeded noise per observation; one bf16 policy replay records every prefix pass and every denoise step before anything is quantized |
-| quantized scopes | LLM: `paligemma.language_model` (the framework `backbone.model.model.language_model`); expert: `Pi05ExpertView` over the live expert, whose leaf names match the framework's `action_expert` (`expert_model.model.layers.*`, `action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`) |
+| calibration data | `--num-calib` observations (64 in the paper), seeded noise per observation; one bf16 policy replay records every prefix pass and every denoise step before anything is quantized |
+| quantized scopes | LLM: `paligemma.language_model`; expert: `Pi05ExpertView` over the live expert (`expert_model.model.layers.*`, `action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`) |
 | calibration replay | LLM: the captured `prefix_embs` / 4-D mask / `position_ids` through `paligemma_with_expert.forward`; expert: the captured `x_t` / `timestep` / `prefix_pad_masks` / KV stack through `denoise_step`; the expert sees float-LLM caches (no cascade) |
 | config | `mtq.INT8_SMOOTHQUANT_CFG`: per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant pre-quant scales |
-| excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*`: on Pi0.5 that is the adaRMS `dense` modulation of every expert norm; `action_in_proj` / `action_out_proj` and the time MLP are quantized, as in the preset |
+| excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*`: on Pi0.5 that is the adaRMS `dense` modulation of every expert norm; `action_in_proj` / `action_out_proj` and the time MLP are quantized |
 | export | the float arm's own trace wrappers over the quantized live modules (same bindings and dtypes), legacy TorchScript exporter at opset 20 (`--modelopt-opset`), dtype repairs, graph outputs cast back to the runtime dtype (ModelOpt's Q/DQ dequantizes to float32), one external-data sidecar, default ScatterND `reduction` stripped for TensorRT 10.3, export refused when no Q/DQ node survived |
 | engine | strongly typed, by the unchanged `build_engines` (no plugin library) |
 
@@ -217,12 +218,10 @@ made; `onnx/<module>_modelopt_quantizers.pt` holds every enabled quantizer's
 `amax` and `pre_quant_scale` under ModelOpt's names relative to the quantized
 scope, for a key-by-key comparison with the same module quantized elsewhere.
 
-Differences that remain: the reference policy keeps upstream openpi's mixed
-precision (the norms, and the projections around the expert, in float32)
-where the framework casts the whole policy to bf16 before calibration; the
-graphs use the FoldQuant bindings (the framework's `llm` and `expert` graphs have the
-same input and output names, but a dynamic prefix length); the engine directory
-is served by `runtime.install_engines` rather than the framework's runtime.
+The reference policy keeps upstream openpi's mixed precision (the norms, and
+the projections around the expert, in float32); the graphs use the FoldQuant
+bindings and the engine directory is served by `runtime.install_engines`, so
+the baseline and the FoldQuant arms differ only in the quantization recipe.
 
 Measured on the SO101 multitask checkpoint (`pi05_so101`, 64 calibration
 observations, 32 held-out observations shared with the `w8a8_sr` + `w8a8_sh`
@@ -233,15 +232,11 @@ arm through `--split-from`, Jetson AGX Orin, TensorRT 10.3):
 | `modelopt_w8a8_smoothquant` both modules | 0.97719 | 0.595 | 0.99931 / 0.99955 / 0.99624 | 4.15 / 12.55 |
 | `w8a8_sr` LLM + `w8a8_sh` expert | 0.99660 | 0.882 | 0.99997 / 0.99998 / 0.99979 | 0.90 / 1.97 |
 
-Both graphs carry the Q/DQ pairs the framework's own graphs for the preset carry
-(LLM 242, expert 260, in the same order), with SmoothQuant pre-quant scales
-whose log-profiles agree with the framework's at a median cosine of 0.989 (LLM) and
-0.983 (expert) despite a different calibration set. The framework's artifact drifts
-from its own bf16 PyTorch policy by a comparable action cosine (mean 0.9989),
-so the gap to `w8a8` is the recipe (per-tensor static activations), not the
-port.
+The gap to `w8a8` is the recipe (per-tensor static activations), not the
+port: the same ModelOpt recipe built elsewhere drifts from its bf16 policy by a
+comparable action cosine (mean 0.9989).
 
-## A checkpoint the release has never heard of
+## Using a custom checkpoint
 
 Every tool takes `--config`, which upstream resolves from its own list of
 `TrainConfig` entries. A checkpoint fine-tuned elsewhere carries a config not

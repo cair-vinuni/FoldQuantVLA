@@ -143,8 +143,8 @@ without it, by upstream's loader as much as by these tools.
    ```bash
    python -m foldquant_integration.verify --model-path ... --dataset-path ... \
        --engine-dir exports/n17_w8a8_w4a4/engines
-   MUJOCO_GL=egl python -m foldquant_integration.eval_libero --model-path ... \
-       --engine-dir exports/n17_w8a8_w4a4/engines --n-envs 1 --output exports/n17_w8a8_w4a4/libero
+   MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --model-path ... \
+       --engine-dir exports/n17_w8a8_w4a4/engines --output exports/n17_w8a8_w4a4/libero
    python -m foldquant_integration.benchmark --model-path ... \
        --trt-engine-path exports/n17_w8a8_w4a4/engines --trt-mode n17_full_pipeline
    ```
@@ -153,10 +153,14 @@ without it, by upstream's loader as much as by these tools.
    the decoded action chunk, seeded flow-matching noise) on held-out
    observations from episodes the calibration never saw, and records every
    observation's drift in `verify.json`; `--split-from <quantized engine
-   dir>` scores a float directory on that arm's held-out set. `eval_libero` runs
-   the upstream `MultiStepWrapper` rollout over every task of the requested
-   suites with a resume-safe `summary.json`. `benchmark` and `rollout` are
-   upstream's own scripts (and arguments) with the plugin library preloaded.
+   dir>` scores a float directory on that arm's held-out set. `eval_libero` rolls out every task of the requested suites
+   through upstream's `MultiStepWrapper`; `--protocol p3` is the paper's
+   campaign (LIBERO's stored initial state per episode, ten settle steps,
+   520 steps, 8-step chunks) and the default is upstream's own loop (random
+   placements, 504 steps). Its `summary.json` records every episode's
+   initial state and outcome and resumes only into the same run. `benchmark`
+   and `rollout` are upstream's own scripts (and arguments) with the plugin
+   library preloaded.
 
 Plugin graphs are emitted at the batch the calibration captured (1), so
 TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
@@ -240,8 +244,8 @@ could drift from it.
 
 ## ModelOpt INT8 SmoothQuant baseline
 
-`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It reproduces the authors' framework
-preset `groot_n1_7/tensorrt/modelopt_w8a8_smoothquant`, so a FoldQuant arm and
+`modelopt_w8a8_smoothquant` is not a FoldQuant fold. It applies NVIDIA ModelOpt's
+INT8 SmoothQuant recipe to the same two modules, so a FoldQuant arm and
 the ModelOpt baseline can be built, verified and served by the same tools and
 compared on a robot. It needs two extra packages in the family environment,
 which add to it without changing any pinned version:
@@ -260,41 +264,27 @@ python -m foldquant_integration.build_engines \
     --float-onnx-dir exports/float/onnx --float-engine-dir exports/float/engines
 ```
 
-What the arm does, step for step with the preset (`foldquant/modelopt_int8.py`,
-`modelopt_export.py`):
+What the arm does (`foldquant/modelopt_int8.py`, `modelopt_export.py`):
 
 | step | this arm |
 |---|---|
-| calibration data | `--num-calib` observations (the preset uses 64), `torch.manual_seed(seed + i)` before each; one bf16 policy replay captures every call into the LLM and every DiT denoising step |
+| calibration data | `--num-calib` observations (64 in the paper), `torch.manual_seed(seed + i)` before each; one bf16 policy replay captures every call into the LLM and every DiT denoising step |
 | config | `mtq.INT8_SMOOTHQUANT_CFG`: per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant pre-quant scales |
 | excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*` |
 | quantization | `mtq.quantize` on the live module, calibrated by replaying its captured calls; the DiT sees float-LLM activations (no cascade) |
 | export | legacy TorchScript exporter, opset 20 (`--modelopt-opset`), dtype repairs for TensorRT's parser, export refused when no Q/DQ node survived |
-| graph outputs | ModelOpt dequantizes to float32, so `embeddings` / `output` would be float32; a final `Cast` to bf16 keeps upstream's contract (the framework's engines output float32 and its runtime casts at the next engine's bf16 input, which is the same arithmetic) |
+| graph outputs | ModelOpt dequantizes to float32, so `embeddings` / `output` would be float32; a final `Cast` to bf16 keeps upstream's contract (a ModelOpt engine that outputs float32 and casts at the next engine's bf16 input computes the same thing) |
 | engine | strongly-typed network (the provider records `builder_flags: {strongly_typed: true}`), built by upstream's `build_engine` like every other graph; the other five components stay upstream bf16 |
 
-Differences that remain: the graphs use upstream's I/O names (the framework's own
-engines do not load into `trt_model_forward`), the LLM wrapper is upstream's
+The graphs use upstream's I/O names, the LLM wrapper is upstream's
 `LLMForExport` over the live layers, and the engine directory is served by
-upstream's pipeline swap rather than the framework's runtime.
+upstream's pipeline swap, so the baseline and the FoldQuant arms differ only in
+the quantization recipe.
 
 Measured on a GR00T N1.7 SO101 checkpoint (Jetson AGX Orin, 64 calibration
 samples, the 32 held-out samples of the `w8a8` arm via `verify --split-from`):
 backbone cosine 0.99974, action cosine mean 0.9986 (min 0.9915). The same
-recipe is close to lossless on this checkpoint. The framework's own `dit.onnx` for
-this preset, renamed to upstream's I/O and built and verified here, scores
-0.9986 as well, and its SmoothQuant vectors match this arm's (cosine >= 0.97
-per layer), so the two graphs agree.
-
-When comparing against an engine served from a framework artifact, check that
-artifact's `embodiments/<tag>/action_schema.json`: a `clip_range` of
-`[-3.14159, 3.14159]` with `units: rad` is applied to every action channel. On
-a checkpoint whose actions are in degrees (SO101) that clips the joints to
-+-3.14, and the artifact scores about 0.84 action cosine against the PyTorch
-policy with or without quantization (its float TensorRT artifact measured
-0.839, its ModelOpt INT8 SmoothQuant artifact 0.840). Differences observed on
-the robot between the two stacks can come from that clip rather than from
-quantization.
+recipe is close to lossless on this checkpoint.
 
 `--cascade` and `--llm-params` / `--dit-params` are refused for this scheme.
 The export compiles ModelOpt's CUDA fake-quant extension on first use (about
@@ -340,10 +330,8 @@ and the remaining channels round to zero. DuQuant's output-row rotation
 Code in `foldquant_integration/baselines/`: `packing.py` (permutation, rotations,
 INT4 packing, GPTQ), `scope.py` (the 304-Linear scope), `calibration.py`
 (collector), `builder.py` (pack), `runtime.py` (emulated layers), `context.py`
-(denoising-step context attached from outside the vendored model). Ported from the
-authors' Isaac-GR00T fork (where the HoloQ-style port was first written),
-with the static per-channel activation path added; the vendored upstream tree is
-untouched.
+(denoising-step context attached from outside the vendored model). The vendored
+upstream tree is untouched.
 
 ```bash
 # 1. calibrate + build + 8-observation action-cosine check (one call), per suite checkpoint
@@ -354,12 +342,11 @@ python -m foldquant_integration.baseline_w4a4 --command all --method duquant \
 #    -> exports/baseline_duquant_libero_10/{calibration.pt, pack.pt, pack.pt.sha256, check.json}
 #    --method holoq for the HoloQ-style arm.
 
-# 2a. closed loop, in process (the paper's baseline-comparison protocol)
-MUJOCO_GL=egl python -m foldquant_integration.eval_libero \
+# 2a. closed loop, in process (the paper's Table I setting: 20 initial states, 720-step cap)
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --max-episode-steps 720 \
     --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 \
     --baseline-pack exports/baseline_duquant_libero_10/pack.pt \
-    --suites libero_10 --n-episodes 20 --n-envs 1 --n-action-steps 8 --max-episode-steps 720 \
-    --output exports/baseline_duquant_libero_10/libero
+    --suites libero_10 --output exports/baseline_duquant_libero_10/libero
 
 # 2b. or serve it to upstream's client
 python -m foldquant_integration.serve --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 \
@@ -372,8 +359,8 @@ step count. `check.json` reports the action cosine of the emulated arm against t
 bf16 policy on held-out observations; a pack whose median is far below 0.99 is not
 worth 800 episodes.
 
-Known results (NVIDIA per-suite `nvidia/GR00T-N1.7-LIBERO` checkpoints, 10 tasks × 20
-episodes per suite, `n_action_steps` 8, cap 720; successes of 200):
+The paper's Table I (NVIDIA per-suite `nvidia/GR00T-N1.7-LIBERO` checkpoints, 10
+tasks × 20 initial states per suite, `n_action_steps` 8, cap 720; successes of 200):
 
 | arm | spatial | object | goal | long | total /800 |
 |---|---:|---:|---:|---:|---:|

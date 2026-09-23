@@ -45,6 +45,7 @@ from typing import Any
 import numpy as np
 import tyro
 
+from foldquant.eval_protocol import PROTOCOLS, artifact_digest, prepare_summary, protocol_record
 from foldquant.provenance import public_path
 
 from . import calibration
@@ -82,21 +83,25 @@ class EvalConfig:
     """Flow-matching steps (upstream serves the LIBERO checkpoints with 8)."""
 
     suites: list[str] = field(default_factory=lambda: list(SUITES))
-    n_episodes: int = 20
-    """Episodes per task (upstream's client defaults to 5); 10 tasks per suite."""
+    protocol: str = "upstream"
+    """``upstream`` (per-suite step budgets of upstream's client) or ``p3`` (the paper's campaign: 520 steps everywhere)."""
+
+    n_episodes: int | None = None
+    """Episodes per task (default 20; upstream's client defaults to 5); 10 tasks per suite."""
+
+    max_steps: int | None = None
+    """Environment steps per episode after the settle steps; default per suite (upstream) or 520 (p3)."""
 
     num_steps_wait: int = 10
     """No-op steps after reset while dropped objects settle, as upstream."""
+
+    resume: bool = True
+    """Continue an interrupted sweep in ``--output``; refused when it was a different run."""
 
     resolution: int = 256
     tasks: list[str] | None = None
     """Restrict to these task names."""
 
-
-def _load_summary(path: Path) -> dict[str, Any]:
-    if path.is_file():
-        return json.loads(path.read_text())
-    return {"tasks": {}}
 
 
 def _write_summary(path: Path, summary: dict[str, Any]) -> None:
@@ -165,12 +170,14 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
     task = task_suite.get_task(task_id)
     initial_states = _task_init_states(task_suite, task_id)
     env, task_description = get_libero_env(task, resolution=args.resolution)
-    max_steps = MAX_STEPS[suite]
+    max_steps = args.max_steps if args.max_steps is not None else MAX_STEPS[suite]
+    n_episodes = args.n_episodes if args.n_episodes is not None else 20
     successes = 0
     steps: list[int] = []
+    episodes: list[dict[str, Any]] = []
     errors = 0
     try:
-        for episode_idx in range(args.n_episodes):
+        for episode_idx in range(n_episodes):
             env.reset()
             obs = env.set_init_state(initial_states[episode_idx])
             t = 0
@@ -192,6 +199,14 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
                 done = False
             successes += int(bool(done))
             steps.append(t)
+            episodes.append(
+                {
+                    "episode": episode_idx,
+                    "init_state_id": episode_idx,
+                    "success": bool(done),
+                    "steps": max(t - args.num_steps_wait, 0),
+                }
+            )
     finally:
         env.close()
     return {
@@ -199,12 +214,13 @@ def run_task(wrapper, suite: str, task_id: int, args: EvalConfig) -> dict[str, A
         "task_id": task_id,
         "name": task.name,
         "language": task_description,
-        "num_episodes": args.n_episodes,
+        "num_episodes": n_episodes,
         "successes": successes,
-        "success_rate": successes / args.n_episodes,
+        "success_rate": successes / n_episodes,
         "episode_errors": errors,
         "mean_steps": float(np.mean(steps)) if steps else None,
         "max_steps": max_steps,
+        "episodes": episodes,
     }
 
 
@@ -221,7 +237,28 @@ def main(args: EvalConfig) -> dict[str, Any]:
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     summary_path = out / "summary.json"
-    summary = _load_summary(summary_path)
+    if args.protocol not in PROTOCOLS:
+        raise SystemExit(f"--protocol {args.protocol}: choose from {sorted(PROTOCOLS)}")
+    protocol = PROTOCOLS[args.protocol]
+    args.n_episodes = protocol.resolve(args.n_episodes, "n_episodes", 20)
+    if args.max_steps is None and protocol.max_episode_steps is not None:
+        args.max_steps = protocol.max_episode_steps
+    run = {
+        "protocol": protocol_record(protocol, args.max_steps if args.max_steps is not None else -1, 8, args.n_episodes),
+        "max_steps": args.max_steps if args.max_steps is not None else dict(MAX_STEPS),
+        "num_steps_wait": args.num_steps_wait,
+        "model_path": public_path(args.model_path),
+        "model": artifact_digest(args.model_path),
+        "engine_dir": public_path(args.engine_dir),
+        "engines": artifact_digest(args.engine_dir),
+        "embodiment_tag": args.embodiment_tag,
+        "data_config": args.data_config,
+        "denoising_steps": args.denoising_steps,
+        "suites": list(args.suites),
+        "tasks": sorted(args.tasks) if args.tasks else None,
+        "resolution": args.resolution,
+    }
+    summary = prepare_summary(summary_path, run, resume=args.resume)
     summary["arm"] = {
         "model_path": public_path(args.model_path),
         "engine_dir": public_path(args.engine_dir),

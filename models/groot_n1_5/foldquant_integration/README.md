@@ -162,7 +162,7 @@ the tensors the model sees.
        --task_suite_name libero_spatial --num_trials_per_task 20 --headless
 
    # the same rollout loop in process, every suite, resumable:
-   MUJOCO_GL=egl python -m foldquant_integration.eval_libero --model-path ... \
+   MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --model-path ... \
        --embodiment-tag new_embodiment --denoising-steps 8 \
        --engine-dir exports/n15_w8a8_w4a4/engines --output exports/n15_w8a8_w4a4/libero
 
@@ -179,7 +179,9 @@ the tensors the model sees.
    upstream's client runs unchanged. `eval_libero` subclasses the client's
    own `GR00TPolicy` (observation and action conversion byte-identical to
    the served path) around the in-process policy, and runs upstream's
-   episode loop (`num_steps_wait` no-op steps, per-suite step budgets)
+   episode loop (`num_steps_wait` no-op steps, LIBERO's stored initial
+   state per episode; `--protocol p3` sets the paper's 520-step budget on
+   every suite, the default keeps upstream's per-suite budgets)
    over every task of the requested suites with a resume-safe
    `summary.json`. `benchmark` times data processing, backbone, action head
    and the whole `get_action` for the PyTorch arm and each `--arms` engine

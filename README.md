@@ -21,14 +21,14 @@ W8A8 and W4A4 quantization of vision-language-action (VLA) models, executed
 natively on the device's INT8 / INT4 tensor cores (not simulated), via
 **consistent offline folding**.
 
+Paper: [arXiv 2609.24433](https://arxiv.org/abs/2609.24433). Reproduce: [`docs/REPRODUCING.md`](docs/REPRODUCING.md).
+
 ## Highlights
 
-- **Native low-bit kernels.** Custom TensorRT plugins on CUTLASS integer GEMMs run W8A8 and W4A4 on the integer tensor cores. One fused plugin per linear site applies the site's transform, quantizes with a dynamic per-token scale and runs the GEMM, with no separate rotation operator or extra graph nodes. Both the language backbone and the action expert run this way. Four-bit is native INT4 on Ada (sm_89) and Orin (sm_87); H100 lowers the four-bit operands to its INT8 datapath.
-- **o/d INT8: W8A8 behaviour at W4A4 latency.** Holding only `o_proj` and `down_proj` at INT8 in a W4A4 language tower raises the worst held-out action cosine from 0.46 to 0.85 on GR00T N1.6 and from 0.85 to 0.998 on π₀.₅, keeps every projection on the integer GEMM path, and costs 0.4-1.8 ms on GR00T. In closed loop it matches the W8A8 engine; on four real-robot tasks it recovers the episodes uniform W4A4 loses (74 against 64 of 80). This is the recommended configuration.
-- **Fold offline, keep online work minimal.** SmoothQuant scale and block rotation compose into one transform `T_v = D^o R D^i` per activation site. Its inverse is folded into every consuming weight, GPTQ rounds in those coordinates, and scales absorb into a preceding learned normalization gain where there is one. Only applying `T_v` to each new activation and its dynamic per-token quantization stay online, as one fused prologue shared by the site's projections.
-- **Action-referenced calibration.** Presets are screened on decoded-action cosine against the BF16 policy in a statistics-matched emulation, then rebuilt and checked on the assembled engine.
-- **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ use their upstream code, evaluation harness and policy server unchanged; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in projection precision.
-- **Deployable.** Engines install into the upstream policy server; the same arm serves LIBERO, a Jetson AGX Orin and a real robot through the family's own upstream client (see [`docs/`](docs)).
+- **Consistent folding.** One transform per shared activation site, a SmoothQuant scale composed with a block rotation, is fixed at calibration, folded into every consuming weight before GPTQ rounding, and applied at runtime as one fused prologue. Calibration, rounding and execution therefore share one coordinate system.
+- **Native low-bit kernels.** TensorRT plugins on CUTLASS integer GEMMs run W8A8 and W4A4 projections on the integer tensor cores of both the language backbone and the action expert. Four-bit is native INT4 on Ada (sm_89) and Jetson AGX Orin (sm_87); H100 lowers four-bit operands to its INT8 datapath.
+- **Selective INT8.** Holding `o_proj` and `down_proj` at INT8 inside a W4A4 tower improves held-out action fidelity on all four checkpoints for a checkpoint-dependent latency cost (about 1 ms on GR00T N1.7 on Orin). The paper reports its closed-loop and real-robot results.
+- **Four VLA releases, one build path.** GR00T N1.5 / N1.6 / N1.7 and π₀.₅ keep their upstream code, evaluation harness and policy server; float, W8A8 and W4A4 engines come off the same `export → build → install` path and differ only in projection precision.
 
 ## How it works
 
@@ -119,7 +119,7 @@ models/groot_n1_5/    upstream GR00T N1.5 + foldquant_integration/
 models/pi05/          upstream openpi (π₀ / π₀.₅ PyTorch path) + foldquant_integration/
 third_party/          CUTLASS (submodule), vendored TensorRT public headers
 tests/                unit tests for the algorithm, emitters, kernel locator / build
-results/              evaluation protocol and measured results
+results/              held-out drift and latency records behind the paper's tables
 docs/deploy/          export on a workstation, build and test on Jetson AGX Orin
 ```
 
@@ -172,7 +172,8 @@ invariants; the protocol and the LIBERO and Jetson AGX Orin figures are in the
 paper.
 
 [`docs/REPRODUCING.md`](docs/REPRODUCING.md) lists what can be checked, and at
-what cost, from a clone upwards:
+what cost, from a clone upwards, and gives the `--protocol p3` command that
+reruns the paper's closed-loop LIBERO campaign in each family:
 
 - `python scripts/check_records.py`: no GPU, no checkpoint; asserts the
   invariants every record has to satisfy.

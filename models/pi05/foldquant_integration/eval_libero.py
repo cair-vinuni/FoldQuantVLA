@@ -32,13 +32,13 @@ import json
 import logging
 import os
 from pathlib import Path
-import re
 import socket
 import subprocess
 import sys
 import time
 from typing import Any
 
+from foldquant.eval_protocol import PROTOCOLS, artifact_digest, prepare_summary, protocol_record
 from foldquant.provenance import public_path
 import tyro
 
@@ -49,8 +49,6 @@ logger = logging.getLogger("foldquant.pi05.eval")
 
 SUITES = ("libero_spatial", "libero_object", "libero_goal", "libero_10")
 
-_RATE = re.compile(r"Total success rate: ([0-9.]+)")
-_EPISODES = re.compile(r"Total episodes: (\d+)")
 
 
 @dataclass
@@ -67,8 +65,20 @@ class EvalConfig:
 
     config: str = LIBERO_TRAIN_CONFIG
     suites: list[str] = field(default_factory=lambda: list(SUITES))
-    num_trials_per_task: int = 50
-    """Rollouts per task (upstream's default; 10 tasks per suite)."""
+    protocol: str = "upstream"
+    """``upstream`` (upstream client defaults: 50 trials, per-suite step budgets) or ``p3`` (the paper's campaign: 20 trials, 520 steps)."""
+
+    num_trials_per_task: int | None = None
+    """Rollouts per task (default 50 upstream / 20 p3; 10 tasks per suite)."""
+
+    max_steps: int | None = None
+    """Environment steps per episode after the settle steps; default per suite (upstream) or 520 (p3)."""
+
+    num_steps_wait: int = 10
+    """No-op steps after the initial state is set, while dropped objects settle."""
+
+    resume: bool = True
+    """Continue an interrupted sweep in ``--output``; refused when it was a different run."""
 
     replan_steps: int = 5
     seed: int = 7
@@ -128,41 +138,45 @@ def _stop_server(proc: subprocess.Popen) -> None:
 
 def _run_suite(args: EvalConfig, suite: str, out: Path) -> dict[str, Any]:
     log_path = out / f"{suite}.log"
+    json_path = out / f"{suite}.json"
     cmd = [
         args.client_python,
-        str(UPSTREAM_ROOT / "examples" / "libero" / "main.py"),
-        "--args.host",
+        str(Path(__file__).resolve().parent / "libero_client.py"),
+        "--host",
         "127.0.0.1",
-        "--args.port",
+        "--port",
         str(args.port),
-        "--args.task-suite-name",
+        "--task-suite-name",
         suite,
-        "--args.num-trials-per-task",
+        "--num-trials-per-task",
         str(args.num_trials_per_task),
-        "--args.replan-steps",
+        "--num-steps-wait",
+        str(args.num_steps_wait),
+        "--replan-steps",
         str(args.replan_steps),
-        "--args.seed",
+        "--seed",
         str(args.seed),
-        "--args.video-out-path",
-        str(out / "videos" / suite),
+        "--out-json",
+        str(json_path),
     ]
+    if args.max_steps is not None:
+        cmd += ["--max-steps", str(args.max_steps)]
     env = dict(os.environ)
     libero = UPSTREAM_ROOT / "third_party" / "libero"
     env["PYTHONPATH"] = os.pathsep.join(p for p in (str(libero), env.get("PYTHONPATH", "")) if p)
     t0 = time.time()
     with open(log_path, "w") as log:
         rc = subprocess.call(cmd, cwd=str(UPSTREAM_ROOT), env=env, stdout=log, stderr=subprocess.STDOUT)
-    text = log_path.read_text()
-    rate = _RATE.findall(text)
-    episodes = _EPISODES.findall(text)
-    if rc != 0 or not rate or not episodes:
-        raise RuntimeError(f"{suite}: client exited {rc} without a final result; see {log_path}")
-    n = int(episodes[-1])
-    sr = float(rate[-1])
+    if rc != 0 or not json_path.is_file():
+        raise RuntimeError(f"{suite}: client exited {rc} without a result; see {log_path}")
+    result = json.loads(json_path.read_text())
+    totals = result["totals"]
     return {
-        "success_rate": sr,
-        "successes": round(sr * n),
-        "episodes": n,
+        "success_rate": totals["success_rate"],
+        "successes": totals["successes"],
+        "episodes": totals["num_episodes"],
+        "max_steps": result["max_steps"],
+        "tasks": {t["name"]: {k: t[k] for k in ("num_episodes", "successes", "success_rate", "episodes")} for t in result["tasks"]},
         "seconds": round(time.time() - t0, 1),
         "log": log_path.name,
     }
@@ -178,19 +192,39 @@ def main(args: EvalConfig) -> dict[str, Any]:
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     summary_path = out / "summary.json"
-    summary: dict[str, Any] = (
-        json.loads(summary_path.read_text())
-        if summary_path.is_file()
-        else {
+    if args.protocol not in PROTOCOLS:
+        raise SystemExit(f"--protocol {args.protocol}: choose from {sorted(PROTOCOLS)}")
+    protocol = PROTOCOLS[args.protocol]
+    args.num_trials_per_task = protocol.resolve(args.num_trials_per_task, "n_episodes", 50)
+    if args.max_steps is None and protocol.max_episode_steps is not None:
+        args.max_steps = protocol.max_episode_steps
+    run = {
+        "protocol": protocol_record(protocol, args.max_steps if args.max_steps is not None else -1, args.replan_steps, args.num_trials_per_task),
+        "max_steps": args.max_steps if args.max_steps is not None else "upstream per-suite",
+        "num_steps_wait": args.num_steps_wait,
+        "checkpoint_dir": public_path(args.checkpoint_dir),
+        "checkpoint": artifact_digest(args.checkpoint_dir),
+        "engine_dir": public_path(args.engine_dir),
+        "engines": artifact_digest(args.engine_dir),
+        "config": args.config,
+        "suites": list(args.suites),
+        "replan_steps": args.replan_steps,
+        "seed": args.seed,
+    }
+    summary = prepare_summary(summary_path, run, resume=args.resume)
+    summary.pop("tasks", None)
+    summary.update(
+        {
             "checkpoint_dir": public_path(args.checkpoint_dir),
             "engine_dir": public_path(args.engine_dir),
             "config": args.config,
             "num_trials_per_task": args.num_trials_per_task,
+            "max_steps": args.max_steps,
             "replan_steps": args.replan_steps,
             "seed": args.seed,
-            "suites": {},
         }
     )
+    summary.setdefault("suites", {})
     todo = [s for s in args.suites if s not in summary["suites"]]
     if not todo:
         logger.info("all requested suites already in %s", summary_path)

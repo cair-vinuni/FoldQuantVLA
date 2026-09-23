@@ -11,7 +11,7 @@
 # reader can reproduce every cell from the records.
 #
 # Tables:
-#   drift        per-arm action cosine from <family>/<arm>/verify.json
+#   drift        per-arm minimum (P2) and median action cosine from <family>/<arm>/verify.json
 #   latency      per-arm e2e median from <family>/benchmark.json, and for
 #                GR00T N1.7 from <family>/<arm>/benchmark.log, which upstream's
 #                script writes instead (one file per arm, eager re-timed in each)
@@ -67,28 +67,28 @@ def n17_logs() -> dict[str, dict[str, tuple[float, float, float, float]]]:
 
 
 def drift_table() -> str:
-    """Action-cosine drift, reported as the median.
+    """Held-out action fidelity per arm, as the paper's protocol P2 reports it.
 
-    The mean and the minimum are still in every record, and they are not the
-    number to read. A VLA action space is clipped, so a chunk is often railed on
-    every channel at once; a cosine between two railed vectors compares their
-    signs and comes out at 1.000 whatever the arm did, while a chunk with two
-    channels railed and the rest near zero lets a small absolute error swing the
-    cosine to 0.02. The distribution is bimodal and the mean averages across the
-    two modes -- on a GR00T N1.6 bridge W4A4 arm it read 0.842 while the median
-    read 0.9985 and the arm's LIBERO success rate was within a point of bf16.
-    The median answers the question the table is asking: is the typical action
-    the same action?
+    P2 reports the **minimum** decoded-action cosine over the 32 held-out
+    observations and the median over observations of the largest coordinate
+    error. The median cosine is printed beside them because a VLA action
+    space is clipped: a chunk railed on every channel scores 1.000 whatever
+    the arm did, so the mean and the median track how often the policy was
+    railed, while the minimum is the observation the arm damaged most.
     """
-    rows = ["| family | arm | n | action cos (median) | median worst \\|Δ\\| |", "|---|---|---|---|---|"]
+    rows = [
+        "| family | arm | n | action cos (min, P2) | action cos (median) | median worst \\|Δ\\| |",
+        "|---|---|---|---|---|---|",
+    ]
     for fam in FAMILIES:
         for arm in ARMS:
             d = _load(RESULTS / fam / arm / "verify.json")
             if d is None:
                 continue
             a = d["actions"]
+            mn = "-" if a.get("cos_min") is None else f"{a['cos_min']:.3f}"
             med = "-" if a.get("cos_median") is None else f"{a['cos_median']:.5f}"
-            rows.append(f"| {LABEL[fam]} | `{arm}` | {d['num_samples']} | {med} | {_median_worst(d)} |")
+            rows.append(f"| {LABEL[fam]} | `{arm}` | {d['num_samples']} | {mn} | {med} | {_median_worst(d)} |")
     return "\n".join(rows)
 
 

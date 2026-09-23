@@ -38,7 +38,7 @@
 #   HOST PORT    serve address (default 0.0.0.0:5555)
 #   STEPS        comma list of: check,kernels,float,export,build,verify,serve
 #                (default: all of them, in that order)
-#   FORCE=1      redo export/build even when their outputs already exist
+#   FORCE=1      redo the float pipeline, export and build even when their outputs exist
 #
 # Each step is skipped when its output is already complete, so re-running after
 # a failure resumes where it stopped. Logs go to $OUT/<arm>/logs/.
@@ -85,6 +85,18 @@ engines_complete() {
   local d="$1" e
   for e in "${ENGINES[@]}"; do [ -s "$d/$e.engine" ] || return 1; done
 }
+# Identity of the checkpoint a float pipeline was built from: its resolved path
+# and the checksum of its config, so a different checkpoint in the same OUT
+# rebuilds the float engines instead of reusing another model's.
+ckpt_stamp() {
+  local cfg="$CKPT/config.json"
+  printf '%s %s\n' "$(cd "$CKPT" && pwd -P)" "$( [ -f "$cfg" ] && sha256sum "$cfg" | cut -c1-16 || echo noconfig )"
+}
+float_current() {
+  engines_complete "$FLOAT/engines" || return 1
+  [ -f "$FLOAT/.checkpoint" ] || return 1
+  [ "$(cat "$FLOAT/.checkpoint")" = "$(ckpt_stamp)" ]
+}
 need_ds() { [ -n "${DS:-}" ] || die "set DS to a LeRobot dataset (needed by the '$1' step)"; }
 
 model_args=(--model-path "$CKPT")
@@ -130,16 +142,21 @@ fi
 
 if has_step float; then
   say "float: upstream bf16 pipeline (the modules FoldQuant does not replace)"
-  if engines_complete "$FLOAT/engines"; then
-    echo "  already complete: $FLOAT/engines"
+  if [ "$FORCE" != 1 ] && float_current; then
+    echo "  already complete for this checkpoint: $FLOAT/engines (FORCE=1 to redo)"
   else
     need_ds float
+    if engines_complete "$FLOAT/engines" && [ "$FORCE" != 1 ]; then
+      echo "  $FLOAT/engines was built from another checkpoint; rebuilding"
+    fi
+    rm -f "$FLOAT/.checkpoint"
     echo "  export + build -> $FLOAT (log: $LOGS/float.log)"
     "$PYTHON" scripts/deployment/build_trt_pipeline.py \
         "${model_args[@]}" --dataset-path "$DS" "${backend_args[@]}" \
         --output-dir "$FLOAT" --steps export,build >"$LOGS/float.log" 2>&1 \
       || die "float pipeline failed -- see $LOGS/float.log"
     engines_complete "$FLOAT/engines" || die "float pipeline finished without all seven engines -- see $LOGS/float.log"
+    ckpt_stamp >"$FLOAT/.checkpoint"
   fi
 fi
 
