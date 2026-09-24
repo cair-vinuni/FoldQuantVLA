@@ -41,8 +41,10 @@ from foldquant.eval_protocol import PROTOCOLS, artifact_digest, prepare_summary,
 from foldquant.provenance import public_path
 import tyro
 
+from ._upstream import LIBERO_DIR
 from ._upstream import LIBERO_TRAIN_CONFIG
 from ._upstream import UPSTREAM_ROOT
+from ._upstream import seed_libero_config
 
 logger = logging.getLogger("foldquant.pi05.eval")
 
@@ -161,8 +163,7 @@ def _run_suite(args: EvalConfig, suite: str, out: Path) -> dict[str, Any]:
     if args.max_steps is not None:
         cmd += ["--max-steps", str(args.max_steps)]
     env = dict(os.environ)
-    libero = UPSTREAM_ROOT / "third_party" / "libero"
-    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(libero), env.get("PYTHONPATH", "")) if p)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(LIBERO_DIR), env.get("PYTHONPATH", "")) if p)
     t0 = time.time()
     with open(log_path, "w") as log:
         rc = subprocess.call(cmd, cwd=str(UPSTREAM_ROOT), env=env, stdout=log, stderr=subprocess.STDOUT)
@@ -228,6 +229,7 @@ def main(args: EvalConfig) -> dict[str, Any]:
     if not todo:
         logger.info("all requested suites already in %s", summary_path)
     else:
+        seed_libero_config()
         server = _start_server(args, out / "server.log")
         try:
             for suite in todo:
