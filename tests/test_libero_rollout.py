@@ -36,7 +36,8 @@ class FakeRawEnv:
     def step(self, action):
         self.log.append(("step", list(action)))
         self.t += 1
-        return {"pos": np.full(3, self.t, dtype=np.float32)}, 0.0, False, {}
+        # robosuite reports proprioception as float64
+        return {"pos": np.full(3, self.t, dtype=np.float64)}, 0.0, False, {}
 
     def check_success(self):
         # state s succeeds after s + 1 policy-driven steps; state 3 never does
@@ -98,6 +99,7 @@ class FakePolicy:
     def get_action(self, obs):
         self.calls.append(obs)
         assert obs["state.pos"].shape[0] == 1 and obs["annotation.human.action.task_description"] == ["task"]
+        assert obs["state.pos"].dtype == np.float32
         return {"action.pos": np.zeros((1, 16, 3), dtype=np.float32)}, {}
 
 

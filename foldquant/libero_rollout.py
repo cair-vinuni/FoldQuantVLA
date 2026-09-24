@@ -66,14 +66,20 @@ def fixed_init_state_env(env: Any, init_states: Any, settle_steps: int, seed: Op
     return FixedInitStateEnv(env)
 
 
-def _batched(obs: Dict[str, Any]) -> Dict[str, Any]:
-    """One environment's observation in the ``(B=1, ...)`` layout the sim policy wrapper expects."""
+def _batched(obs: Dict[str, Any], space: Any = None) -> Dict[str, Any]:
+    """One environment's observation in the ``(B=1, ...)`` layout the sim policy wrapper expects.
+
+    Arrays are cast to the dtype of their key in *space*, as upstream's vector
+    env does; the policy accepts float32 state only.
+    """
+    subspaces = getattr(space, "spaces", None) or {}
     out: Dict[str, Any] = {}
     for key, value in obs.items():
         if isinstance(value, str):
             out[key] = [value]
         else:
-            out[key] = np.asarray(value)[None]
+            dtype = getattr(subspaces.get(key), "dtype", None)
+            out[key] = np.asarray(value, dtype=dtype if isinstance(dtype, np.dtype) else None)[None]
     return out
 
 
@@ -112,7 +118,7 @@ def rollout_task(
             success = bool(np.any(info.get("success", False)))
             done = False
             while not done:
-                actions, _ = policy.get_action(_batched(obs))
+                actions, _ = policy.get_action(_batched(obs, env.observation_space))
                 action = {k: np.asarray(v)[0] for k, v in actions.items()}
                 obs, _reward, done, _truncated, info = env.step(action)
                 success |= bool(np.any(info.get("success", False)))
