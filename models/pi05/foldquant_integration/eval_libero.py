@@ -61,6 +61,14 @@ class EvalConfig:
     engine_dir: str | None = None
     """FoldQuant engine directory; omit to score the bf16 PyTorch policy."""
 
+    fakequant_dir: str | None = None
+    """FoldQuant fake-quant state for ``--checkpoint-dir`` (a state saved without the base files); a
+    self-contained fake-quant model given as ``--checkpoint-dir`` is detected by itself. Mutually
+    exclusive with ``--engine-dir``."""
+
+    no_fakequant: bool = False
+    """When ``--checkpoint-dir`` is a FoldQuant fake-quant model, load it as the plain base policy."""
+
     output: str = "results/pi05"
     """Directory for ``summary.json``, the per-suite client logs and the replay videos."""
 
@@ -117,6 +125,10 @@ def _start_server(args: EvalConfig, log_path: Path) -> subprocess.Popen:
     ]
     if args.engine_dir:
         cmd += ["--engine-dir", args.engine_dir]
+    if args.fakequant_dir:
+        cmd += ["--fakequant-dir", args.fakequant_dir]
+    elif args.no_fakequant:
+        cmd += ["--no-fakequant"]
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(p for p in (str(UPSTREAM_ROOT), env.get("PYTHONPATH", "")) if p)
     with open(log_path, "w") as log:
@@ -189,6 +201,13 @@ def main(args: EvalConfig) -> dict[str, Any]:
         raise SystemExit(f"unknown suites {unknown}; choose from {list(SUITES)}")
     if not Path(args.client_python).is_file():
         raise SystemExit(f"--client-python {args.client_python} is not a file")
+    from foldquant.fakequant import fakequant_arm
+
+    args.fakequant_dir = fakequant_arm(
+        args.checkpoint_dir, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    )
+    if args.engine_dir and args.fakequant_dir:
+        raise ValueError("--engine-dir and --fakequant-dir are mutually exclusive")
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     summary_path = out / "summary.json"
@@ -206,6 +225,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
         "checkpoint": artifact_digest(args.checkpoint_dir),
         "engine_dir": public_path(args.engine_dir),
         "engines": artifact_digest(args.engine_dir),
+        "fakequant_dir": public_path(args.fakequant_dir),
+        "fakequant": artifact_digest(args.fakequant_dir),
         "config": args.config,
         "suites": list(args.suites),
         "replan_steps": args.replan_steps,
@@ -217,6 +238,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
         {
             "checkpoint_dir": public_path(args.checkpoint_dir),
             "engine_dir": public_path(args.engine_dir),
+            "fakequant_dir": public_path(args.fakequant_dir),
+            "execution": "fake-quant" if args.fakequant_dir else ("tensorrt" if args.engine_dir else "pytorch"),
             "config": args.config,
             "num_trials_per_task": args.num_trials_per_task,
             "max_steps": args.max_steps,

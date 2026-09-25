@@ -90,7 +90,7 @@ def eval_libero(args: Args) -> dict:
     total_episodes, total_successes = 0, 0
     for task_id in tqdm.tqdm(range(task_suite.n_tasks)):
         task = task_suite.get_task(task_id)
-        initial_states = task_suite.get_task_init_states(task_id)
+        initial_states = _init_states(task_suite, task_id)
         env, task_description = _get_libero_env(task, LIBERO_ENV_RESOLUTION, args.seed)
         episodes = []
         for episode_idx in tqdm.tqdm(range(args.num_trials_per_task)):
@@ -185,6 +185,24 @@ def eval_libero(args: Args) -> dict:
     out.write_text(json.dumps(result, indent=2))
     return result
 
+
+
+def _init_states(task_suite, task_id: int):
+    """``task_suite.get_task_init_states(task_id)`` on any torch version.
+
+    LIBERO stores each task's initial states as a pickled NumPy array and loads it
+    with a bare ``torch.load``; torch 2.6 and later default ``weights_only`` to True
+    and refuse that pickle. The files come from the pinned LIBERO checkout, so they
+    are loaded as LIBERO wrote them to be (``foldquant.eval_protocol.libero_init_states``
+    does the same for the in-process evaluators; this client stays free of foldquant).
+    """
+    import os
+
+    import torch
+
+    task = task_suite.get_task(task_id)
+    path = os.path.join(get_libero_path("init_states"), task.problem_folder, task.init_states_file)
+    return torch.load(path, weights_only=False)
 
 def _get_libero_env(task, resolution, seed):
     """Initializes and returns the LIBERO environment, along with the task description."""

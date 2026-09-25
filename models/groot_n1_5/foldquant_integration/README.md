@@ -68,6 +68,23 @@ GPU or TensorRT version compiles its own copy. LIBERO (`libero` + `robosuite==1.
 needed by `eval_libero` and upstream's client; install it as upstream's
 `examples/Libero/README.md` describes.
 
+On a Jetson Orin (JetPack 6.2), the `[orin]` extra's torch 2.8 has no matching
+torchcodec wheel. What runs there is N1.5's own pins with the torch stack of
+the N1.6 / N1.7 Orin recipes (torch 2.10.0, torchvision 0.25.0, flash-attn 2.8.3
+from `https://pypi.jetson-ai-lab.io/jp6/cu126`), JetPack's TensorRT through a
+`.pth` file naming `/usr/lib/python3.10/dist-packages`, and two source builds,
+neither of which has an aarch64 wheel:
+
+- **pytorch3d 0.7.8**, which `gr00t.data.transform` imports for its rotation
+  transforms only, so it is built without its CUDA extension:
+  `PYTORCH3D_NO_EXTENSION=1 uv pip install --no-build-isolation "pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@V0.7.8"`.
+- **decord**, which Eagle's processor code imports (transformers refuses to
+  load the processor without it). Build it against JetPack's FFmpeg 4.4 as
+  upstream's `orin.Dockerfile` does (`cmake .. && make` in `decord/build`),
+  then `uv pip install --no-build-isolation decord/python`.
+
+TensorFlow is not needed by any path here.
+
 ### LIBERO, for `eval_libero`
 
 The rollout runs in this environment, so the simulator lives beside the model.
@@ -190,6 +207,20 @@ the tensors the model sees.
 
 Plugin graphs are emitted at the batch the calibration captured (1); the
 upstream client sends one observation per request.
+
+### Fake-quant models
+
+`export_foldquant --save-fakequant <dir>` writes the arm as a fake-quant model:
+the base checkpoint's files plus the quant state (SmoothQuant scales and every
+weight code). `eval_libero`, `serve` and `verify` run it in PyTorch with the engines'
+arithmetic when `--model-path` names it (`--no-fakequant` loads the base weights
+plainly), or take a state saved with `--fakequant-state-only` through
+`--fakequant-dir <state>`. `python -m foldquant.fakequant convert` turns it into
+the plugin ONNX graphs and engines without calibration data, and
+`python -m foldquant.fakequant push` uploads it to the Hugging Face Hub
+(private by default). The full description, with measured agreement against
+the engines, is in the
+[GR00T N1.7 README](../../groot_n1_7/foldquant_integration/README.md#fake-quant-checkpoints-pytorch-the-hub-then-onnx-and-engines).
 
 ## Files
 

@@ -70,6 +70,13 @@ class ServeConfig:
     baseline_pack: Optional[str] = None
     """Emulated W4A4 baseline pack (:mod:`.baseline_w4a4`); mutually exclusive with ``--engine-dir``."""
 
+    fakequant_dir: Optional[str] = None
+    """FoldQuant fake-quant state for ``--model-path``; a self-contained fake-quant model given as
+    ``--model-path`` is detected by itself and served fake-quantized."""
+
+    no_fakequant: bool = False
+    """When ``--model-path`` is a FoldQuant fake-quant model, load it as the plain base policy."""
+
     mode: str = "n17_full_pipeline"
     """``trt_model_forward.setup_tensorrt_engines`` mode, as :mod:`.verify` takes it."""
 
@@ -99,11 +106,25 @@ _MODE_ENGINES = {
 
 def main(args: ServeConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    from foldquant.fakequant import fakequant_arm
+
+    args.fakequant_dir = fakequant_arm(
+        args.model_path,
+        args.fakequant_dir,
+        no_fakequant=args.no_fakequant,
+        other_arms=(args.engine_dir, getattr(args, "baseline_pack", None)),
+    )
     policy = calibration.load_policy(args.model_path, args.embodiment_tag, args.device)
 
-    if args.engine_dir and args.baseline_pack:
-        raise ValueError("--engine-dir and --baseline-pack are mutually exclusive")
-    if args.baseline_pack:
+    if sum(bool(x) for x in (args.engine_dir, args.baseline_pack, args.fakequant_dir)) > 1:
+        raise ValueError("--engine-dir, --baseline-pack and --fakequant-dir are mutually exclusive")
+    if args.fakequant_dir:
+        from .fakequant import install as install_fakequant
+
+        install_fakequant(policy, args.fakequant_dir, args.model_path)
+        logger.info("serving the FAKE-QUANT arm from %s (PyTorch arithmetic of the engines; not a latency arm)",
+                    args.fakequant_dir)
+    elif args.baseline_pack:
         from .baselines import apply_pack, install_dit_step_context
 
         device = next(policy.model.parameters()).device

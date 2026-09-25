@@ -242,9 +242,14 @@ def pack_int4_colmajor(weight_rot: Any) -> Tuple[np.ndarray, np.ndarray]:
     """
     import torch
 
-    W = weight_rot.detach().float()
-    scale = (W.abs().amax(dim=1) / _QMAX_I4).clamp(min=1e-8)  # (out,)
-    q = torch.clamp(torch.round(W / scale.unsqueeze(1)), -_QMAX_I4, _QMAX_I4).to(torch.int32)
+    from .quant_state import rtn_pack
+
+    def compute():
+        W = weight_rot.detach().float()
+        scale = (W.abs().amax(dim=1) / _QMAX_I4).clamp(min=1e-8)  # (out,)
+        return torch.clamp(torch.round(W / scale.unsqueeze(1)), -_QMAX_I4, _QMAX_I4).to(torch.int32), scale
+
+    q, scale = rtn_pack(weight_rot, compute)
     return pack_int4_nibbles(q), scale.cpu().numpy().astype(np.float32)
 
 

@@ -162,7 +162,15 @@ def load_dataset(dataset_path: str, video_backend: str | None = None):
     root = Path(dataset_path).expanduser().resolve()
     if not (root / "meta" / "info.json").is_file():
         raise FileNotFoundError(f"{root} is not a LeRobot dataset (no meta/info.json)")
-    return LeRobotDataset(repo_id=root.name, root=root, video_backend=video_backend)
+    # lerobot assumes episodes 0..total-1 unless told otherwise, and fetches any it
+    # cannot find from the Hub. A subset (a calibration split copied out of a larger
+    # dataset) keeps its original, sparse indices, so name them.
+    import json
+
+    with open(root / "meta" / "episodes.jsonl") as f:
+        indices = sorted(int(json.loads(line)["episode_index"]) for line in f if line.strip())
+    episodes = None if indices == list(range(len(indices))) else indices
+    return LeRobotDataset(repo_id=root.name, root=root, episodes=episodes, video_backend=video_backend)
 
 
 def episode_table(dataset) -> tuple[list[int], list[int], list[int]]:

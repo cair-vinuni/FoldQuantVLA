@@ -62,6 +62,14 @@ class ServeConfig:
     engine_dir: Optional[str] = None
     """FoldQuant engine directory; omit to serve the bf16 PyTorch policy."""
 
+    fakequant_dir: Optional[str] = None
+    """FoldQuant fake-quant state for ``--model-path`` (a state saved without the base files); a
+    self-contained fake-quant model given as ``--model-path`` is detected by itself. Mutually
+    exclusive with ``--engine-dir``."""
+
+    no_fakequant: bool = False
+    """When ``--model-path`` is a FoldQuant fake-quant model, load it as the plain base policy."""
+
     host: str = "0.0.0.0"
     port: int = 5555
     device: str = "cuda"
@@ -74,12 +82,23 @@ class ServeConfig:
 
 def main(args: ServeConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    from foldquant.fakequant import fakequant_arm, install_on_policy
+
+    args.fakequant_dir = fakequant_arm(
+        args.model_path, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    )
+    if args.engine_dir and args.fakequant_dir:
+        raise ValueError("--engine-dir and --fakequant-dir are mutually exclusive")
     policy = calibration.load_policy(args.model_path, args.embodiment_tag, args.device)
 
     installed = None
     if args.engine_dir:
         installed = install_engines(policy, args.engine_dir)
         logger.info("serving with FoldQuant engines: %s", ", ".join(sorted(installed.engines)))
+    elif args.fakequant_dir:
+        install_on_policy(policy, args.fakequant_dir, args.model_path)
+        logger.info("serving the FAKE-QUANT arm from %s (PyTorch arithmetic of the engines; not a latency arm)",
+                    args.fakequant_dir)
     else:
         logger.info("serving the bf16 PyTorch policy")
     logger.info(

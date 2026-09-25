@@ -45,8 +45,16 @@ logger = logging.getLogger("foldquant.groot_n1_7.verify")
 class VerifyConfig:
     model_path: str
     dataset_path: str
-    engine_dir: str
+    engine_dir: Optional[str] = None
     """Engine directory produced by :mod:`.build_engines`."""
+
+    fakequant_dir: Optional[str] = None
+    """Score a fake-quant state in PyTorch instead of engines; its calibration split is the state's.
+    A self-contained fake-quant model given as ``--model-path`` is detected by itself (it is then
+    scored against its own base weights). Exactly one of ``--engine-dir`` / ``--fakequant-dir``."""
+
+    no_fakequant: bool = False
+    """When ``--model-path`` is a FoldQuant fake-quant model, load it as the plain base policy."""
 
     output: Optional[str] = None
     """Write the report here as JSON (default: ``<engine_dir>/verify.json``)."""
@@ -185,8 +193,26 @@ def run_pass(
 
 def main(args: VerifyConfig) -> Dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    engine_dir = Path(args.engine_dir)
-    manifest = _load_manifest(engine_dir)
+    from foldquant.fakequant import fakequant_arm
+
+    args.fakequant_dir = fakequant_arm(
+        args.model_path,
+        args.fakequant_dir,
+        no_fakequant=args.no_fakequant,
+        other_arms=(args.engine_dir, getattr(args, "baseline_pack", None)),
+    )
+    if bool(args.engine_dir) == bool(args.fakequant_dir):
+        raise SystemExit("pass exactly one of --engine-dir and --fakequant-dir")
+    fq_state = None
+    if args.fakequant_dir:
+        from .fakequant import load_state_for
+
+        fq_state = load_state_for(args.fakequant_dir, args.model_path)
+        engine_dir = Path(args.fakequant_dir)
+        manifest = fq_state.manifest["export_manifest"]
+    else:
+        engine_dir = Path(args.engine_dir)
+        manifest = _load_manifest(engine_dir)
     split_dir = Path(args.split_from) if args.split_from else engine_dir
     split = _load_manifest(split_dir) if args.split_from else manifest
     if split is None:
@@ -225,12 +251,19 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     repeat = min(_cos(a, b) for a, b in zip(ref["actions"], again["actions"]))
     logger.info("PyTorch repeatability (seeded): action cosine min %.6f", repeat)
 
-    if manifest is not None:
-        load_plugins(manifest["plugin_libs"])
-    ensure_deployment_on_path()
-    from trt_model_forward import setup_tensorrt_engines
+    if fq_state is not None:
+        from foldquant.fakequant import install_fake_quant
 
-    setup_tensorrt_engines(policy, str(engine_dir), mode=args.mode)
+        from .fakequant import module_paths
+
+        install_fake_quant(module_paths(policy), fq_state)
+    else:
+        if manifest is not None:
+            load_plugins(manifest["plugin_libs"])
+        ensure_deployment_on_path()
+        from trt_model_forward import setup_tensorrt_engines
+
+        setup_tensorrt_engines(policy, str(engine_dir), mode=args.mode)
     got = run_pass(policy, observations, args.seed)
 
     feat_cos = [_cos(a, b) for a, b in zip(got["backbone_features"], ref["backbone_features"])]
@@ -253,6 +286,7 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         # the arm's scope either way. Without it two arms of different scope can share the
         # name "float" and nothing in the record distinguishes them.
         "components": sorted(p.name for p in sorted(engine_dir.glob("*.engine"))),
+        "execution": "fake-quant" if fq_state is not None else "tensorrt",
         "cascade": manifest.get("cascade", False) if manifest is not None else False,
         "split_from": public_path(args.split_from),
         "num_samples": len(samples),
@@ -315,7 +349,9 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         Path(args.dump_positions).write_text(json.dumps(dump, indent=2))
         logger.info("wrote per-position report %s", args.dump_positions)
 
-    out = Path(args.output) if args.output else engine_dir / "verify.json"
+    # A state directory is what gets pushed and fingerprinted; the report goes beside it.
+    default = engine_dir.parent / f"{engine_dir.name}_verify.json" if fq_state is not None else engine_dir / "verify.json"
+    out = Path(args.output) if args.output else default
     out.write_text(json.dumps(report, indent=2))
     logger.info("wrote %s", out)
     return report

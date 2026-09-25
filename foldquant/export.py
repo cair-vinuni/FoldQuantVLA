@@ -11,12 +11,18 @@ Calibration measures SmoothQuant scales first, then GPTQ Hessians in a second
 replay using the transformed activations. ``foldq.fold_site`` folds and packs
 the weights before the emitter constructs the graph.
 
+``record=True`` also returns the calibration result as a
+:class:`foldquant.quant_state.ModuleQuantState` on ``ExportResult.state``;
+passing that state back as ``state=`` emits the same graph with no
+``forward_loop``, no calibration data and no GPTQ solve.
+
 Action-module params are ``sq_alpha`` and ``sq_fold_order``. LLM params are
 validated by ``llm_rotation_sq.resolve_llm_plugin_params``.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,7 +31,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 import torch.nn as nn
 
 from . import calibrate, schemes
-from .llm_gptq import gptq_prepare
+from .quant_state import ModuleQuantState, pack_scope, record_gptq, replay_sites
+from .llm_gptq import gptq_prepare, tag_site
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +59,42 @@ class ExportResult:
     #: replay the deployed LLM numerics in PyTorch (cascade calibration of the
     #: modules downstream of the LLM). ``None`` otherwise.
     emulation: Optional[Dict[str, Any]] = field(default=None, repr=False)
+    #: The calibration result, when the export ran with ``record=True`` or replayed one.
+    state: Optional[ModuleQuantState] = field(default=None, repr=False)
 
 
-def _prepare_gptq(hessians: Dict[str, Any]) -> Dict[str, Any]:
-    """Factorize each site's Hessian once, for :func:`foldquant.foldq.fold_site`."""
-    return {k: gptq_prepare(h) for k, h in hessians.items()}
+def _check_state(state: ModuleQuantState, module: str, scheme: str, params: Mapping[str, Any]) -> Dict[str, Any]:
+    """The params to export with: the state's, which a caller may repeat but not contradict."""
+    if state.module != module:
+        raise ValueError(f"quant state is for {state.module!r}, not {module!r}")
+    if state.scheme != scheme:
+        raise ValueError(f"quant state was calibrated for {state.scheme!r}; exporting {scheme!r} would not match it")
+    recorded = dict(state.config.get("params") or {})
+    if params and dict(params) != recorded:
+        raise ValueError(f"{module} params {dict(params)} differ from the quant state's {recorded}")
+    return recorded
+
+
+@contextlib.contextmanager
+def _packing(module: str, record: bool, ms: Optional[ModuleQuantState], replay: Any = None) -> Any:
+    """Run an emitter so every weight pack it makes is recorded into *ms* (``record``) or
+    replayed from *replay*; the recorded dict holds GPTQ and round-to-nearest packs alike."""
+    with pack_scope(module, replay=replay):
+        if not record:
+            yield
+            return
+        with record_gptq() as sink:
+            yield
+        assert ms is not None
+        ms.gptq.update(sink)
+
+
+def _prepare_gptq(hessians: Dict[str, Any], module: str) -> Dict[str, Any]:
+    """Factorize each site's Hessian once, for :func:`foldquant.foldq.fold_site`.
+
+    Each prep is tagged ``<module>.<site>`` so a recording export captures its codes.
+    """
+    return {k: tag_site(gptq_prepare(h), f"{module}.{k}") for k, h in hessians.items()}
 
 
 def _require_loop(scheme: str, forward_loop: Optional[ForwardLoop]) -> ForwardLoop:
@@ -128,6 +166,8 @@ def export_llm(
     params: Optional[Mapping[str, Any]] = None,
     max_seq_len: int = LLM_BAKE_MAX_SEQ_LEN,
     final_norm: Optional[bool] = None,
+    record: bool = False,
+    state: Optional[ModuleQuantState] = None,
 ) -> ExportResult:
     """Emit the LLM decoder as a plugin-node graph.
 
@@ -137,86 +177,113 @@ def export_llm(
     its deepstack count and visual-token width come from a captured call.
     ``final_norm`` states whether the graph ends with the tower's final RMSNorm
     (``None`` reads it off the module; see :func:`foldquant.llm.build_llm_plugin_onnx`).
+
+    ``record`` returns the calibration result on ``ExportResult.state``;
+    ``state`` replays one instead of calibrating (no ``forward_loop`` needed).
     """
     from .llm import build_llm_plugin_onnx, resolve_qwen3_decoder
     from .llm_rotation_sq import compute_sq_scales_llm, resolve_llm_plugin_params
 
     schemes.validate("llm", scheme)
     params = dict(params or {})
+    if state is not None:
+        params = _check_state(state, "llm", scheme, params)
     onnx_path = Path(onnx_path)
     folded = scheme in schemes.LLM_FOLDED_SCHEMES
     if not folded:
         _refuse_params("llm", scheme, params)
-    loop = _require_loop(scheme, forward_loop) if folded else forward_loop
     decoder = resolve_qwen3_decoder(module)
     prefix_graph = calibrate.is_gemma(module)
+    ms = ModuleQuantState("llm", scheme, config={"params": params, "max_seq_len": int(max_seq_len)}) if record else None
 
     mode_kwargs: Dict[str, Any] = {}
     snapshots: list = []
-    if prefix_graph:
-        mode_kwargs = {"gemma_mode": True}
-        # The Pi processor pads text to a fixed length and the camera count is
-        # fixed, so the runtime prefix is constant; pin it from a captured
-        # call. Hook layer 0's q_proj LEAF: the Pi prefix replay drives the
-        # projection submodules directly and never runs the decoder's forward.
-        if loop is None:
-            raise ValueError(
-                "The Gemma plugin graph pins its prefix length from a captured forward call; "
-                "pass forward_loop even for the dynamic per-row scheme."
-            )
-        q0 = decoder.layers[0].self_attn.q_proj
-        mode_kwargs["pin_seq_len"] = calibrate.captured_prefix_len(calibrate.capture_llm_snapshots(q0, loop))
+    loop: Optional[ForwardLoop] = None
+    if state is not None:
+        mode_kwargs = dict(state.config["mode_kwargs"])
     else:
-        mode_kwargs["final_norm"] = final_norm
-        if folded or calibrate.is_qwen3_vl(module):
+        loop = _require_loop(scheme, forward_loop) if folded else forward_loop
+        if prefix_graph:
+            mode_kwargs = {"gemma_mode": True}
+            # The Pi processor pads text to a fixed length and the camera count is
+            # fixed, so the runtime prefix is constant; pin it from a captured
+            # call. Hook layer 0's q_proj LEAF: the Pi prefix replay drives the
+            # projection submodules directly and never runs the decoder's forward.
             if loop is None:
                 raise ValueError(
-                    "This LLM is Qwen3-VL (rope_scaling.mrope_section present). Its plugin graph injects "
-                    "M-RoPE position_ids and deepstack residuals as explicit inputs whose count and width "
-                    "are only knowable from a real forward call. Pass forward_loop even for w8a8."
+                    "The Gemma plugin graph pins its prefix length from a captured forward call; "
+                    "pass forward_loop even for the dynamic per-row scheme."
                 )
-            snapshots = calibrate.capture_llm_snapshots(decoder, loop)
-            mode_kwargs.update(calibrate.qwen3_vl_graph_params(module, snapshots) or {})
+            q0 = decoder.layers[0].self_attn.q_proj
+            mode_kwargs["pin_seq_len"] = calibrate.captured_prefix_len(calibrate.capture_llm_snapshots(q0, loop))
+        else:
+            mode_kwargs["final_norm"] = final_norm
+            if folded or calibrate.is_qwen3_vl(module):
+                if loop is None:
+                    raise ValueError(
+                        "This LLM is Qwen3-VL (rope_scaling.mrope_section present). Its plugin graph injects "
+                        "M-RoPE position_ids and deepstack residuals as explicit inputs whose count and width "
+                        "are only knowable from a real forward call. Pass forward_loop even for w8a8."
+                    )
+                snapshots = calibrate.capture_llm_snapshots(decoder, loop)
+                mode_kwargs.update(calibrate.qwen3_vl_graph_params(module, snapshots) or {})
+    if ms is not None:
+        ms.config["mode_kwargs"] = mode_kwargs
 
     if not folded:
-        build_llm_plugin_onnx(module, onnx_path, max_seq_len=max_seq_len, **mode_kwargs)
+        replay = replay_sites(state) if state is not None else None
+        with _packing("llm", record, ms, replay):
+            build_llm_plugin_onnx(module, onnx_path, max_seq_len=max_seq_len, **mode_kwargs)
+        if replay is not None:
+            replay.assert_consumed()
         logger.info("Emitted %s LLM graph at %s", scheme, onnx_path)
-        return ExportResult("llm", scheme, onnx_path, schemes.plugin_libs(scheme, params=params))
+        return ExportResult("llm", scheme, onnx_path, schemes.plugin_libs(scheme, params=params), state=ms or state)
 
     bits = schemes.bits_of(scheme)
     fold = resolve_llm_plugin_params(scheme, bits=bits, overrides=params or None)
-    if prefix_graph:
-        # The prefix replay drives the layer submodules directly, so the per-site
-        # leaf hooks fire under it; there is no decoder-level snapshot to replay.
-        # One snapshot therefore stands for the WHOLE forward loop: every
-        # calibration observation runs inside it, which is what the "over 1
-        # replay snapshot(s)" log lines below count.
-        replay_snaps: list = [None]
-
-        def replay(_snap: Any) -> None:
-            loop(module)
+    replay = None
+    if state is not None:
+        sq_scales = state.tensor_group("sq")
+        weight_clip = state.tensor_group("weight_clip") or None
+        act_clip: Any = state.config["act_clip"]
+        gptq_hessians: Any = None
+        replay = replay_sites(state)
+        if bits == 4:
+            gptq_hessians = replay
     else:
-        replay_snaps = snapshots
+        if prefix_graph:
+            # The prefix replay drives the layer submodules directly, so the per-site
+            # leaf hooks fire under it; there is no decoder-level snapshot to replay.
+            # One snapshot therefore stands for the WHOLE forward loop: every
+            # calibration observation runs inside it, which is what the "over 1
+            # replay snapshot(s)" log lines below count.
+            replay_snaps: list = [None]
+            assert loop is not None
 
-        def replay(snap: Any) -> None:
-            decoder(*snap[0], **snap[1])
+            def replay_fn(_snap: Any) -> None:
+                loop(module)
+        else:
+            replay_snaps = snapshots
 
-    learned = calibrate.load_learned_calib(
-        fold.get("learned_calib"), num_layers=len(decoder.layers), device=next(decoder.parameters()).device
-    )
-    if learned is not None:
-        sq_scales = learned["sq_scales"]
-    else:
-        sq_scales = compute_sq_scales_llm(decoder, replay_snaps, alpha=fold["sq_alpha"], forward_fn=replay)
-    gptq_hessians = None
-    if bits == 4:
-        from .llm_gptq import compute_gptq_hessians_llm
+            def replay_fn(snap: Any) -> None:
+                decoder(*snap[0], **snap[1])
 
-        gptq_hessians = compute_gptq_hessians_llm(
-            decoder, replay_snaps, sq_scales=sq_scales, rot_bs=int(fold["rot_block_size"]), forward_fn=replay
+        learned = calibrate.load_learned_calib(
+            fold.get("learned_calib"), num_layers=len(decoder.layers), device=next(decoder.parameters()).device
         )
-    act_clip: Any = learned["act_clip"] if learned is not None else float(fold.get("act_clip_ratio", 1.0))
-    weight_clip = learned["weight_clip"] if learned is not None else None
+        if learned is not None:
+            sq_scales = learned["sq_scales"]
+        else:
+            sq_scales = compute_sq_scales_llm(decoder, replay_snaps, alpha=fold["sq_alpha"], forward_fn=replay_fn)
+        gptq_hessians = None
+        if bits == 4:
+            from .llm_gptq import compute_gptq_hessians_llm
+
+            gptq_hessians = compute_gptq_hessians_llm(
+                decoder, replay_snaps, sq_scales=sq_scales, rot_bs=int(fold["rot_block_size"]), forward_fn=replay_fn
+            )
+        act_clip = learned["act_clip"] if learned is not None else float(fold.get("act_clip_ratio", 1.0))
+        weight_clip = learned["weight_clip"] if learned is not None else None
     fold_kwargs: Dict[str, Any] = {
         "sq_scales": sq_scales,
         "rot_bs": int(fold["rot_block_size"]),
@@ -227,15 +294,28 @@ def export_llm(
         "act_bits": fold.get("act_bits"),
         "weight_clip": weight_clip,
     }
-    build_llm_plugin_onnx(module, onnx_path, max_seq_len=max_seq_len, **fold_kwargs, **mode_kwargs)
+    if ms is not None:
+        ms.config.update(
+            act_clip=act_clip, rot_bs=int(fold["rot_block_size"]), bits=bits,
+            site_bits=fold.get("site_bits"), act_bits=fold.get("act_bits"),
+        )
+        ms.put_group("sq", sq_scales)
+        ms.put_group("weight_clip", weight_clip)
+    with _packing("llm", record, ms, replay):
+        build_llm_plugin_onnx(module, onnx_path, max_seq_len=max_seq_len, **fold_kwargs, **mode_kwargs)
+    if replay is not None:
+        replay.assert_consumed()
     family = "gemma" if prefix_graph else "qwen"
-    logger.info("Emitted %s LLM graph (%s, %d-bit) at %s", scheme, family, bits, onnx_path)
+    logger.info("Emitted %s LLM graph (%s, %d-bit)%s at %s", scheme, family, bits, " from quant state" if state else "", onnx_path)
+    # A replayed export has no Hessians; cascade calibration needs a calibrating export.
+    emulation = {"family": family, **fold_kwargs} if state is None else None
     return ExportResult(
         "llm",
         scheme,
         onnx_path,
         schemes.plugin_libs(scheme, params=params),
-        emulation={"family": family, **fold_kwargs},
+        emulation=emulation,
+        state=ms or state,
     )
 
 
@@ -284,54 +364,80 @@ def export_dit(
     scheme: str = schemes.W8A8,
     forward_loop: Optional[ForwardLoop] = None,
     params: Optional[Mapping[str, Any]] = None,
+    record: bool = False,
+    state: Optional[ModuleQuantState] = None,
 ) -> ExportResult:
-    """Emit the GR00T action-head DiT as a plugin-node graph."""
+    """Emit the GR00T action-head DiT as a plugin-node graph.
+
+    ``record`` / ``state`` as for :func:`export_llm`.
+    """
     schemes.validate("dit", scheme)
     params = dict(params or {})
+    if state is not None:
+        params = _check_state(state, "dit", scheme, params)
     onnx_path = Path(onnx_path)
     libs = schemes.plugin_libs(scheme, params=params)
+    ms = ModuleQuantState("dit", scheme, config={"params": params}) if record else None
 
+    replay = replay_sites(state) if state is not None else None
     if scheme == schemes.W8A8:
         from .dit_int8 import build_dit_plugin_onnx
 
         _refuse_params("dit", scheme, params)
-        build_dit_plugin_onnx(module, onnx_path)
-        return ExportResult("dit", scheme, onnx_path, libs)
+        with _packing("dit", record, ms, replay):
+            build_dit_plugin_onnx(module, onnx_path)
+        if replay is not None:
+            replay.assert_consumed()
+        return ExportResult("dit", scheme, onnx_path, libs, state=ms or state)
 
     from .dit_int4 import compute_dit_sq_scales
 
-    loop = _require_loop(scheme, forward_loop)
     knobs = _act_fold_knobs(scheme, params)
     if knobs["fwht"] and knobs["fold_order"] != "before":
         raise ValueError(
             f"{scheme} on the DiT carries only the pre-rotation scale (act_scale_pre_*); "
             "sq_fold_order='after' would need a post-rotation vector the macro plugins do not declare."
         )
-    # The scales are measured in-process from the same replay, so the fold
-    # matches the weights (and rotation) this very graph bakes.
-    calib_inputs = calibrate.capture_dit_inputs(module, loop)
     alpha = knobs.get("alpha", 1.0)
-    sq = compute_dit_sq_scales(module, calib_inputs, alpha=alpha, fwht=knobs["fwht"], fold_order=knobs["fold_order"])
+    if state is not None:
+        sq = state.tensor_group("sq")
+    else:
+        loop = _require_loop(scheme, forward_loop)
+        # The scales are measured in-process from the same replay, so the fold
+        # matches the weights (and rotation) this very graph bakes.
+        calib_inputs = calibrate.capture_dit_inputs(module, loop)
+        sq = compute_dit_sq_scales(module, calib_inputs, alpha=alpha, fwht=knobs["fwht"], fold_order=knobs["fold_order"])
+    if ms is not None:
+        ms.put_group("sq", sq)
 
     if scheme == schemes.W8A8_SH:
         from .dit_int8 import build_dit_plugin_onnx
 
-        build_dit_plugin_onnx(module, onnx_path, sq_scales=sq, sq_fold_order=knobs["fold_order"], fwht=True)
-        return ExportResult("dit", scheme, onnx_path, libs)
+        with _packing("dit", record, ms, replay):
+            build_dit_plugin_onnx(module, onnx_path, sq_scales=sq, sq_fold_order=knobs["fold_order"], fwht=True)
+        if replay is not None:
+            replay.assert_consumed()
+        return ExportResult("dit", scheme, onnx_path, libs, state=ms or state)
 
     from .dit_int4 import build_dit_plugin_onnx_int4
 
-    gptq = None
+    gptq: Any = None
     if scheme == schemes.W4A4_SHG:
-        # Second replay, after the scales exist: Hessians of rot(x / s).
-        hess = compute_dit_sq_scales(
-            module, calib_inputs, alpha=alpha, fwht=knobs["fwht"], fold_order=knobs["fold_order"], gptq_scales=sq
+        if state is not None:
+            gptq = replay
+        else:
+            # Second replay, after the scales exist: Hessians of rot(x / s).
+            hess = compute_dit_sq_scales(
+                module, calib_inputs, alpha=alpha, fwht=knobs["fwht"], fold_order=knobs["fold_order"], gptq_scales=sq
+            )
+            gptq = _prepare_gptq(hess, "dit")
+    with _packing("dit", record, ms, replay):
+        build_dit_plugin_onnx_int4(
+            module, onnx_path, sq_scales=sq, sq_fold_order=knobs["fold_order"], fwht=knobs["fwht"], gptq=gptq
         )
-        gptq = _prepare_gptq(hess)
-    build_dit_plugin_onnx_int4(
-        module, onnx_path, sq_scales=sq, sq_fold_order=knobs["fold_order"], fwht=knobs["fwht"], gptq=gptq
-    )
-    return ExportResult("dit", scheme, onnx_path, libs)
+    if replay is not None:
+        replay.assert_consumed()
+    return ExportResult("dit", scheme, onnx_path, libs, state=ms or state)
 
 
 # expert
@@ -344,15 +450,20 @@ def export_expert(
     scheme: str = schemes.W8A8,
     forward_loop: Optional[ForwardLoop] = None,
     params: Optional[Mapping[str, Any]] = None,
+    record: bool = False,
+    state: Optional[ModuleQuantState] = None,
 ) -> ExportResult:
     """Emit the Pi (Gemma-300M) action expert.
 
     The scale capture and the emitter take the SAME fold kwargs, from one
     mapping. A knob dropped on one side leaves the capture measuring in one
     frame while the emitter folds in another, with no error anywhere.
+    ``record`` / ``state`` as for :func:`export_llm`.
     """
     schemes.validate("expert", scheme)
     params = dict(params or {})
+    if state is not None:
+        params = _check_state(state, "expert", scheme, params)
     onnx_path = Path(onnx_path)
     if not hasattr(module, "expert_model"):
         raise TypeError(
@@ -361,25 +472,38 @@ def export_expert(
     from .gemma_expert import build_gemma_expert_plugin_onnx as build
     from .gemma_expert import compute_gemma_expert_sq_scales as compute
 
+    ms = ModuleQuantState("expert", scheme, config={"params": params}) if record else None
     kwargs: Dict[str, Any] = {}
+    replay = replay_sites(state) if state is not None else None
     if scheme == schemes.W8A8:
         _refuse_params("expert", scheme, params)
     else:
-        loop = _require_loop(scheme, forward_loop)
         knobs = _act_fold_knobs(scheme, params)
         scale_kwargs: Dict[str, Any] = {"fold_order": knobs["fold_order"]}
         if knobs["fwht"]:
             scale_kwargs["fwht"] = True
         if "alpha" in knobs:
             scale_kwargs["alpha"] = knobs["alpha"]
-        sq = compute(module, loop, **scale_kwargs)
+        if state is not None:
+            sq = state.tensor_group("sq")
+        else:
+            loop = _require_loop(scheme, forward_loop)
+            sq = compute(module, loop, **scale_kwargs)
+        if ms is not None:
+            ms.put_group("sq", sq)
         kwargs = {"int4": scheme in schemes.ACT_W4A4_SCHEMES, "sq_scales": sq, "fold_order": knobs["fold_order"]}
         if scheme == schemes.W4A4_SHG:
-            kwargs["gptq"] = _prepare_gptq(compute(module, loop, **scale_kwargs, gptq_scales=sq))
+            if state is not None:
+                kwargs["gptq"] = replay
+            else:
+                kwargs["gptq"] = _prepare_gptq(compute(module, loop, **scale_kwargs, gptq_scales=sq), "expert")
         if knobs["fwht"]:
             kwargs["fwht"] = True
-    build(module, onnx_path, **kwargs)
-    return ExportResult("expert", scheme, onnx_path, schemes.plugin_libs(scheme, params=params))
+    with _packing("expert", record, ms, replay):
+        build(module, onnx_path, **kwargs)
+    if replay is not None:
+        replay.assert_consumed()
+    return ExportResult("expert", scheme, onnx_path, schemes.plugin_libs(scheme, params=params), state=ms or state)
 
 
 # dispatch
@@ -399,10 +523,18 @@ def export_module(
     scheme: str,
     forward_loop: Optional[ForwardLoop] = None,
     params: Optional[Mapping[str, Any]] = None,
+    record: bool = False,
+    state: Optional[ModuleQuantState] = None,
+    **kwargs: Any,
 ) -> ExportResult:
-    """Export *module* under *scheme*, dispatching on the module kind *name*."""
+    """Export *module* under *scheme*, dispatching on the module kind *name*.
+
+    Extra keyword arguments go to that exporter (``max_seq_len`` / ``final_norm`` for the LLM).
+    """
     schemes.validate(name, scheme)
-    return _EXPORTERS[name](module, onnx_path, scheme=scheme, forward_loop=forward_loop, params=params)
+    return _EXPORTERS[name](
+        module, onnx_path, scheme=scheme, forward_loop=forward_loop, params=params, record=record, state=state, **kwargs
+    )
 
 
 __all__ = [

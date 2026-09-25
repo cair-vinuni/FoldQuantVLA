@@ -77,6 +77,14 @@ class EvalConfig:
     engine_dir: str | None = None
     """FoldQuant engine directory. Omit for the bf16 PyTorch arm."""
 
+    fakequant_dir: str | None = None
+    """FoldQuant fake-quant state for ``--model-path`` (a state saved without the base files); a
+    self-contained fake-quant model given as ``--model-path`` is detected by itself. Mutually
+    exclusive with ``--engine-dir``."""
+
+    no_fakequant: bool = False
+    """When ``--model-path`` is a FoldQuant fake-quant model, load it as the plain base policy."""
+
     embodiment_tag: str | None = None
     data_config: str = LIBERO_DATA_CONFIG
     denoising_steps: int | None = None
@@ -241,6 +249,13 @@ def main(args: EvalConfig) -> dict[str, Any]:
     ensure_libero_on_path()
     from libero.libero import benchmark
 
+    from foldquant.fakequant import fakequant_arm
+
+    args.fakequant_dir = fakequant_arm(
+        args.model_path, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    )
+    if args.engine_dir and args.fakequant_dir:
+        raise ValueError("--engine-dir and --fakequant-dir are mutually exclusive")
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     summary_path = out / "summary.json"
@@ -264,6 +279,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
         "model": artifact_digest(args.model_path),
         "engine_dir": public_path(args.engine_dir),
         "engines": artifact_digest(args.engine_dir),
+        "fakequant_dir": public_path(args.fakequant_dir),
+        "fakequant": artifact_digest(args.fakequant_dir),
         "embodiment_tag": args.embodiment_tag,
         "data_config": args.data_config,
         "denoising_steps": args.denoising_steps,
@@ -275,6 +292,7 @@ def main(args: EvalConfig) -> dict[str, Any]:
     summary["arm"] = {
         "model_path": public_path(args.model_path),
         "engine_dir": public_path(args.engine_dir),
+        "fakequant_dir": public_path(args.fakequant_dir),
         "embodiment_tag": args.embodiment_tag,
         "data_config": args.data_config,
         "n_episodes": args.n_episodes,
@@ -310,6 +328,11 @@ def main(args: EvalConfig) -> dict[str, Any]:
     installed = install_engines(policy, args.engine_dir) if args.engine_dir else None
     if installed is not None:
         logger.info("engines installed: %s", ", ".join(sorted(installed.engines)))
+    if args.fakequant_dir:
+        from foldquant.fakequant import install_on_policy
+
+        installed, fq_state = install_on_policy(policy, args.fakequant_dir, args.model_path)
+        summary["arm"]["schemes"] = {**{k: v.scheme for k, v in fq_state.modules.items()}, "execution": "fake-quant"}
     wrapper = _make_wrapper(policy)
 
     try:

@@ -10,6 +10,11 @@ Writes, under ``--output-dir``::
     onnx/export_metadata.json upstream shape hints for the engine builder
     onnx/foldquant_export.json what was exported, from which samples, needing which plugins
 
+``--save-fakequant <dir>`` also writes the arm's quant state there (see
+:mod:`.fakequant`): the fake-quant checkpoint that runs the arm in PyTorch,
+converts back to these graphs without calibration data, and can be pushed to
+the Hugging Face Hub.
+
 ``--llm-scheme`` / ``--dit-scheme modelopt_w8a8_smoothquant`` (INT8 SmoothQuant
 Q/DQ) and ``modelopt_w4a16_awq`` (INT4 weight-only AWQ, group 128, rewritten to
 ``Int4GroupwiseGemmPlugin`` nodes) export a comparison baseline instead of a
@@ -108,6 +113,21 @@ class ExportConfig:
 
     device: str = "cuda"
 
+    save_fakequant: Optional[str] = None
+    """Also write the quant state (the fake-quant checkpoint) to this directory; needs a local
+    ``--model-path``, whose content digest it records."""
+
+    base_model_id: Optional[str] = None
+    """Where others get the base checkpoint (``org/name[@revision]`` on the Hub), recorded in the
+    state and its model card; defaults to the checkpoint directory's name."""
+
+    fakequant_state_only: bool = False
+    """With ``--save-fakequant``: write the quant state alone, not a self-contained model with the
+    base checkpoint's files linked in."""
+
+    fakequant_copy_base: bool = False
+    """With ``--save-fakequant``: copy the base checkpoint's files into the model instead of linking them."""
+
 
 def _scheme_or_none(value: str) -> Optional[str]:
     return None if value.strip().lower() in _NONE else value.strip()
@@ -193,6 +213,11 @@ def main(args: ExportConfig) -> Path:
         raise SystemExit(f"--cascade emulates a folded LLM; {llm_scheme!r} folds nothing")
     llm_params = json.loads(args.llm_params)
     dit_params = json.loads(args.dit_params)
+    record = args.save_fakequant is not None
+    if record and modelopt_towers:
+        raise SystemExit("--save-fakequant records FoldQuant folds; the ModelOpt baselines have no quant state")
+    if record and not Path(args.model_path).is_dir():
+        raise SystemExit("--save-fakequant needs --model-path to be a local checkpoint directory (its digest is recorded)")
 
     if modelopt_towers:
         modelopt_int8.ensure_cuda_ext()
@@ -237,6 +262,7 @@ def main(args: ExportConfig) -> Path:
             forward_loop=loop,
             params=llm_params or None,
             final_norm=False,
+            record=record,
         )
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
@@ -255,6 +281,7 @@ def main(args: ExportConfig) -> Path:
                 scheme=dit_scheme,
                 forward_loop=loop,
                 params=dit_params or None,
+                record=record,
             )
         finally:
             if emulation is not None:
@@ -344,6 +371,19 @@ def main(args: ExportConfig) -> Path:
     logger.info(
         "wrote %s and %s (total %.0fs)", EXPORT_METADATA_NAME, MANIFEST_NAME, time.time() - t0
     )
+    if record:
+        from .fakequant import save_arm_state
+
+        save_arm_state(
+            Path(args.save_fakequant),
+            model_path=args.model_path,
+            results=results,
+            export_metadata=metadata,
+            export_manifest=manifest,
+            base_model_id=args.base_model_id,
+            bundle=not args.fakequant_state_only,
+            copy_base=args.fakequant_copy_base,
+        )
     return out
 
 

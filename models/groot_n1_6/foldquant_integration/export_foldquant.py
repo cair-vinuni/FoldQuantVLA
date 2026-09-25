@@ -93,6 +93,20 @@ class ExportConfig:
 
     device: str = "cuda"
 
+    save_fakequant: Optional[str] = None
+    """Also write the quant state (the fake-quant checkpoint, :mod:`foldquant.fakequant`) to this
+    directory; needs a local ``--model-path``, whose content digest it records."""
+
+    base_model_id: Optional[str] = None
+    """Where others get the base checkpoint (``org/name[@revision]``), recorded in the state."""
+
+    fakequant_state_only: bool = False
+    """With ``--save-fakequant``: write the quant state alone, not a self-contained model with the
+    base checkpoint's files linked in."""
+
+    fakequant_copy_base: bool = False
+    """With ``--save-fakequant``: copy the base checkpoint's files into the model instead of linking them."""
+
 
 def _scheme_or_none(value: str) -> Optional[str]:
     return None if value.strip().lower() in _NONE else value.strip()
@@ -167,6 +181,12 @@ def main(args: ExportConfig) -> Path:
     llm_params = json.loads(args.llm_params)
     dit_params = json.loads(args.dit_params)
 
+    if args.save_fakequant is not None:
+        if FLOAT in (args.llm_scheme, args.dit_scheme):
+            raise SystemExit("--save-fakequant records FoldQuant folds; a float tower has no quant state")
+        if not Path(args.model_path).is_dir():
+            raise SystemExit("--save-fakequant needs --model-path to be a local checkpoint directory")
+
     out = Path(args.output_dir) / "onnx"
     out.mkdir(parents=True, exist_ok=True)
 
@@ -211,6 +231,7 @@ def main(args: ExportConfig) -> Path:
                 forward_loop=loop,
                 params=llm_params or None,
                 final_norm=shapes["final_norm"],
+                record=args.save_fakequant is not None,
             )
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
@@ -248,6 +269,7 @@ def main(args: ExportConfig) -> Path:
                     scheme=dit_scheme,
                     forward_loop=loop,
                     params=dit_params or None,
+                    record=args.save_fakequant is not None,
                 )
         finally:
             if emulation is not None:
@@ -295,6 +317,12 @@ def main(args: ExportConfig) -> Path:
     logger.info(
         "wrote %s and %s (total %.0fs)", EXPORT_METADATA_NAME, MANIFEST_NAME, time.time() - t0
     )
+    if args.save_fakequant is not None:
+        from .fakequant import save_arm_state
+
+        save_arm_state(Path(args.save_fakequant), model_path=args.model_path, results=results,
+                       export_metadata=metadata, export_manifest=manifest, base_model_id=args.base_model_id,
+                       bundle=not args.fakequant_state_only, copy_base=args.fakequant_copy_base)
     return out
 
 

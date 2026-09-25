@@ -30,3 +30,7 @@ exports/
 *.safetensors
 *.pt
 *.pth
+
+# environment setup logs
+/.setup_logs/
+/.cache/

@@ -20,11 +20,16 @@ def quant_weight_per_row(weight: "Any") -> Tuple[np.ndarray, np.ndarray]:
     """
     import torch
 
-    wf = weight.float()
-    amax = wf.abs().amax(dim=1)
-    scale = (amax / 127.0).clamp(min=1e-12)
-    wi8 = torch.round(wf / scale.unsqueeze(1)).clamp(-127, 127).to(torch.int8)
-    return wi8.cpu().numpy().astype(np.int8), scale.cpu().numpy().astype(np.float32)
+    from .quant_state import rtn_pack
+
+    def compute():
+        wf = weight.float()
+        amax = wf.abs().amax(dim=1)
+        scale = (amax / 127.0).clamp(min=1e-12)
+        return torch.round(wf / scale.unsqueeze(1)).clamp(-127, 127).to(torch.int8), scale
+
+    codes, scale = rtn_pack(weight, compute)
+    return codes.cpu().numpy().astype(np.int8), scale.cpu().numpy().astype(np.float32)
 
 
 def pack_intweights(unpacked_qweight: np.ndarray) -> np.ndarray:

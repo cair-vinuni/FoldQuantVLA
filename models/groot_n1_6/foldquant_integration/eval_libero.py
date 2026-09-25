@@ -71,6 +71,14 @@ class EvalConfig:
     engine_dir: Optional[str] = None
     """FoldQuant engine directory. Omit for the bf16 PyTorch arm."""
 
+    fakequant_dir: Optional[str] = None
+    """FoldQuant fake-quant state for ``--model-path`` (a state saved without the base files); a
+    self-contained fake-quant model given as ``--model-path`` is detected by itself. Mutually
+    exclusive with ``--engine-dir``."""
+
+    no_fakequant: bool = False
+    """When ``--model-path`` is a FoldQuant fake-quant model, load it as the plain base policy."""
+
     suites: List[str] = field(default_factory=lambda: list(SUITES))
     n_episodes: Optional[int] = None
     """Episodes per task (default 20); 10 tasks per suite."""
@@ -137,6 +145,13 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     # later one leaves the first failing with the path correctly set.
     ensure_libero_on_path()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    from foldquant.fakequant import fakequant_arm
+
+    args.fakequant_dir = fakequant_arm(
+        args.model_path, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    )
+    if args.engine_dir and args.fakequant_dir:
+        raise ValueError("--engine-dir and --fakequant-dir are mutually exclusive")
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     summary_path = out / "summary.json"
@@ -153,6 +168,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         "model": artifact_digest(args.model_path),
         "engine_dir": public_path(args.engine_dir),
         "engines": artifact_digest(args.engine_dir),
+        "fakequant_dir": public_path(args.fakequant_dir),
+        "fakequant": artifact_digest(args.fakequant_dir),
         "suites": list(args.suites),
         "tasks": sorted(args.tasks) if args.tasks else None,
         "n_envs": args.n_envs,
@@ -198,6 +215,11 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     if args.engine_dir:
         installed = install_engines(gr00t_policy, args.engine_dir)
         summary["components"] = sorted(installed.engines)
+    if args.fakequant_dir:
+        from foldquant.fakequant import install_on_policy
+
+        _, fq_state = install_on_policy(gr00t_policy, args.fakequant_dir, args.model_path)
+        summary["schemes"] = {**{k: v.scheme for k, v in fq_state.modules.items()}, "execution": "fake-quant"}
     policy = Gr00tSimPolicyWrapper(gr00t_policy)
     wrapper_configs = WrapperConfigs(
         video=VideoConfig(video_dir=None, max_episode_steps=max_episode_steps),

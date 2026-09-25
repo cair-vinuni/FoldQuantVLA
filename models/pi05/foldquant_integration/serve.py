@@ -41,6 +41,14 @@ class ServeConfig:
     engine_dir: str | None = None
     """FoldQuant engine directory; omit to serve the bf16 PyTorch policy."""
 
+    fakequant_dir: str | None = None
+    """FoldQuant fake-quant state for ``--checkpoint-dir`` (a state saved without the base files); a
+    self-contained fake-quant model given as ``--checkpoint-dir`` is detected by itself. Mutually
+    exclusive with ``--engine-dir``."""
+
+    no_fakequant: bool = False
+    """When ``--checkpoint-dir`` is a FoldQuant fake-quant model, load it as the plain base policy."""
+
     config: str = LIBERO_TRAIN_CONFIG
     """Upstream training config name, as ``--policy.config`` of the upstream server."""
 
@@ -86,15 +94,32 @@ def _warm_up(policy, config: str) -> None:
 
 def main(args: ServeConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    from foldquant.fakequant import fakequant_arm
+
+    args.fakequant_dir = fakequant_arm(
+        args.checkpoint_dir, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    )
+    if args.engine_dir and args.fakequant_dir:
+        raise ValueError("--engine-dir and --fakequant-dir are mutually exclusive")
     # The engines rebind two methods on the instance, which torch.compile would trace past (runtime.py);
-    # the reference arm keeps upstream's compiled serving configuration.
+    # the fake-quant swaps modules after loading, which a compiled graph would not see. The
+    # reference arm keeps upstream's compiled serving configuration.
     policy = calibration.load_policy(
-        args.checkpoint_dir, config_name=args.config, device=args.device, compile=not args.engine_dir
+        args.checkpoint_dir,
+        config_name=args.config,
+        device=args.device,
+        compile=not (args.engine_dir or args.fakequant_dir),
     )
     installed = None
     if args.engine_dir:
         installed = install_engines(policy, args.engine_dir)
         logger.info("serving with FoldQuant engines: %s", ", ".join(sorted(installed.engines)))
+    elif args.fakequant_dir:
+        from foldquant.fakequant import install_on_policy
+
+        installed, _ = install_on_policy(policy, args.fakequant_dir, args.checkpoint_dir)
+        logger.info("serving the FAKE-QUANT arm from %s (PyTorch arithmetic of the engines; not a latency arm)",
+                    args.fakequant_dir)
     else:
         logger.info("serving the bf16 PyTorch policy")
 

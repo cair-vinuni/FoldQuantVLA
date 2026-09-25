@@ -351,8 +351,16 @@ def gptq_prepare(hessian: Any, *, percdamp: float = PERCDAMP, actorder: bool = A
     Pi build) and seconds on an H100), with a CPU fallback for the Jetson torch
     builds whose CUDA linalg is broken (``libtorch_cuda_linalg`` undefined
     symbol). Only the triangular factor is kept, on host.
+
+    A :class:`foldquant.quant_state.ReplaySite` in place of a Hessian is
+    returned as is: it already holds the codes this site's rounding produced.
     """
     import torch
+
+    from .quant_state import ReplaySite
+
+    if isinstance(hessian, ReplaySite):
+        return hessian  # type: ignore[return-value]
 
     # ``.to()`` returns the caller's tensor when it is already host float64 (the
     # action-module accumulators are); the diagonal writes below must not alias it.
@@ -448,7 +456,28 @@ def gptq_quant_codes(
 
     Returns:
         ``(codes (N, K) int32 in [-qmax, qmax], scale (N,) float32)``.
+
+    A :class:`foldquant.quant_state.ReplaySite` *prep* returns the codes and
+    scale recorded for this site instead of rounding; a prep carrying a
+    ``"site"`` tag is recorded while :func:`foldquant.quant_state.record_gptq`
+    is active.
     """
+    import torch
+
+    from .quant_state import ReplaySite, record
+
+    if isinstance(prep, ReplaySite):
+        return prep.take(weight)
+    codes, scale = _gptq_round(weight, prep, qmax=qmax, blocksize=blocksize, row_clip=row_clip)
+    site = prep.get("site") if isinstance(prep, dict) else None
+    if site is not None:
+        record(site, codes, scale)
+    return codes, scale
+
+
+def _gptq_round(
+    weight: Any, prep: dict, *, qmax: float, blocksize: int = BLOCK_SIZE, row_clip: Any = None
+) -> Tuple[Any, Any]:
     import torch
 
     w = weight.detach().float().clone()
@@ -497,6 +526,16 @@ def gptq_quant_codes(
     return codes.to(torch.int32), scale.squeeze(1).to(torch.float32)
 
 
+def tag_site(prep: Any, site: str) -> Any:
+    """Mark *prep* with its site key so :func:`gptq_quant_codes` can record its codes.
+
+    A :class:`foldquant.quant_state.ReplaySite` keeps its own key.
+    """
+    if isinstance(prep, dict):
+        prep["site"] = site
+    return prep
+
+
 # Per-site factorization, one at a time
 
 
@@ -528,7 +567,7 @@ class GPTQSiteFactors:
                 "computed). The INT4 LLM schemes quantize weights with GPTQ; falling back to "
                 "round-to-nearest here would silently cost ~62% of the weight-axis accuracy."
             )
-        return gptq_prepare(self._hessians.pop(key))
+        return tag_site(gptq_prepare(self._hessians.pop(key)), f"llm.{key}")
 
     def __len__(self) -> int:
         return len(self._hessians)

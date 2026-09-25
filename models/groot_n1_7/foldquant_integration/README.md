@@ -165,6 +165,94 @@ without it, by upstream's loader as much as by these tools.
 Plugin graphs are emitted at the batch the calibration captured (1), so
 TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 
+## Fake-quant checkpoints: PyTorch, the Hub, then ONNX and engines
+
+A calibration is expensive (a dataset, GPU replays, GPTQ solves) and its result
+is small. `export_foldquant --save-fakequant <dir>` writes a **fake-quant model**
+next to the graphs: one directory holding the base checkpoint's files (linked;
+`--fakequant-copy-base` copies them) and the quant state, which is the
+SmoothQuant scales, the fold settings and the integer codes of every quantized
+weight. It loads like the checkpoint, runs quantized in PyTorch, pushes to the
+Hub as one model repo, and converts to the real-quant graphs and engines with no
+dataset.
+
+```bash
+# calibrate once (workstation or server); writes exports/w4a4/onnx and the fake-quant model
+python -m foldquant_integration.export_foldquant --model-path <ckpt> --dataset-path <data> \
+    --embodiment-tag libero_sim --llm-scheme w4a4_srg --dit-scheme w4a4_shg \
+    --output-dir exports/w4a4 --save-fakequant exports/w4a4/fakequant \
+    --base-model-id nvidia/GR00T-N1.7-LIBERO
+
+python -m foldquant.fakequant info --fakequant-dir exports/w4a4/fakequant
+python -m foldquant.fakequant push --fakequant-dir exports/w4a4/fakequant \
+    --repo-id <org>/<name>             # private unless --public; --dry-run lists files; --state-only skips the weights
+
+# anywhere else, after `huggingface-cli download <org>/<name> --local-dir fq_model`:
+# the model in PyTorch, fake-quantized (the engine's codes and transforms, not its speed)
+MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --model-path fq_model --output <out>
+python -m foldquant_integration.verify --model-path fq_model --dataset-path <data>
+python -m foldquant_integration.serve --model-path fq_model --embodiment-tag libero_panda
+
+# the pipeline in foldquant: fake-quant model -> real-quant ONNX -> TensorRT engines
+python -m foldquant.fakequant convert --fakequant-dir fq_model --output-dir exports/w4a4 \
+    --float-onnx-dir exports/float/onnx     # or step by step: to-onnx, then build
+```
+
+A `--model-path` that is a fake-quant model runs fake-quantized; `--no-fakequant`
+loads its base weights plainly. A state saved with `--fakequant-state-only`
+(about 0.9 GB instead of the checkpoint's size) is applied to a separate base
+checkpoint with `--fakequant-dir <state> --model-path <ckpt>`, and
+`python -m foldquant.fakequant bundle` turns it into a self-contained model later.
+
+Every command that applies a state first checks the base checkpoint file by
+file (weights, index, configs; a README, a licence or Hub metadata in the copy
+are ignored) and refuses another checkpoint. `to-onnx` (the first half of
+`convert`) writes the same bytes the calibrating export wrote: every weight
+pack the emitter made, GPTQ and round-to-nearest alike, is recorded in the
+state and handed back, so no code is recomputed on the converting device, and
+the state records each graph's digest so a conversion that still differs
+stops with an error instead of producing a mismatched engine. Checked on the
+LIBERO checkpoint: CPU and Orin GPU conversions of W4A4 and W8A8 states are
+byte-identical to the recording export. Dense `_sr` rotations are rebuilt from
+the weights by a CPU SVD, the same on one platform; conversion across CPU
+architectures is untested. This makes `to-onnx` the way to put a GPTQ arm on a
+Jetson, where the GPTQ factorization falls back to the CPU. The float
+components (`exports/float`) still come from upstream's pipeline, as in step 1.
+
+The quant state holds the integer codes of every quantized weight (INT4 packed
+two per byte) plus the scales: about 0.9 GB for the W4A4 LIBERO arm and 1.7 GB
+for W8A8, against about 1 GB and 2 GB of plugin graphs. A self-contained model
+adds the checkpoint (12.6 GB for GR00T N1.7), as links on disk and as files on
+the Hub.
+
+The PyTorch fake-quant replaces each quantized projection with the kernel's
+arithmetic in fp32 (`foldquant.fake_quant_linear.FakeQuantLinear`: transform,
+per-token quantization, integer GEMM, scales) over the engine's own weight codes
+and scales. The DiT reads its codes, permutations and rotations off the plugin
+graph the emitter builds in memory; the LLM takes the recorded GPTQ codes (INT8
+sites: the emitter's round-to-nearest). Attention, the norms and the
+unquantized modules run in the policy's own precision.
+
+How close that is to the engine, measured on the LIBERO checkpoint (W4A4, 8
+held-out observations, Jetson AGX Orin): given the same LLM features, the
+fake-quant DiT's actions match the engine's at cosine 0.9998-0.99998 on 7 of 8
+observations. Given the engine's exact LLM inputs, the fake-quant LLM's output
+matches the engine's at 0.9990-0.9991, which is also how far it moves when a
+tenth of its input elements change by one bf16 ULP (the bf16 model moves
+1e-6): a 4-bit LLM turns ULP-level float differences into different rounding,
+so no second implementation can agree more closely. At W8A8 all three
+(fake-quant, engine, bf16) agree to 1e-5.
+
+The pipeline itself (`foldquant.fakequant`) is family-agnostic; this
+integration's `fakequant.py` is its GR00T N1.7 adapter. N1.6, N1.5 and π₀.₅
+have the same adapter, `--save-fakequant`, and `--fakequant-dir` /
+`--no-fakequant` on `eval_libero`, `serve` and `verify`, so their fake-quant
+models run, convert and build the same way. π₀.₅'s action expert is read off
+its plugin graph like the DiT (`foldquant.expert_fake_quant`). Each of its
+GEMM plugin nodes, built alone into an engine for every expert scheme and both
+SmoothQuant sides, returns the fake-quant's output to bf16 precision on the
+Orin (27 of 28 nodes bit-identical, the last at relative error 1e-4).
+
 ## Smoke check
 
 `eval_libero` installation check (not a suite result): on the `w8a8` engines,
@@ -381,6 +469,7 @@ tasks × 20 initial states per suite, `n_action_steps` 8, cap 720; successes of 
 | `verify.py` | held-out PyTorch-vs-engine drift report |
 | `serve.py` | upstream's ZMQ `PolicyServer` with the engines installed |
 | `eval_libero.py` | LIBERO sweep over suites × tasks, per-task `summary.json` |
+| `fakequant.py` | N1.7 adapter of the `foldquant.fakequant` pipeline: policy loading, module paths, engine assembly |
 | `rollout.py`, `benchmark.py` | upstream tools with plugins preloaded |
 | `_upstream.py`, `_runpy.py` | paths, component table, `runpy` hand-off |
 

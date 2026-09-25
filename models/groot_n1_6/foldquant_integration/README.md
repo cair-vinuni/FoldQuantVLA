@@ -174,6 +174,20 @@ upstream's loader as much as by these tools.
 Plugin graphs are emitted at the batch the calibration captured (1), so
 TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 
+### Fake-quant models
+
+`export_foldquant --save-fakequant <dir>` writes the arm as a fake-quant model:
+the base checkpoint's files plus the quant state (SmoothQuant scales and every
+weight code). `eval_libero`, `serve` and `verify` run it in PyTorch with the engines'
+arithmetic when `--model-path` names it (`--no-fakequant` loads the base weights
+plainly), or take a state saved with `--fakequant-state-only` through
+`--fakequant-dir <state>`. `python -m foldquant.fakequant convert` turns it into
+the plugin ONNX graphs and engines without calibration data, and
+`python -m foldquant.fakequant push` uploads it to the Hugging Face Hub
+(private by default). The full description, with measured agreement against
+the engines, is in the
+[GR00T N1.7 README](../../groot_n1_7/foldquant_integration/README.md#fake-quant-checkpoints-pytorch-the-hub-then-onnx-and-engines).
+
 ## Serving
 
 For a real robot the arm under test is a server: upstream's `PolicyServer`

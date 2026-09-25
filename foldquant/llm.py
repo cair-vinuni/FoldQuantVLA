@@ -408,7 +408,10 @@ def _emit_layer(
     def _weight_kw(weight: Any, site: str) -> "dict[str, Any]":
         width = _width(site)
         prep = gptq.take(f"{prefix}_{site}") if (width.needs_gptq and gptq is not None) else None
-        wb, sb = width.pack(weight, prep, _row_clip(site) if width.needs_gptq else None)
+        from foldquant.quant_state import site_scope
+
+        with site_scope(f"{prefix}_{site}"):
+            wb, sb = width.pack(weight, prep, _row_clip(site) if width.needs_gptq else None)
         return {width.weight_key: wb, "weight_scale": sb}
 
     k_dim = hidden_size
@@ -876,7 +879,6 @@ def build_llm_plugin_onnx(
         raise ValueError("build_llm_plugin_onnx: rot_bs>0 requires sq_scales (rotation always follows an SQ fold).")
 
     torch = _torch()
-    from onnx.external_data_helper import convert_model_to_external_data
 
     out_path = Path(output_path)
     qwen3_model = resolve_qwen3_decoder(qwen3_model)
@@ -1123,15 +1125,11 @@ def build_llm_plugin_onnx(
             opset_imports=[oh.make_opsetid("", opset), oh.make_opsetid("trt.plugins", 1)],
         )
         model.ir_version = 9
-        onnx.save(model, str(out_path))
-        big_model = onnx.load(str(out_path))
-        convert_model_to_external_data(
-            big_model,
-            all_tensors_to_one_file=True,
-            location=os.path.basename(str(out_path)) + ".data",
-            size_threshold=1024,
-        )
-        onnx.save(big_model, str(out_path))
+        # save_plugin_onnx removes a sidecar left by an earlier write of this path;
+        # onnx.save appends to it, which shifts every tensor's offset.
+        from .onnx_io import save_plugin_onnx
+
+        save_plugin_onnx(model, out_path, size_threshold=1024)
         return out_path
 
     # Whether the graph ends with a final norm is read off the tower unless the
@@ -1162,13 +1160,9 @@ def build_llm_plugin_onnx(
     )
     model.ir_version = 9
 
-    onnx.save(model, str(out_path))
-    big_model = onnx.load(str(out_path))
-    convert_model_to_external_data(
-        big_model,
-        all_tensors_to_one_file=True,
-        location=os.path.basename(str(out_path)) + ".data",
-        size_threshold=1024,
-    )
-    onnx.save(big_model, str(out_path))
+    # save_plugin_onnx removes a sidecar left by an earlier write of this path;
+    # onnx.save appends to it, which shifts every tensor's offset.
+    from .onnx_io import save_plugin_onnx
+
+    save_plugin_onnx(model, out_path, size_threshold=1024)
     return out_path

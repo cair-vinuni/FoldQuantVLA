@@ -82,7 +82,7 @@ def _f32_initializer(name: str, tensor: Any) -> onnx.TensorProto:
 
 def build_gemma_expert_plugin_onnx(
     action_expert: Any,
-    out_path: "str | Path",
+    out_path: "str | Path | None",
     *,
     rope_max_seq_len: int = 4096,
     int4: bool = False,
@@ -91,14 +91,15 @@ def build_gemma_expert_plugin_onnx(
     fwht: bool = False,
     fold_order: str = "after",
     gptq: "dict | None" = None,
-) -> Path:
+) -> Any:
     """Write the INT8 per-row denoise-step plugin graph for *action_expert*.
 
     Args:
         action_expert: Live ``Pi05FlowMatchingExpert`` (read-only; weights are
             snapshotted into initializers). ``config.use_adarms`` selects the
             Pi0.5 (AdaRMS) vs Pi0 (vanilla RMS + state token) graph.
-        out_path: Destination ``.onnx``.
+        out_path: Destination ``.onnx``; ``None`` returns the ``ModelProto`` instead
+            of writing it (the fake-quant reads its nodes in memory).
         rope_max_seq_len: Size of the baked absolute-position RoPE table.
         int4: Emit the FoldQuant W4A4 variant (``w4a4_sr``): every
             projection GEMM through ``PerRowInt4LinearResidual`` (rotated
@@ -508,6 +509,8 @@ def build_gemma_expert_plugin_onnx(
     graph = oh.make_graph(nodes, "gemma_expert_int8_per_row", graph_inputs, [y_out], initializer=inits)
     model = oh.make_model(graph, opset_imports=[oh.make_opsetid("", 17), oh.make_opsetid(_PLUGIN_DOMAIN, 1)])
     model.ir_version = 9
+    if out_path is None:
+        return model
     from .onnx_io import save_plugin_onnx
 
     path = Path(out_path)

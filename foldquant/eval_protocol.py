@@ -85,10 +85,21 @@ def _cache_dir() -> Path:
 
 
 def _listing(root: Path) -> list:
+    """Regular files under *root*, skipping hidden paths (``.cache/``, ``.gitattributes``,
+    build stamps): tool metadata that differs between copies of the same artifact."""
     if root.is_file():
         files, base = [root], root.parent
     else:
-        files, base = sorted(p for p in root.rglob("*") if p.is_file()), root
+        import os
+
+        # os.walk follows symlinked directories (a checkpoint assembled from links, the
+        # Hub cache's snapshot layout); Path.rglob does not on Python 3.10.
+        found = []
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            found.extend(Path(dirpath) / f for f in filenames if not f.startswith("."))
+        files = sorted(p for p in found if p.is_file())
+        base = root
     return [[p.relative_to(base).as_posix(), p.stat().st_size, p.stat().st_mtime_ns] for p in files], files
 
 
@@ -108,7 +119,9 @@ def artifact_digest(path: Any, content: bool = True) -> Optional[Dict[str, Any]]
     """An identity for a checkpoint, engine or dataset directory.
 
     With ``content=True`` the digest is the SHA-256 over the relative name and
-    the complete bytes of every regular file under *path*. Reading a large
+    the complete bytes of every regular file under *path* whose relative path
+    has no hidden component (so the ``.cache/huggingface`` metadata a Hub
+    download adds, or a build stamp, does not change it). Reading a large
     checkpoint once is the cost of that; the result is remembered under
     ``~/.cache/foldquant`` keyed by the directory's listing (names, sizes,
     mtimes), so an unchanged directory is not re-read. Kernel timestamps are
@@ -168,6 +181,44 @@ def _write_cached_digest(cache: Path, digest: str) -> None:
         tmp.replace(cache)
     except OSError:
         pass
+
+
+#: Files a checkpoint may carry that no loader reads: documentation, licences.
+_DOC_FILE = re.compile(r"^(readme|license|licence|notice|copying)(\.[a-z0-9]+)?$|\.md$", re.IGNORECASE)
+
+
+def file_hashes(path: Any) -> Dict[str, str]:
+    """``{relative path: sha256}`` of every file a model loader may read under *path*.
+
+    Hidden paths and documentation files (README, LICENSE, ``*.md``) are left
+    out, so a copy that gained or lost them still matches. Each file's hash is
+    remembered under ``FOLDQUANT_CACHE_DIR`` keyed by its path, size and mtime,
+    as :func:`artifact_digest` does for directories.
+    """
+    import time
+
+    root = Path(path).expanduser().resolve()
+    listing, files = _listing(root)
+    base = root.parent if root.is_file() else root
+    out: Dict[str, str] = {}
+    now = time.time()
+    for (rel, size, mtime), f in zip(listing, files):
+        if _DOC_FILE.search(Path(rel).name):
+            continue
+        key = _sha256(json.dumps([str(f), size, mtime]).encode())
+        cache = _cache_dir() / "files" / key
+        settled = mtime < (now - _SETTLE_SECONDS) * 1e9
+        cached = _read_cached_digest(cache) if settled else None
+        if cached is None:
+            h = hashlib.sha256()
+            with f.open("rb") as fh:
+                for chunk in iter(lambda: fh.read(8 << 20), b""):
+                    h.update(chunk)
+            cached = h.hexdigest()
+            if settled:
+                _write_cached_digest(cache, cached)
+        out[rel] = cached
+    return out
 
 
 def run_fingerprint(run: Dict[str, Any]) -> str:

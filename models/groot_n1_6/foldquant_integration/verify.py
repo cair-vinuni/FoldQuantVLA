@@ -45,8 +45,16 @@ logger = logging.getLogger("foldquant.groot_n1_6.verify")
 class VerifyConfig:
     model_path: str
     dataset_path: str
-    engine_dir: str
+    engine_dir: Optional[str] = None
     """Engine directory produced by :mod:`.build_engines`."""
+
+    fakequant_dir: Optional[str] = None
+    """Score a fake-quant state in PyTorch instead of engines; its calibration split is the state's.
+    A self-contained fake-quant model given as ``--model-path`` is detected by itself (it is then
+    scored against its own base weights). Exactly one of ``--engine-dir`` / ``--fakequant-dir``."""
+
+    no_fakequant: bool = False
+    """When ``--model-path`` is a FoldQuant fake-quant model, load it as the plain base policy."""
 
     output: Optional[str] = None
     """Write the report here as JSON (default: ``<engine_dir>/verify.json``)."""
@@ -154,8 +162,25 @@ def run_pass(
 
 def main(args: VerifyConfig) -> Dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    engine_dir = Path(args.engine_dir)
-    manifest = _load_manifest(engine_dir)
+    from foldquant.fakequant import fakequant_arm
+
+    args.fakequant_dir = fakequant_arm(
+        args.model_path, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    )
+    if bool(args.engine_dir) == bool(args.fakequant_dir):
+        raise SystemExit("pass exactly one of --engine-dir and --fakequant-dir")
+    fq_state = None
+    if args.fakequant_dir:
+        from foldquant.fakequant import resolve_model_path, verify_base_checkpoint
+        from foldquant.quant_state import load_state
+
+        fq_state = load_state(args.fakequant_dir)
+        verify_base_checkpoint(fq_state, resolve_model_path(fq_state, args.fakequant_dir, args.model_path))
+        engine_dir = Path(args.fakequant_dir)
+        manifest = fq_state.manifest["export_manifest"]
+    else:
+        engine_dir = Path(args.engine_dir)
+        manifest = _load_manifest(engine_dir)
     split_dir = Path(args.split_from) if args.split_from else engine_dir
     split = _load_manifest(split_dir) if args.split_from else manifest
     if split is None:
@@ -195,9 +220,23 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     logger.info("PyTorch repeatability (seeded): action cosine min %.6f", repeat)
 
     wanted = [c.strip() for c in args.components.split(",") if c.strip()] or None
-    installed = install_engines(policy, engine_dir, components=wanted)
-    components = sorted(installed.engines)
-    logger.info("engines installed: %s", ", ".join(components))
+    if fq_state is not None:
+        from foldquant.fakequant import install_fake_quant
+        from foldquant.quant_state import QuantState
+
+        from .fakequant import module_paths
+
+        unknown = sorted(set(wanted or ()) - set(fq_state.modules))
+        if unknown:
+            raise SystemExit(f"--components {unknown}: the fake-quant state quantizes {sorted(fq_state.modules)}")
+        chosen = {k: v for k, v in fq_state.modules.items() if wanted is None or k in wanted}
+        installed = install_fake_quant(module_paths(policy), QuantState(fq_state.manifest, chosen))
+        components = sorted(chosen)
+        logger.info("fake-quant installed: %s", ", ".join(f"{k} {v.scheme}" for k, v in chosen.items()))
+    else:
+        installed = install_engines(policy, engine_dir, components=wanted)
+        components = sorted(installed.engines)
+        logger.info("engines installed: %s", ", ".join(components))
     got = run_pass(policy, observations, args.seed)
     installed.remove()
 
@@ -219,6 +258,7 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         "cascade": manifest.get("cascade", False) if manifest is not None else False,
         "components": components,
         "components_requested": wanted,
+        "execution": "fake-quant" if fq_state is not None else "tensorrt",
         "split_from": public_path(args.split_from),
         "num_samples": len(samples),
         # What a reader needs to re-run this and land on the same observations. Without
@@ -269,7 +309,9 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
         report["actions"]["cos_min"],
         report["actions"]["max_abs"],
     )
-    out = Path(args.output) if args.output else engine_dir / "verify.json"
+    # A state directory is what gets pushed and fingerprinted; the report goes beside it.
+    default = engine_dir.parent / f"{engine_dir.name}_verify.json" if fq_state is not None else engine_dir / "verify.json"
+    out = Path(args.output) if args.output else default
     out.write_text(json.dumps(report, indent=2))
     logger.info("wrote %s", out)
     return report

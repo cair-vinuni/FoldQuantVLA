@@ -93,7 +93,17 @@ cached per `(SM, arch, TensorRT major.minor)` and matched exactly, so another
 GPU or TensorRT version compiles its own copy. The checkpoint must be the **PyTorch** form
 (`model.safetensors`); convert a JAX checkpoint with upstream's
 `examples/convert_jax_model_to_pytorch.py` first. The LIBERO client runs in
-its own environment (`examples/libero/README.md`, "Without Docker").
+its own environment (`examples/libero/README.md`, "Without Docker"). On a
+Jetson Orin that client's pins (Python 3.8, a CUDA 11.3 torch) cannot run; a
+Python 3.10 environment at `examples/libero/.venv` with `numpy==1.26.4`,
+`robosuite==1.4.0`, `mujoco==2.3.7`, `bddl easydict hydra-core einops termcolor
+thop gym tqdm tyro pyyaml imageio[ffmpeg] opencv-python-headless matplotlib`,
+the Jetson torch (only for LIBERO's stored initial states) and
+`-e packages/openpi-client` does. The Orin environment above installs neither
+openpi nor openpi-client: put `src` and `packages/openpi-client/src` on
+`PYTHONPATH` beside the repository root. A calibration dataset that is a
+subset of a larger one (sparse episode indices) is loaded as it is, without
+Hub access.
 
 ## Workflow
 
@@ -179,6 +189,20 @@ policy sees exactly what the websocket server hands it.
 
 Plugin graphs are emitted at batch 1; the upstream client sends one
 observation per request.
+
+### Fake-quant models
+
+`export_foldquant --save-fakequant <dir>` writes the arm as a fake-quant model:
+the base checkpoint's files plus the quant state (SmoothQuant scales and every
+weight code). `eval_libero`, `serve` and `verify` run it in PyTorch with the engines'
+arithmetic when `--checkpoint-dir` names it (`--no-fakequant` loads the base weights
+plainly), or take a state saved with `--fakequant-state-only` through
+`--fakequant-dir <state>`. `python -m foldquant.fakequant convert` turns it into
+the plugin ONNX graphs and engines without calibration data, and
+`python -m foldquant.fakequant push` uploads it to the Hugging Face Hub
+(private by default). The full description, with measured agreement against
+the engines, is in the
+[GR00T N1.7 README](../../groot_n1_7/foldquant_integration/README.md#fake-quant-checkpoints-pytorch-the-hub-then-onnx-and-engines).
 
 ## ModelOpt INT8 SmoothQuant baseline
 
