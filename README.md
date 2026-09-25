@@ -160,10 +160,11 @@ Then follow the family's integration README, e.g.
 export/engines with the upstream pipeline → `export_foldquant` → `build_engines`
 → `verify` / `eval_libero` / `benchmark`.
 
-`export_foldquant --save-fakequant <dir>` also saves the calibration result as a
-small fake-quant checkpoint for the base model: it runs the arm in PyTorch, can be
-pushed to the Hugging Face Hub, and `python -m foldquant.fakequant convert` turns it
-into the real-quant plugin graphs and TensorRT engines without calibration data
+Fake-quant checkpoint: quantize → fake-quant checkpoint → export → real-quant
+ONNX → build → TensorRT engines. `export_foldquant --save-fakequant <dir>` saves
+the checkpoint when quantization finishes; it runs in PyTorch and can be pushed
+to the Hugging Face Hub. `python -m foldquant.fakequant convert` then exports and
+builds from it, without calibration data
 ([GR00T N1.7](models/groot_n1_7/foldquant_integration/README.md#fake-quant-checkpoints-pytorch-the-hub-then-onnx-and-engines)).
 
 ## Results
