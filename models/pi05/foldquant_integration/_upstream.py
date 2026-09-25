@@ -8,7 +8,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import yaml
 
 #: ``models/pi05``, the trimmed upstream openpi checkout.
 UPSTREAM_ROOT = Path(__file__).resolve().parents[1]
@@ -19,30 +18,19 @@ LIBERO_DIR = UPSTREAM_ROOT / "third_party" / "libero"
 
 
 def seed_libero_config() -> None:
-    """Write LIBERO's default config for the pinned checkout if none exists yet.
+    """Point LIBERO, in this process and the client it starts, at the pinned checkout.
 
-    Without ``$LIBERO_CONFIG_PATH/config.yaml`` (default ``~/.libero``),
-    ``libero.libero`` asks on stdin at import time, which the client process
-    cannot answer. The paths are upstream's ``setup_libero.sh`` defaults. An
-    existing config is left untouched.
+    ``libero.libero`` reads its task files and initial states from
+    ``$LIBERO_CONFIG_PATH/config.yaml`` (default ``~/.libero``), which another
+    project may have pointed at its own checkout; with no config it asks on
+    stdin, which the client process cannot answer. The config used here names
+    the pinned checkout and lives in the FoldQuant cache
+    (:func:`foldquant.libero_config.use_checkout`); the client inherits
+    ``LIBERO_CONFIG_PATH``.
     """
-    config_dir = Path(os.environ.get("LIBERO_CONFIG_PATH", os.path.expanduser("~/.libero")))
-    config_file = config_dir / "config.yaml"
-    if config_file.exists():
-        return
-    root = str(LIBERO_DIR / "libero" / "libero")
-    config_dir.mkdir(parents=True, exist_ok=True)
-    with open(config_file, "w") as f:
-        yaml.dump(
-            {
-                "benchmark_root": root,
-                "bddl_files": os.path.join(root, "./bddl_files"),
-                "init_states": os.path.join(root, "./init_files"),
-                "datasets": os.path.join(root, "../datasets"),
-                "assets": os.path.join(root, "./assets"),
-            },
-            f,
-        )
+    from foldquant.libero_config import use_checkout
+
+    use_checkout(LIBERO_DIR / "libero" / "libero")
 
 
 #: A Python file to import before any training config is resolved, named by this
