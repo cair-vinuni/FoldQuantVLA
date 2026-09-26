@@ -31,7 +31,7 @@ Example::
         --checkpoint-dir <pi05_libero PyTorch checkpoint> \\
         --dataset-path <LeRobot LIBERO dataset> \\
         --output-dir exports/pi05_w4a4 \\
-        --llm-scheme w8a8_sr --expert-scheme w4a4_shg
+        --llm-scheme w4a4_srg --expert-scheme w4a4_shg
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ class ExportConfig:
     config: str = LIBERO_TRAIN_CONFIG
     """Upstream training config name (model variant, transforms, norm-stats asset)."""
 
-    llm_scheme: str = schemes.W8A8_SR
+    llm_scheme: str = schemes.W4A4_SRG
     """FoldQuant scheme for the PaliGemma language model, or ``none`` to keep it float."""
 
     expert_scheme: str = schemes.W4A4_SHG

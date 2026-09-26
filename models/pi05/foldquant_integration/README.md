@@ -9,7 +9,7 @@ Two modules of the policy are replaced by FoldQuant plugin graphs:
 
 | module | attribute | graph | schemes |
 |---|---|---|---|
-| LLM (PaliGemma Gemma-2B decoder, prefix pass) | `policy._model.paligemma_with_expert.paligemma.language_model` | `llm_bf16.onnx` | `w8a8_sr` (default), `w8a8_s`, `w8a8`, `w4a4_srg`, `w4a4_sg`, `w4a8_srg` |
+| LLM (PaliGemma Gemma-2B decoder, prefix pass) | `policy._model.paligemma_with_expert.paligemma.language_model` | `llm_bf16.onnx` | `w4a4_srg` (default), `w4a4_sg`, `w4a8_srg`, `w8a8_sr`, `w8a8_s`, `w8a8` |
 | action expert (Gemma-300M, one denoise step) | `policy._model.paligemma_with_expert.gemma_expert` + the projections around it | `expert_bf16.onnx` | `w4a4_shg` (default), `w4a4_sh`, `w4a4_sr`, `w8a8_sh`, `w8a8` |
 
 Pi's inference splits into a prefix pass and a suffix loop, and the graphs
@@ -123,9 +123,12 @@ policy sees exactly what the websocket server hands it.
    python -m foldquant_integration.export_foldquant \
        --checkpoint-dir <pi05_libero PyTorch checkpoint> \
        --dataset-path <LeRobot LIBERO dataset> --num-calib 128 \
-       --llm-scheme w8a8_sr --expert-scheme w4a4_shg \
-       --output-dir exports/pi05_w8a8_w4a4
+       --llm-scheme w4a4_srg --expert-scheme w4a4_shg \
+       --output-dir exports/pi05_w4a4
    ```
+
+   That is the paper's W4A4 arm. Its W4A4 o/d8 arm keeps `o_proj` and
+   `down_proj` at INT8: add `--llm-params '{"site_bits": {"o": 8, "down": 8}}'`.
 
    `--cascade` calibrates the expert while the LLM runs under FoldQuant's
    fake-quant emulation of its own fold. `--llm-scheme none` /
@@ -136,7 +139,7 @@ policy sees exactly what the websocket server hands it.
 
    ```bash
    python -m foldquant_integration.build_engines \
-       --onnx-dir exports/pi05_w8a8_w4a4/onnx --engine-dir exports/pi05_w8a8_w4a4/engines
+       --onnx-dir exports/pi05_w4a4/onnx --engine-dir exports/pi05_w4a4/engines
    ```
 
    Loads the plugin libraries, then compiles each FoldQuant graph strongly
@@ -149,19 +152,19 @@ policy sees exactly what the websocket server hands it.
 
    ```bash
    python -m foldquant_integration.verify --checkpoint-dir ... --dataset-path ... \
-       --engine-dir exports/pi05_w8a8_w4a4/engines
+       --engine-dir exports/pi05_w4a4/engines
 
    # upstream's client/server protocol, server side quantized:
-   python -m foldquant_integration.serve --checkpoint-dir ... --engine-dir exports/pi05_w8a8_w4a4/engines
+   python -m foldquant_integration.serve --checkpoint-dir ... --engine-dir exports/pi05_w4a4/engines
    MUJOCO_GL=egl <libero venv>/bin/python examples/libero/main.py --args.task-suite-name libero_spatial
 
    # the same pairing over every suite, resumable:
    MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --checkpoint-dir ... \
-       --engine-dir exports/pi05_w8a8_w4a4/engines \
-       --client-python examples/libero/.venv/bin/python --output exports/pi05_w8a8_w4a4/libero
+       --engine-dir exports/pi05_w4a4/engines \
+       --client-python examples/libero/.venv/bin/python --output exports/pi05_w4a4/libero
 
    python -m foldquant_integration.benchmark --checkpoint-dir ... --dataset-path ... \
-       --arms w4a4=exports/pi05_w8a8_w4a4/engines
+       --arms w4a4=exports/pi05_w4a4/engines
    ```
 
    `verify` scores the prefix KV stack and the action chunk the client
@@ -220,7 +223,7 @@ python -m foldquant_integration.export_foldquant --checkpoint-dir ... --dataset-
 python -m foldquant_integration.build_engines \
     --onnx-dir exports/pi05_modelopt_w8a8_sq/onnx --engine-dir exports/pi05_modelopt_w8a8_sq/engines
 python -m foldquant_integration.verify --checkpoint-dir ... --dataset-path ... \
-    --engine-dir exports/pi05_modelopt_w8a8_sq/engines --split-from exports/pi05_w8a8_w4a4/engines
+    --engine-dir exports/pi05_modelopt_w8a8_sq/engines --split-from exports/pi05_w4a4/engines
 ```
 
 What the arm does (`foldquant/modelopt_int8.py`, `modelopt_export.py`):
@@ -284,7 +287,7 @@ _config._CONFIGS_DICT.setdefault("pi05_mine", TrainConfig(name="pi05_mine", ...)
 export FOLDQUANT_PI05_PLUGIN=/path/to/my_plugin.py
 python -m foldquant_integration.export_foldquant \
     --checkpoint-dir <ckpt> --config pi05_mine --dataset-path <lerobot dataset> \
-    --llm-scheme w8a8_sr --expert-scheme w8a8_sh --output-dir exports/mine
+    --output-dir exports/mine
 ```
 
 An import error in the plugin is raised, not swallowed; otherwise it would
