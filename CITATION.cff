@@ -20,6 +20,7 @@ authors:
     given-names: An T.
 license: Apache-2.0
 repository-code: "https://github.com/cair-vinuni/FoldQuantVLA"
+url: "https://review-artifact-27f4.github.io/foldquantvla/"
 version: 0.1.0
 date-released: 2026-09-04
 preferred-citation:
@@ -46,5 +47,5 @@ preferred-citation:
   journal: "arXiv preprint"
   identifiers:
     - type: other
-      value: "arXiv:2609.24433"
-  url: "https://arxiv.org/abs/2609.24433"
+      value: "arXiv:2609.04958"
+  url: "https://arxiv.org/abs/2609.04958"

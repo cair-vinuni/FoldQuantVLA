@@ -6,6 +6,11 @@
 </p>
 
 <p align="center">
+  <a href="https://review-artifact-27f4.github.io/foldquantvla/"><img alt="Project Page" src="https://img.shields.io/badge/Project-Page-2E8B57"></a>
+  <a href="https://arxiv.org/abs/2609.04958"><img alt="arXiv 2609.04958" src="https://img.shields.io/badge/arXiv-2609.04958-B31B1B"></a>
+</p>
+
+<p align="center">
   <img alt="Native INT4 / INT8" src="https://img.shields.io/badge/precision-W4A4%20%7C%20W8A8%20native-B9141A">
   <img alt="Runtime" src="https://img.shields.io/badge/runtime-TensorRT%2010%20%2F%2011-17201C">
   <img alt="Targets" src="https://img.shields.io/badge/native%20INT4-sm__87%20Orin%20%7C%20sm__89%20Ada-627067">
@@ -21,7 +26,7 @@ W8A8 and W4A4 quantization of vision-language-action (VLA) models, executed
 natively on the device's INT8 / INT4 tensor cores (not simulated), via
 **consistent offline folding**.
 
-Paper: [arXiv 2609.24433](https://arxiv.org/abs/2609.24433). Reproduce: [Results](#results).
+Paper: [arXiv 2609.04958](https://arxiv.org/abs/2609.04958). Project page: [review-artifact-27f4.github.io/foldquantvla](https://review-artifact-27f4.github.io/foldquantvla/). Reproduce: [Results](#results).
 
 ## Highlights
 
