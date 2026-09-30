@@ -29,7 +29,7 @@ scripts/deploy_groot_n17_jetson.sh                # w8a8 arm, serves on :5555
 Useful variations:
 
 ```bash
-# another arm, reusing the float pipeline already built
+# another arm
 ARM=w4a4 LLM_SCHEME=w4a4_srg DIT_SCHEME=w4a4_shg scripts/deploy_groot_n17_jetson.sh
 
 # mixed precision: keep two LLM projection sites at 8 bit
@@ -41,7 +41,7 @@ ARM=modelopt_w8a8_sq LLM_SCHEME=modelopt_w8a8_smoothquant DIT_SCHEME=modelopt_w8
 NUM_CALIB=64 scripts/deploy_groot_n17_jetson.sh
 
 # build and verify only, no server
-STEPS=check,kernels,float,export,build,verify scripts/deploy_groot_n17_jetson.sh
+STEPS=check,kernels,export,build,verify scripts/deploy_groot_n17_jetson.sh
 
 # serve an arm that is already built, on another port
 STEPS=serve PORT=5556 scripts/deploy_groot_n17_jetson.sh
@@ -51,8 +51,8 @@ Outputs land in `models/groot_n1_7/exports/` (override with `OUT=`):
 
 ```
 exports/
-  float/{onnx,engines}          upstream bf16 pipeline, shared by every arm
-  <arm>/onnx                    FoldQuant graphs + foldquant_export.json
+  <arm>/quantized               the quantized checkpoint
+  <arm>/onnx                    all seven graphs + foldquant_export.json
   <arm>/engines                 the seven engines the server loads
   <arm>/verify.json             engine-vs-PyTorch report
   <arm>/logs/                   one log per step
@@ -120,29 +120,24 @@ python -m foldquant.kernels status
 three libraries. They are cached under `FOLDQUANT_CACHE_DIR` (default
 `~/.cache/foldquant`); set the same value when building engines and serving.
 
-## 3. Float pipeline (once per checkpoint)
+## 3. The float components
 
 GR00T N1.7 runs as seven engines. FoldQuant replaces two of them (LLM and
-DiT); the other five come from upstream's bf16 pipeline.
-
-```bash
-python scripts/deployment/build_trt_pipeline.py \
-    --model-path "$CKPT" --dataset-path "$DS" --embodiment-tag "$TAG" \
-    --output-dir exports/float --steps export,build
-ls exports/float/engines      # expect 7 *.engine files
-```
-
-This takes the longest of all steps on an Orin. `exports/float/engines` is
-also a servable bf16 TensorRT arm on its own.
+DiT); the other five are float and `export` (section 4) writes them beside
+the FoldQuant graphs, so no separate float pipeline is needed. For an
+all-bf16 TensorRT baseline, run `export` on the base checkpoint itself
+(`--model-path "$CKPT" --dataset-path "$DS"`) and build it like any other arm.
 
 ## 4. Export a FoldQuant arm
 
 ```bash
-python -m foldquant_integration.export_foldquant \
+python -m foldquant_integration.quantize \
     --model-path "$CKPT" --dataset-path "$DS" --embodiment-tag "$TAG" \
     --num-calib 128 --seed 0 \
     --llm-scheme w8a8_sr --dit-scheme w8a8_sh \
-    --output-dir exports/w8a8
+    --output-dir exports/w8a8/quantized
+python -m foldquant_integration.export --model-path exports/w8a8/quantized \
+    --output-dir exports/w8a8/onnx
 ```
 
 | arm | `--llm-scheme` | `--dit-scheme` | notes |
@@ -168,11 +163,11 @@ uv pip install --python $PY nvidia-modelopt==0.45.0 onnx-graphsurgeon==0.6.1
 ```
 
 ```bash
-python -m foldquant_integration.export_foldquant \
+python -m foldquant_integration.quantize \
     --model-path "$CKPT" --dataset-path "$DS" --embodiment-tag "$TAG" \
     --num-calib 64 --seed 0 \
     --llm-scheme modelopt_w8a8_smoothquant --dit-scheme modelopt_w8a8_smoothquant \
-    --output-dir exports/modelopt_w8a8_sq
+    --output-dir exports/modelopt_w8a8_sq/quantized
 ```
 
 The first export compiles ModelOpt's CUDA extension (about 95 s, cached in
@@ -186,12 +181,10 @@ preset does. Recipe details are in the
 
 ```bash
 python -m foldquant_integration.build_engines \
-    --onnx-dir exports/w8a8/onnx --engine-dir exports/w8a8/engines \
-    --float-onnx-dir exports/float/onnx --float-engine-dir exports/float/engines
+    --onnx-dir exports/w8a8/onnx --engine-dir exports/w8a8/engines
 ```
 
-`--float-engine-dir` copies the five untouched engines instead of rebuilding
-them. The command fails if any of the seven is missing at the end.
+The command fails if any of the seven engines is missing at the end.
 
 ## 6. Verify before serving
 
@@ -205,7 +198,7 @@ It compares engine actions with the bf16 PyTorch policy on held-out samples
 and writes `exports/w8a8/engines/verify.json`. Do not skip it on a new board
 or a new checkpoint: an engine built from an incomplete graph, or served with
 the wrong checkpoint, loads without any error and returns wrong actions.
-Compare `actions.cos_mean` across arms; a value far below the float arm's
+Compare `actions.cos_mean` across arms; a value far below the W8A8 arm's
 means the build is broken, not that the scheme is lossy.
 
 ## 7. Serve
@@ -294,7 +287,7 @@ machine.
 | `No module named 'foldquant'` / `'gr00t'` | `PYTHONPATH` not set (section 1) |
 | plugin library not found | `python -m foldquant.kernels build` not run on this board, or a different `FOLDQUANT_CACHE_DIR` |
 | `ImportError: torchcodec is not available` | torchcodec wheel not installed; or pass `--video-backend decord` (`VIDEO_BACKEND=decord` for the script) |
-| float pipeline ends with fewer than 7 engines | read `exports/float/pipeline.log`; the build now fails loudly instead of skipping a component |
+| `build_engines` ends with fewer than 7 engines | read its log: the build fails loudly on a missing component instead of skipping it |
 | `Failed to deserialize the cuda engine` | engines built on another device or TensorRT version; rebuild on this board |
 | `ModelOpt's CUDA extension (modelopt_cuda_ext) could not be built` | `ninja` missing from the venv or `CUDA_HOME` unset; a CPU fallback would segfault during the ONNX trace |
 | `port ... already in use` | another server holds that port; pick another `--port` |

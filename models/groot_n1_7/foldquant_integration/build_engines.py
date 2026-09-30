@@ -7,12 +7,10 @@ Upstream's ``build_tensorrt_engine.build_engine`` already does everything a
 FoldQuant graph needs (STRONGLY_TYPED network, shape profiles derived from
 the ONNX dim names) except knowing the plugins. This tool loads the plugin
 libraries the export manifest names (building them for this device when no
-cached binary matches), then walks the seven upstream pipeline components:
-
-* a component the FoldQuant export produced is built from that graph;
-* any other component is built from the upstream float export
-  (``--float-onnx-dir``) or copied from an existing upstream engine directory
-  (``--float-engine-dir``), whichever is given.
+cached binary matches), then builds each of the seven upstream pipeline
+components from its graph in ``--onnx-dir``: the FoldQuant graphs and the
+float components ``export`` writes beside them (``quantize`` writes both for
+an arm with a float or ModelOpt tower).
 
 A ModelOpt Q/DQ baseline graph (``modelopt_w8a8_smoothquant``) goes through
 the same strongly-typed build, which is also how the recipe it reproduces
@@ -24,11 +22,8 @@ as ``n17_full_pipeline``, after the same plugins are loaded in-process, which
 
 Example::
 
-    python scripts/deployment/export_onnx_n1d7.py --model-path ... --dataset-path ... \\
-        --output-dir exports/n17_float/onnx --export-mode full_pipeline
     python -m foldquant_integration.build_engines \\
-        --onnx-dir exports/n17_w4a4/onnx --float-onnx-dir exports/n17_float/onnx \\
-        --engine-dir exports/n17_w4a4/engines
+        --onnx-dir exports/n17_w4a4/onnx --engine-dir exports/n17_w4a4/engines
 """
 
 from __future__ import annotations
@@ -59,16 +54,11 @@ logger = logging.getLogger("foldquant.groot_n1_7.build")
 @dataclass
 class BuildConfig:
     onnx_dir: str
-    """The FoldQuant export's ``onnx/`` directory (holds foldquant_export.json)."""
+    """The ``onnx/`` directory ``export`` wrote: the FoldQuant graphs, the five float
+    components and foldquant_export.json."""
 
     engine_dir: str
     """Destination engine directory."""
-
-    float_onnx_dir: Optional[str] = None
-    """Upstream ``export_onnx_n1d7.py`` output: float graphs for the untouched components."""
-
-    float_engine_dir: Optional[str] = None
-    """Upstream engine directory: engines to copy for the untouched components."""
 
     workspace_mb: int = 8192
     """TensorRT workspace, MB."""
@@ -104,17 +94,9 @@ def load_manifest(onnx_dir: Path) -> dict:
     return json.loads(path.read_text())
 
 
-def shape_hints(onnx_dir: Path, float_onnx_dir: Optional[Path]) -> Dict[str, int]:
-    """The ``opt_seq_lens`` upstream's ``build_full_pipeline`` derives from ``export_metadata.json``.
-
-    The FoldQuant metadata carries the LLM / DiT dims; the ViT dims
-    (``num_patches`` / ``num_merged_patches``) come from the upstream export's
-    metadata when a float ONNX directory is given.
-    """
-    meta: Dict[str, int] = {}
-    if float_onnx_dir is not None and (float_onnx_dir / EXPORT_METADATA_NAME).is_file():
-        meta.update(json.loads((float_onnx_dir / EXPORT_METADATA_NAME).read_text()))
-    meta.update(json.loads((onnx_dir / EXPORT_METADATA_NAME).read_text()))
+def shape_hints(onnx_dir: Path) -> Dict[str, int]:
+    """The ``opt_seq_lens`` upstream's ``build_full_pipeline`` derives from ``export_metadata.json``."""
+    meta = json.loads((onnx_dir / EXPORT_METADATA_NAME).read_text())
     return {
         "sa_seq_len": meta["sa_seq_len"],
         "vl_seq_len": meta["vl_seq_len"],
@@ -126,9 +108,7 @@ def shape_hints(onnx_dir: Path, float_onnx_dir: Optional[Path]) -> Dict[str, int
     }
 
 
-def _first_existing(directory: Optional[Path], names) -> Optional[Path]:
-    if directory is None:
-        return None
+def _first_existing(directory: Path, names) -> Optional[Path]:
     for n in names:
         if (directory / n).is_file():
             return directory / n
@@ -139,10 +119,6 @@ def build(args: BuildConfig) -> Dict[str, str]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     onnx_dir = Path(args.onnx_dir)
     engine_dir = Path(args.engine_dir)
-    float_onnx = Path(args.float_onnx_dir) if args.float_onnx_dir else None
-    float_eng = Path(args.float_engine_dir) if args.float_engine_dir else None
-    if float_onnx is None and float_eng is None:
-        raise SystemExit("give --float-onnx-dir or --float-engine-dir for the float components")
     engine_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = load_manifest(onnx_dir)
@@ -154,26 +130,17 @@ def build(args: BuildConfig) -> Dict[str, str]:
     from build_tensorrt_engine import build_engine, derive_shapes_with_hint
     import tensorrt as trt
 
-    hints = shape_hints(onnx_dir, float_onnx)
+    hints = shape_hints(onnx_dir)
     severity = None if args.verbose else trt.Logger.WARNING
     status: Dict[str, str] = {}
     for name, onnx_names, engine_name in PIPELINE_COMPONENTS:
         dst = engine_dir / engine_name
         src = _first_existing(onnx_dir, onnx_names)
-        origin = "foldquant"
         if src is None:
-            src = _first_existing(float_onnx, onnx_names)
-            origin = "float"
-        if src is None:
-            eng = _first_existing(float_eng, (engine_name,))
-            if eng is None:
-                logger.warning("%s: no ONNX or engine found, skipped", name)
-                status[name] = "missing"
-                continue
-            shutil.copy2(eng, dst)
-            logger.info("%s: copied float engine %s", name, eng)
-            status[name] = f"copied:{eng}"
+            logger.warning("%s: no ONNX found, skipped", name)
+            status[name] = "missing"
             continue
+        origin = "foldquant" if name in manifest.get("schemes", {}) else "float"
         t0 = time.time()
         mins, opts, maxs = derive_shapes_with_hint(str(src), opt_seq_lens=hints, max_batch=args.max_batch)
         # The FoldQuant DiT graphs declare their batch axis as ``batch``; upstream's profile
@@ -198,8 +165,6 @@ def build(args: BuildConfig) -> Dict[str, str]:
 
     record = {
         "onnx_dir": public_path(str(onnx_dir)),
-        "float_onnx_dir": public_path(args.float_onnx_dir),
-        "float_engine_dir": args.float_engine_dir,
         "plugin_libs": libs,
         "schemes": manifest["schemes"],
         "shape_hints": hints,
@@ -208,7 +173,7 @@ def build(args: BuildConfig) -> Dict[str, str]:
     (engine_dir / "foldquant_engines.json").write_text(json.dumps(record, indent=2))
     shutil.copy2(onnx_dir / MANIFEST_NAME, engine_dir / MANIFEST_NAME)
 
-    # A component with no ONNX and no float engine leaves a hole in the directory.
+    # A component with no ONNX leaves a hole in the directory.
     # Reporting "complete" here is what lets the run continue: the record is
     # written, the caller exits 0, and trt_model_forward.setup_tensorrt_engines
     # then keeps that module in PyTorch with only a print, while verify.py and
@@ -217,9 +182,8 @@ def build(args: BuildConfig) -> Dict[str, str]:
     missing = sorted(n for n, st in status.items() if st == "missing")
     if missing:
         raise FileNotFoundError(
-            f"{engine_dir} is missing {', '.join(missing)}: no ONNX in {onnx_dir} and no "
-            "engine in --float-engine-dir. Pass --float-onnx-dir (or --float-engine-dir) "
-            "covering the components this export does not quantize."
+            f"{engine_dir} is missing {', '.join(missing)}: no ONNX in {onnx_dir}. `export` writes every "
+            "component there (`quantize` does, for an arm with a float or ModelOpt tower)."
         )
     logger.info("engine directory complete: %s", engine_dir)
     return status

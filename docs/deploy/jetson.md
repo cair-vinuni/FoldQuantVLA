@@ -21,17 +21,14 @@ cd models/groot_n1_7 && source .venv/bin/activate
 CK=<checkpoint directory>      # a local path: a hub id would record its org
 DS=<LeRobot dataset>
 
-# the upstream float graphs: every arm shares them
-python scripts/deployment/build_trt_pipeline.py \
-    --model-path "$CK" --dataset-path "$DS" --embodiment-tag <TAG> \
-    --output-dir exports/float --steps export
-
-# the FoldQuant graphs
-python -m foldquant_integration.export_foldquant \
+# the quantized checkpoint (exports/w8a8/quantized), then all seven graphs from it
+python -m foldquant_integration.quantize \
     --model-path "$CK" --dataset-path "$DS" --embodiment-tag <TAG> \
     --num-calib 128 --seed 0 \
     --llm-scheme w8a8_sr --dit-scheme w8a8_sh \
-    --output-dir exports/w8a8
+    --output-dir exports/w8a8/quantized
+python -m foldquant_integration.export --model-path exports/w8a8/quantized \
+    --output-dir exports/w8a8/onnx
 ```
 
 `--steps export` skips engine building. Keep `--num-calib` at 128 or
@@ -40,7 +37,6 @@ more for a GPTQ (`_g`) arm.
 ## 2. Copy to the board
 
 ```bash
-rsync -avP exports/float/onnx  orin:<repo>/models/groot_n1_7/exports/float/
 rsync -avP exports/w8a8/onnx   orin:<repo>/models/groot_n1_7/exports/w8a8/
 ```
 
@@ -78,12 +74,11 @@ against the wrong one fails at plugin load, not at build.
 
 ```bash
 python -m foldquant_integration.build_engines \
-    --onnx-dir exports/w8a8/onnx --engine-dir exports/w8a8/engines \
-    --float-onnx-dir exports/float/onnx
+    --onnx-dir exports/w8a8/onnx --engine-dir exports/w8a8/engines
 ```
 
-`--float-onnx-dir`, not `--float-engine-dir`: the board has no float engines
-yet, so the untouched components are **built** from ONNX rather than copied.
+All seven graphs are in `exports/w8a8/onnx`, the float components included,
+so nothing else is needed on the board.
 
 ## 5. Test before serving
 

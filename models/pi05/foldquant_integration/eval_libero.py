@@ -61,7 +61,7 @@ class EvalConfig:
     engine_dir: str | None = None
     """FoldQuant engine directory; omit to score the bf16 PyTorch policy."""
 
-    fakequant_dir: str | None = None
+    quantized_model: str | None = None
     """FoldQuant fake-quant state for ``--checkpoint-dir`` (a state saved without the base files); a
     self-contained fake-quant model given as ``--checkpoint-dir`` is detected by itself. Mutually
     exclusive with ``--engine-dir``."""
@@ -125,8 +125,8 @@ def _start_server(args: EvalConfig, log_path: Path) -> subprocess.Popen:
     ]
     if args.engine_dir:
         cmd += ["--engine-dir", args.engine_dir]
-    if args.fakequant_dir:
-        cmd += ["--fakequant-dir", args.fakequant_dir]
+    if args.quantized_model:
+        cmd += ["--quantized-model", args.quantized_model]
     elif args.no_fakequant:
         cmd += ["--no-fakequant"]
     env = dict(os.environ)
@@ -201,13 +201,13 @@ def main(args: EvalConfig) -> dict[str, Any]:
         raise SystemExit(f"unknown suites {unknown}; choose from {list(SUITES)}")
     if not Path(args.client_python).is_file():
         raise SystemExit(f"--client-python {args.client_python} is not a file")
-    from foldquant.fakequant import fakequant_arm
+    from foldquant.quantized import quantized_arm
 
-    args.fakequant_dir = fakequant_arm(
-        args.checkpoint_dir, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    args.quantized_model = quantized_arm(
+        args.checkpoint_dir, args.quantized_model, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
     )
-    if args.engine_dir and args.fakequant_dir:
-        raise ValueError("--engine-dir and --fakequant-dir are mutually exclusive")
+    if args.engine_dir and args.quantized_model:
+        raise ValueError("--engine-dir and --quantized-model are mutually exclusive")
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     summary_path = out / "summary.json"
@@ -225,8 +225,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
         "checkpoint": artifact_digest(args.checkpoint_dir),
         "engine_dir": public_path(args.engine_dir),
         "engines": artifact_digest(args.engine_dir),
-        "fakequant_dir": public_path(args.fakequant_dir),
-        "fakequant": artifact_digest(args.fakequant_dir),
+        "quantized_model": public_path(args.quantized_model),
+        "quantized": artifact_digest(args.quantized_model),
         "config": args.config,
         "suites": list(args.suites),
         "replan_steps": args.replan_steps,
@@ -238,8 +238,8 @@ def main(args: EvalConfig) -> dict[str, Any]:
         {
             "checkpoint_dir": public_path(args.checkpoint_dir),
             "engine_dir": public_path(args.engine_dir),
-            "fakequant_dir": public_path(args.fakequant_dir),
-            "execution": "fake-quant" if args.fakequant_dir else ("tensorrt" if args.engine_dir else "pytorch"),
+            "quantized_model": public_path(args.quantized_model),
+            "execution": "fake-quant" if args.quantized_model else ("tensorrt" if args.engine_dir else "pytorch"),
             "config": args.config,
             "num_trials_per_task": args.num_trials_per_task,
             "max_steps": args.max_steps,

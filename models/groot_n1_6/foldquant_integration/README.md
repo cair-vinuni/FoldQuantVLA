@@ -19,7 +19,7 @@ interchangeable. Upstream N1.6 exports no LLM graph; the FoldQuant LLM graph
 takes the Eagle wrapper's `inputs_embeds` and `attention_mask` and returns
 `hidden_states`, the tensor the wrapper reads as `hidden_states[-1]`. Whether
 that tensor is the residual stream before or after the decoder's final norm
-depends on the installed `transformers`; `export_foldquant` measures it on
+depends on the installed `transformers`; `quantize` measures it on
 the loaded model (`llm_final_norm` in `export_metadata.json`) instead of
 assuming, and emits the graph accordingly.
 
@@ -82,11 +82,25 @@ upstream's loader as much as by these tools.
    capture sees exactly the inference-time tensors.
 
    ```bash
-   python -m foldquant_integration.export_foldquant \
+   python -m foldquant_integration.quantize \
        --model-path checkpoints/GR00T-N1.6-LIBERO --embodiment-tag libero_panda \
        --dataset-path <calibration dataset> --num-calib 128 \
        --llm-scheme w8a8_sr --dit-scheme w4a4_shg \
-       --output-dir exports/n16_w8a8_w4a4
+       --output-dir exports/n16_w8a8_w4a4/quantized
+   ```
+
+   `quantize` writes the quantized model, `exports/n16_w8a8_w4a4/quantized`: the
+   base checkpoint with each quantized projection's weight replaced by its
+   integer codes (`qweight`) and per-row scale (`weight_scale`), the same
+   bytes the engines carry, plus the SmoothQuant scales and fold settings.
+   Everything unquantized, tokenizer and processor files included, is copied
+   from the base as it is. It runs in PyTorch with fake-quant layers in place
+   of the quantized projections, and the plugin graphs are exported from it,
+   with no dataset:
+
+   ```bash
+   python -m foldquant_integration.export --model-path exports/n16_w8a8_w4a4/quantized \
+       --output-dir exports/n16_w8a8_w4a4/onnx
    ```
 
    `--cascade` calibrates the DiT while the LLM runs under FoldQuant's
@@ -116,32 +130,11 @@ upstream's loader as much as by these tools.
    typed with the shape profiles derived from the graph and the captured
    shapes: batch 1, `sa_seq_len` static at `1 + action_horizon` (51), the LLM
    sequence and the DiT's `vl_seq_len` ranged `(1, captured, max(2 ×
-   captured, captured + 64))` (`--llm-max-seq-len`, `--vl-max-seq-len`). A
-   DiT left float can be built from upstream's export instead:
-
-   ```bash
-   GR00T_ONNX_EXPORTER_MODE=legacy \
-   python scripts/deployment/export_onnx_n1d6.py --model_path ... --dataset_path ... \
-       --embodiment_tag libero_panda --output_dir exports/n16_float/onnx
-   python -m foldquant_integration.build_engines --onnx-dir exports/n16_w8a8_none/onnx \
-       --float-onnx-dir exports/n16_float/onnx --engine-dir exports/n16_w8a8_none/engines
-   ```
-
-   `GR00T_ONNX_EXPORTER_MODE=legacy` is upstream's own knob, set on purpose.
-   This release passes `dynamo=use_dynamo_exporter` to the DiT export, which
-   defaults to true off Spark, while N1.7 hard-codes `dynamo=False` for its DiT
-   because *"DiT specializes vl_seq_len under dynamo; legacy exporter needed"*.
-   N1.6's DiT is the same module family, so the float arm (the reference for
-   every drift number here) is exported the N1.7 way.
-
-   The dynamo path also needs `onnxscript`, which neither release declares.
-   Installing it would make the export run and could return a
-   sequence-length-specialised reference: worse than a missing package,
-   because it succeeds.
-
-   `--float-onnx-dir` alone (with `--metadata` pointing at any export's
-   `export_metadata.json` for the shapes) gives the float-DiT-engine arm, the
-   floor of the drift metric. `foldquant_engines.json` records what was built
+   captured, captured + 64))` (`--llm-max-seq-len`, `--vl-max-seq-len`).
+   The all-float TensorRT baseline is `export` on the unquantized checkpoint
+   (`--model-path <checkpoint> --dataset-path <dataset>`): both towers traced
+   under the same bindings with no plugin nodes, built strongly typed the same
+   way. `foldquant_engines.json` records what was built
    from where; `foldquant_export.json` travels with the engines so the runtime
    tools know which plugin libraries to load.
 
@@ -174,17 +167,24 @@ upstream's loader as much as by these tools.
 Plugin graphs are emitted at the batch the calibration captured (1), so
 TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 
-### Fake-quant models
+### Newer checkpoints and letterboxing
 
-`export_foldquant --save-fakequant <dir>` writes the arm as a fake-quant model:
-the base checkpoint's files plus the quant state (SmoothQuant scales and every
-weight code). `eval_libero`, `serve` and `verify` run it in PyTorch with the engines'
-arithmetic when `--model-path` names it (`--no-fakequant` loads the base weights
-plainly), or take a state saved with `--fakequant-state-only` through
-`--fakequant-dir <state>`. `python -m foldquant.fakequant convert` turns it into
-the plugin ONNX graphs and engines without calibration data, and
-`python -m foldquant.fakequant push` uploads it to the Hugging Face Hub
-(private by default). The full description, with measured agreement against
+Checkpoints trained on upstream `n1d6` after commit `9b37aa1` may turn image
+letterboxing off (`letter_box_transform: false` in `processor_config.json`).
+The processor here reads that key; without it, images are letterboxed as in
+this release. See [`UPSTREAM.md`](../UPSTREAM.md).
+
+### Quantized models
+
+`quantize` writes the arm as a quantized checkpoint, `<output-dir>`:
+the base checkpoint with every quantized projection's weight replaced by its
+integer codes and per-row scale, the rest copied from the base. `eval_libero`,
+`serve` and `verify` run it in PyTorch with the engines' arithmetic when
+`--model-path` names it; the bf16 baseline runs from the base checkpoint, since
+the quantized projections' bf16 weights are not in it. `export` turns it into
+the plugin ONNX graphs and `build_engines` into engines, without calibration
+data, and `python -m foldquant.quantized push` uploads it to the Hugging Face
+Hub (private by default). The full description, with measured agreement against
 the engines, is in the
 [GR00T N1.7 README](../../groot_n1_7/foldquant_integration/README.md#fake-quant-checkpoints-pytorch-the-hub-then-onnx-and-engines).
 
@@ -289,8 +289,9 @@ real-robot evaluators construct (`gr00t/eval/real_robot/SO100`).
 | file | role |
 |---|---|
 | `calibration.py` | upstream policy / dataset loading, seeded sample plan, observation building, forward loop |
-| `export_foldquant.py` | scheme validation, shape + final-norm capture, `export_llm` / `export_dit`, manifests |
-| `build_engines.py` | plugin load + `foldquant.runtime.builder.build_engine` per component; float DiT from upstream's export |
+| `quantize.py` | scheme validation, shape + final-norm capture, `export_llm` / `export_dit`, the quantized model |
+| `export.py` | quantized model -> the plugin graphs and manifests, from the recorded codes |
+| `build_engines.py` | plugin load + `foldquant.runtime.builder.build_engine` per component |
 | `runtime.py` | engine installer (`install_engines`), the two forward rebinds |
 | `verify.py` | held-out PyTorch-vs-engine drift report |
 | `serve.py` | upstream's ZMQ `PolicyServer` with the engines installed |

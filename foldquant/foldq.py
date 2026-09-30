@@ -60,7 +60,12 @@ def site_rotation(weight: Any, block_size: int, fwht: bool) -> Tuple[Any, Any]:
     """The ``(perm, R)`` pair for one site: fixed butterfly, or learned dense."""
     if fwht:
         return rotations.hadamard_blocks(int(weight.shape[1]), block_size)
-    return rotations.build_rotation(weight, block_size)
+    from .quant_state import dense_rotation
+
+    import torch
+
+    perm, R = dense_rotation(lambda: rotations.build_rotation(weight, block_size))
+    return perm.to(device=weight.device, dtype=torch.long), R.to(device=weight.device, dtype=torch.float32)
 
 
 def fold_macro_site(

@@ -18,7 +18,7 @@ about, all read off the loaded model rather than assumed:
 - The Eagle wrapper pops the decoder down to `select_layer` layers at
   construction and reads `hidden_states[select_layer]`, the last entry, which
   under the pinned `transformers` 4.51.3 is the residual stream *after* the
-  decoder's final norm. `export_foldquant` measures this
+  decoder's final norm. `quantize` measures this
   (`llm_final_norm` in `export_metadata.json`) and emits the graph
   accordingly; the runtime returns the engine's `hidden_states` at exactly
   that index.
@@ -39,8 +39,10 @@ Upstream N1.5 ships its own TensorRT path (`deployment_scripts/`, fp16/fp8
 per-module engines behind `scripts/inference_service.py --use-tensorrt`).
 Its DiT graph has a different contract (`sa_embs`, `vl_embs`,
 `timesteps_tensor`) and its LLM graph is fp16, so the two engine sets are not
-interchangeable. Use `float` to export an unquantized FoldQuant baseline;
-`verify` compares all engines against the BF16 PyTorch policy.
+interchangeable. The all-float baseline under the FoldQuant contract is
+`export` on the unquantized checkpoint (`--model-path <checkpoint>
+--dataset-path <dataset>`). `verify` compares all engines against the BF16
+PyTorch policy.
 
 Engines are served by [`runtime.py`](runtime.py), which rebinds the two
 modules' `forward`; nothing else in the policy changes, so the same
@@ -127,11 +129,25 @@ the tensors the model sees.
    every capture sees exactly the inference-time tensors.
 
    ```bash
-   python -m foldquant_integration.export_foldquant \
+   python -m foldquant_integration.quantize \
        --model-path <checkpoint> --embodiment-tag new_embodiment --denoising-steps 4 \
        --dataset-path <calibration dataset> --num-calib 128 \
        --llm-scheme w8a8_sr --dit-scheme w4a4_shg \
-       --output-dir exports/n15_w8a8_w4a4
+       --output-dir exports/n15_w8a8_w4a4/quantized
+   ```
+
+   `quantize` writes the quantized model, `exports/n15_w8a8_w4a4/quantized`: the
+   base checkpoint with each quantized projection's weight replaced by its
+   integer codes (`qweight`) and per-row scale (`weight_scale`), the same
+   bytes the engines carry, plus the SmoothQuant scales and fold settings.
+   Everything unquantized, tokenizer and processor files included, is copied
+   from the base as it is. It runs in PyTorch with fake-quant layers in place
+   of the quantized projections, and the plugin graphs are exported from it,
+   with no dataset:
+
+   ```bash
+   python -m foldquant_integration.export --model-path exports/n15_w8a8_w4a4/quantized \
+       --output-dir exports/n15_w8a8_w4a4/onnx
    ```
 
    `--cascade` calibrates the DiT while the LLM runs under FoldQuant's
@@ -208,17 +224,26 @@ the tensors the model sees.
 Plugin graphs are emitted at the batch the calibration captured (1); the
 upstream client sends one observation per request.
 
-### Fake-quant models
+### AV1 datasets
 
-`export_foldquant --save-fakequant <dir>` writes the arm as a fake-quant model:
-the base checkpoint's files plus the quant state (SmoothQuant scales and every
-weight code). `eval_libero`, `serve` and `verify` run it in PyTorch with the engines'
-arithmetic when `--model-path` names it (`--no-fakequant` loads the base weights
-plainly), or take a state saved with `--fakequant-state-only` through
-`--fakequant-dir <state>`. `python -m foldquant.fakequant convert` turns it into
-the plugin ONNX graphs and engines without calibration data, and
-`python -m foldquant.fakequant push` uploads it to the Hugging Face Hub
-(private by default). The full description, with measured agreement against
+`torchcodec` refuses a timestamp before a video's first frame. The SO101
+recordings are AV1 and start at 0.066 s, so step 0 fails. Pass
+`--video-backend decord` (upstream N1.5's own default) to `quantize`,
+`export` and `verify` on such datasets. A checkpoint trained with
+`so100_dualcam` also expects the top camera to be named `front` in the
+dataset's `meta/modality.json`.
+
+### Quantized models
+
+`quantize` writes the arm as a quantized checkpoint, `<output-dir>`:
+the base checkpoint with every quantized projection's weight replaced by its
+integer codes and per-row scale, the rest copied from the base. `eval_libero`,
+`serve` and `verify` run it in PyTorch with the engines' arithmetic when
+`--model-path` names it; the bf16 baseline runs from the base checkpoint, since
+the quantized projections' bf16 weights are not in it. `export` turns it into
+the plugin ONNX graphs and `build_engines` into engines, without calibration
+data, and `python -m foldquant.quantized push` uploads it to the Hugging Face
+Hub (private by default). The full description, with measured agreement against
 the engines, is in the
 [GR00T N1.7 README](../../groot_n1_7/foldquant_integration/README.md#fake-quant-checkpoints-pytorch-the-hub-then-onnx-and-engines).
 
@@ -227,7 +252,8 @@ the engines, is in the
 | file | role |
 |---|---|
 | `calibration.py` | upstream policy / dataset loading, seeded sample plan, observation building, forward loop |
-| `export_foldquant.py` | scheme validation, shape + final-norm capture, `export_llm` / `export_dit`, manifests |
+| `quantize.py` | scheme validation, shape + final-norm capture, `export_llm` / `export_dit`, the quantized model |
+| `export.py` | quantized model -> the plugin graphs and manifests, from the recorded codes |
 | `build_engines.py` | plugin load + `foldquant.runtime.builder.build_engine` per component |
 | `runtime.py` | engine installer (`install_engines`), the two forward rebinds |
 | `verify.py` | held-out PyTorch-vs-engine drift report |

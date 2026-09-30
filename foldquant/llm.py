@@ -804,7 +804,7 @@ def _emit_deepstack_add(
 
 def build_llm_plugin_onnx(
     qwen3_model: Any,
-    output_path: "str | Path",
+    output_path: "str | Path | None",
     *,
     max_seq_len: int,
     opset: int = 17,
@@ -852,7 +852,8 @@ def build_llm_plugin_onnx(
         qwen3_model: live PyTorch LLM. Must expose ``.config`` and ``.layers`` and
             a ``state_dict()`` keyed ``layers.<i>.<...>`` plus ``norm.weight``.
         output_path: path to save the ``.onnx`` (external data written
-            alongside when tensors exceed the size threshold).
+            alongside when tensors exceed the size threshold); ``None`` returns
+            the ``ModelProto`` instead of writing it.
         max_seq_len: upper bound on supported seq_len. Sets the baked
             rope/mask size; the engine optimization profile derives its max
             from the ONNX symbolic dim.
@@ -880,7 +881,7 @@ def build_llm_plugin_onnx(
 
     torch = _torch()
 
-    out_path = Path(output_path)
+    out_path = Path(output_path) if output_path is not None else None
     qwen3_model = resolve_qwen3_decoder(qwen3_model)
 
     cfg = qwen3_model.config
@@ -1125,8 +1126,8 @@ def build_llm_plugin_onnx(
             opset_imports=[oh.make_opsetid("", opset), oh.make_opsetid("trt.plugins", 1)],
         )
         model.ir_version = 9
-        # save_plugin_onnx removes a sidecar left by an earlier write of this path;
-        # onnx.save appends to it, which shifts every tensor's offset.
+        if output_path is None:
+            return model
         from .onnx_io import save_plugin_onnx
 
         save_plugin_onnx(model, out_path, size_threshold=1024)
@@ -1159,9 +1160,8 @@ def build_llm_plugin_onnx(
         opset_imports=[oh.make_opsetid("", opset), oh.make_opsetid("trt.plugins", 1)],
     )
     model.ir_version = 9
-
-    # save_plugin_onnx removes a sidecar left by an earlier write of this path;
-    # onnx.save appends to it, which shifts every tensor's offset.
+    if output_path is None:
+        return model
     from .onnx_io import save_plugin_onnx
 
     save_plugin_onnx(model, out_path, size_threshold=1024)

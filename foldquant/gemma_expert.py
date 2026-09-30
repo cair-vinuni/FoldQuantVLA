@@ -306,7 +306,14 @@ def build_gemma_expert_plugin_onnx(
         return None
 
     def _int8_linear(name: str, x: str, w: Any, n_out: int, k_in: int, zeros_name: str, out: str) -> None:
-        """Bare INT GEMM: PerRowInt{8,4}LinearResidual with a static zeros residual."""
+        """Bare INT GEMM: PerRowInt{8,4}LinearResidual with a static zeros residual.
+        *name* is the site's key in the quant state."""
+        from .quant_state import site_scope
+
+        with site_scope(name):
+            _int8_linear_site(name, x, w, n_out, k_in, zeros_name, out)
+
+    def _int8_linear_site(name: str, x: str, w: Any, n_out: int, k_in: int, zeros_name: str, out: str) -> None:
         if int4:
             s_ch = sq_scales[name] if sq_scales is not None else None
             if fwht:

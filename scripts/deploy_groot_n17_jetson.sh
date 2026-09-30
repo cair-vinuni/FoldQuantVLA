@@ -2,14 +2,14 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 #
-# GR00T N1.7 on a Jetson AGX Orin, end to end: plugins -> float pipeline ->
+# GR00T N1.7 on a Jetson AGX Orin, end to end: plugins ->
 # FoldQuant export -> engines -> verify -> serve. docs/deploy/jetson_serve.md
 # walks through the same steps one command at a time.
 #
 #   CKPT=/path/to/checkpoint DS=/path/to/lerobot_dataset TAG=new_embodiment \
 #       scripts/deploy_groot_n17_jetson.sh
 #
-#   # only rebuild and serve another arm, reusing the float pipeline
+#   # only rebuild and serve another arm
 #   ARM=w4a4 LLM_SCHEME=w4a4_srg DIT_SCHEME=w4a4_shg STEPS=export,build,verify,serve \
 #   CKPT=... DS=... TAG=... scripts/deploy_groot_n17_jetson.sh
 #
@@ -36,9 +36,9 @@
 #   VIDEO_BACKEND  torchcodec | decord | torchvision_av (default: upstream's)
 #   PYTHON       interpreter (default: models/groot_n1_7/.venv/bin/python, else python)
 #   HOST PORT    serve address (default 0.0.0.0:5555)
-#   STEPS        comma list of: check,kernels,float,export,build,verify,serve
+#   STEPS        comma list of: check,kernels,export,build,verify,serve
 #                (default: all of them, in that order)
-#   FORCE=1      redo the float pipeline, export and build even when their outputs exist
+#   FORCE=1      redo the export and build even when their outputs exist
 #
 # Each step is skipped when its output is already complete, so re-running after
 # a failure resumes where it stopped. Logs go to $OUT/<arm>/logs/.
@@ -60,14 +60,13 @@ NUM_VERIFY="${NUM_VERIFY:-32}"
 VIDEO_BACKEND="${VIDEO_BACKEND:-}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-5555}"
-STEPS="${STEPS:-check,kernels,float,export,build,verify,serve}"
+STEPS="${STEPS:-check,kernels,export,build,verify,serve}"
 FORCE="${FORCE:-0}"
 if [ -z "${PYTHON:-}" ]; then
   if [ -x "$FAM/.venv/bin/python" ]; then PYTHON="$FAM/.venv/bin/python"; else PYTHON=python; fi
 fi
 
 OUT="$(mkdir -p "$OUT" && cd "$OUT" && pwd)"
-FLOAT="$OUT/float"
 ARMDIR="$OUT/$ARM"
 LOGS="$ARMDIR/logs"
 mkdir -p "$LOGS"
@@ -105,11 +104,6 @@ identify_inputs() {
 }
 ckpt_stamp() { printf 'ckpt=%s\n' "$CKPT_ID"; }
 ds_stamp()   { [ -n "$DS_ID" ] || die "set DS: the dataset identity is part of this arm's stamp"; printf 'dataset=%s\n' "$DS_ID"; }
-float_current() {
-  engines_complete "$FLOAT/engines" || return 1
-  [ -f "$FLOAT/.checkpoint" ] || return 1
-  [ "$(cat "$FLOAT/.checkpoint")" = "$(ckpt_stamp)" ]
-}
 # Identity of a quantized arm: the checkpoint plus everything the export takes
 # as input. Export and engines carry it (.stamp) and the calibration dataset
 # they were built from (.dataset), so a changed checkpoint, embodiment tag,
@@ -168,26 +162,6 @@ if has_step kernels; then
   fi
 fi
 
-if has_step float; then
-  say "float: upstream bf16 pipeline (the modules FoldQuant does not replace)"
-  if [ "$FORCE" != 1 ] && float_current; then
-    echo "  already complete for this checkpoint: $FLOAT/engines (FORCE=1 to redo)"
-  else
-    need_ds float
-    if engines_complete "$FLOAT/engines" && [ "$FORCE" != 1 ]; then
-      echo "  $FLOAT/engines was built from another checkpoint; rebuilding"
-    fi
-    rm -f "$FLOAT/.checkpoint"
-    echo "  export + build -> $FLOAT (log: $LOGS/float.log)"
-    "$PYTHON" scripts/deployment/build_trt_pipeline.py \
-        "${model_args[@]}" --dataset-path "$DS" "${backend_args[@]}" \
-        --output-dir "$FLOAT" --steps export,build >"$LOGS/float.log" 2>&1 \
-      || die "float pipeline failed -- see $LOGS/float.log"
-    engines_complete "$FLOAT/engines" || die "float pipeline finished without all seven engines -- see $LOGS/float.log"
-    ckpt_stamp >"$FLOAT/.checkpoint"
-  fi
-fi
-
 if has_step export; then
   say "export: FoldQuant graphs ($LLM_SCHEME / $DIT_SCHEME)"
   if [ "$FORCE" != 1 ] && export_current; then
@@ -197,13 +171,17 @@ if has_step export; then
     if [ -s "$ARMDIR/onnx/foldquant_export.json" ] && [ "$FORCE" != 1 ]; then
       echo "  $ARMDIR/onnx was exported from another checkpoint, recipe or dataset; re-exporting"
     fi
-    rm -rf "$ARMDIR/onnx" "$ARMDIR/engines"
+    rm -rf "$ARMDIR/onnx" "$ARMDIR/engines" "$ARMDIR/quantized"
     args=("${model_args[@]}" --dataset-path "$DS" "${backend_args[@]}"
           --num-calib "$NUM_CALIB" --seed 0
-          --llm-scheme "$LLM_SCHEME" --dit-scheme "$DIT_SCHEME" --output-dir "$ARMDIR")
+          --llm-scheme "$LLM_SCHEME" --dit-scheme "$DIT_SCHEME" --output-dir "$ARMDIR/quantized")
     [ -n "$LLM_PARAMS" ] && args+=(--llm-params "$LLM_PARAMS")
-    echo "  calibrating on $NUM_CALIB samples (log: $LOGS/export.log)"
-    "$PYTHON" -m foldquant_integration.export_foldquant "${args[@]}" >"$LOGS/export.log" 2>&1 \
+    echo "  quantizing on $NUM_CALIB samples (log: $LOGS/quantize.log)"
+    "$PYTHON" -m foldquant_integration.quantize "${args[@]}" >"$LOGS/quantize.log" 2>&1 \
+      || die "quantize failed -- see $LOGS/quantize.log"
+    echo "  exporting the graphs from $ARMDIR/quantized (log: $LOGS/export.log)"
+    "$PYTHON" -m foldquant_integration.export --model-path "$ARMDIR/quantized" \
+        --output-dir "$ARMDIR/onnx" >"$LOGS/export.log" 2>&1 \
       || die "export failed -- see $LOGS/export.log"
     arm_stamp >"$ARMDIR/onnx/.stamp"
     ds_stamp >"$ARMDIR/onnx/.dataset"
@@ -217,15 +195,13 @@ if has_step build; then
     echo "  already complete for this checkpoint, recipe and dataset: $ARMDIR/engines (FORCE=1 to redo)"
   else
     export_current || die "no export for this checkpoint, recipe and dataset at $ARMDIR/onnx -- run the export step first"
-    float_current || die "float engines at $FLOAT/engines are missing or from another checkpoint -- run the float step first"
     if engines_complete "$ARMDIR/engines" && [ "$FORCE" != 1 ]; then
       echo "  $ARMDIR/engines was built from another checkpoint, recipe or dataset; rebuilding"
     fi
     rm -rf "$ARMDIR/engines"
     echo "  building (log: $LOGS/build.log)"
     "$PYTHON" -m foldquant_integration.build_engines \
-        --onnx-dir "$ARMDIR/onnx" --engine-dir "$ARMDIR/engines" \
-        --float-onnx-dir "$FLOAT/onnx" --float-engine-dir "$FLOAT/engines" >"$LOGS/build.log" 2>&1 \
+        --onnx-dir "$ARMDIR/onnx" --engine-dir "$ARMDIR/engines" >"$LOGS/build.log" 2>&1 \
       || die "engine build failed -- see $LOGS/build.log"
     engines_complete "$ARMDIR/engines" || die "build finished without all seven engines -- see $LOGS/build.log"
     arm_stamp >"$ARMDIR/engines/.stamp"

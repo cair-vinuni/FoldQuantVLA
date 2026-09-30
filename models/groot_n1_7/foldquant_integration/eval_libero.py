@@ -74,7 +74,7 @@ class EvalConfig:
     baseline_pack: Optional[str] = None
     """Emulated W4A4 baseline pack (:mod:`.baseline_w4a4`); mutually exclusive with ``--engine-dir``."""
 
-    fakequant_dir: Optional[str] = None
+    quantized_model: Optional[str] = None
     """FoldQuant fake-quant state for ``--model-path`` (a state saved without the base files); a
     self-contained fake-quant model given as ``--model-path`` is detected by itself. Mutually exclusive
     with ``--engine-dir`` and ``--baseline-pack``."""
@@ -151,11 +151,11 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
-    from foldquant.fakequant import fakequant_arm
+    from foldquant.quantized import quantized_arm
 
-    args.fakequant_dir = fakequant_arm(
+    args.quantized_model = quantized_arm(
         args.model_path,
-        args.fakequant_dir,
+        args.quantized_model,
         no_fakequant=args.no_fakequant,
         other_arms=(args.engine_dir, getattr(args, "baseline_pack", None)),
     )
@@ -175,8 +175,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         "engines": artifact_digest(args.engine_dir),
         "baseline_pack": public_path(args.baseline_pack),
         "baseline": artifact_digest(args.baseline_pack),
-        "fakequant_dir": public_path(args.fakequant_dir),
-        "fakequant": artifact_digest(args.fakequant_dir),
+        "quantized_model": public_path(args.quantized_model),
+        "quantized": artifact_digest(args.quantized_model),
         "suites": list(args.suites),
         "tasks": sorted(args.tasks) if args.tasks else None,
         "n_envs": args.n_envs,
@@ -196,8 +196,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         }
     )
 
-    if sum(bool(x) for x in (args.engine_dir, args.baseline_pack, args.fakequant_dir)) > 1:
-        raise ValueError("--engine-dir, --baseline-pack and --fakequant-dir are mutually exclusive")
+    if sum(bool(x) for x in (args.engine_dir, args.baseline_pack, args.quantized_model)) > 1:
+        raise ValueError("--engine-dir, --baseline-pack and --quantized-model are mutually exclusive")
     if args.engine_dir:
         # The float arm comes off upstream's pipeline and carries no FoldQuant manifest;
         # it has no plugin nodes to load libraries for. Reading it unconditionally made
@@ -259,10 +259,10 @@ def main(args: EvalConfig) -> Dict[str, Any]:
             "execution": "emulated",
         }
         logger.info("rolling out the EMULATED %s W4A4 baseline from %s", manifest.get("method"), args.baseline_pack)
-    if args.fakequant_dir:
-        from .fakequant import install as install_fakequant
+    if args.quantized_model:
+        from .quantized import install as install_fakequant
 
-        _, fq_state = install_fakequant(policy.policy, args.fakequant_dir, args.model_path)
+        _, fq_state = install_fakequant(policy.policy, args.quantized_model, args.model_path)
         summary["schemes"] = {**{k: v.scheme for k, v in fq_state.modules.items()}, "execution": "fake-quant"}
     wrapper_configs = WrapperConfigs(
         video=VideoConfig(video_dir=None, max_episode_steps=max_episode_steps),

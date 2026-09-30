@@ -10,7 +10,7 @@ A FoldQuant projection runs, in the plugin kernels::
 :class:`FakeQuantLinear` computes exactly that in fp32 from the integer weight
 codes and per-row scales the engine is built from, so the PyTorch module and
 the engine start from the same numbers and differ only by fp32 against INT32
-accumulation. The LLM (:mod:`foldquant.fakequant`) and the GR00T DiT
+accumulation. The LLM (:mod:`foldquant.quantized`) and the GR00T DiT
 (:mod:`foldquant.dit_fake_quant`) replace their quantized ``nn.Linear`` s with it.
 """
 

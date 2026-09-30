@@ -24,10 +24,9 @@ weights by the same code. This module holds that result:
   device the fold's matmuls ran on; replayed, a graph is the same on any
   device. The emitters themselves do not change, so a replayed export writes
   the same bytes as the export that recorded it.
-* :func:`save_state` / :func:`load_state` write and read a directory holding
-  ``foldquant_quant.json`` and ``quant_state.safetensors``; this is the
-  fake-quant checkpoint that is pushed to the Hub, next to (not instead of)
-  the base checkpoint it was calibrated on.
+* :class:`QuantState` / :class:`ModuleQuantState` hold the result; the
+  quantized checkpoint (:mod:`foldquant.quantized_checkpoint`) is how it is
+  written to disk and pushed to the Hub.
 
 Torch and safetensors are imported lazily.
 """
@@ -37,29 +36,19 @@ from __future__ import annotations
 import contextlib
 import contextvars
 from dataclasses import dataclass, field
-import json
-from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 __all__ = [
-    "FORMAT",
-    "FORMAT_VERSION",
     "MANIFEST_NAME",
-    "TENSORS_NAME",
     "ModuleQuantState",
     "QuantState",
     "ReplayError",
     "ReplaySite",
-    "load_state",
     "record_gptq",
     "replay_sites",
-    "save_state",
 ]
 
-FORMAT = "foldquant-quant-state"
-FORMAT_VERSION = 2  # 2: round-to-nearest packs are recorded too
 MANIFEST_NAME = "foldquant_quant.json"
-TENSORS_NAME = "quant_state.safetensors"
 
 
 class ReplayError(RuntimeError):
@@ -73,6 +62,9 @@ _RECORDER: contextvars.ContextVar[Optional[Dict[str, list]]] = contextvars.Conte
 _MODULE: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("foldquant_pack_module", default=None)
 _SITE: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("foldquant_pack_site", default=None)
 _REPLAY: contextvars.ContextVar[Optional["ReplaySession"]] = contextvars.ContextVar("foldquant_pack_replay", default=None)
+_ROT_RECORDER: contextvars.ContextVar[Optional[Dict[str, Tuple[Any, Any]]]] = contextvars.ContextVar(
+    "foldquant_rotation_recorder", default=None
+)
 
 
 @contextlib.contextmanager
@@ -110,6 +102,8 @@ def rtn_pack(weight: Any, compute: Any) -> Tuple[Any, Any]:
     replay = _REPLAY.get()
     if replay is not None and replay.has_rtn:
         entry = replay.get(local)
+        if entry is None and site and "rtn" in replay:
+            entry = replay["rtn"]  # a state recorded before the packs were named: call order
         if entry is None:
             raise ReplayError(
                 f"{module}: no recorded round-to-nearest pack {local!r}; the state was recorded for another "
@@ -119,6 +113,44 @@ def rtn_pack(weight: Any, compute: Any) -> Tuple[Any, Any]:
     codes, scale = compute()
     record(f"{module}.{local}", codes, scale)
     return codes, scale
+
+
+def dense_rotation(compute: Any) -> Tuple[Any, Any]:
+    """``compute()`` -> ``(perm, R)`` of a learned dense rotation, recorded or replayed inside a
+    :func:`pack_scope` + :func:`site_scope` like a weight pack.
+
+    A dense rotation is an SVD of the site's weight. A quantized checkpoint holds the
+    packed codes and no bf16 weight, so the rotation is recorded with the codes and
+    handed back on replay rather than recomputed.
+    """
+    module, site = _MODULE.get(), _SITE.get()
+    if module is None or site is None:
+        return compute()
+    replay = _REPLAY.get()
+    if replay is not None and site in replay.rotations:
+        return replay.rotations[site]
+    perm, R = compute()
+    sink = _ROT_RECORDER.get()
+    if sink is not None:
+        import torch
+
+        sink[f"{module}.rot.{site}"] = (
+            perm.detach().to("cpu", torch.int32).contiguous(),
+            R.detach().to("cpu", torch.float32).contiguous(),
+        )
+    return perm, R
+
+
+@contextlib.contextmanager
+def record_rotations() -> Iterator[Dict[str, Tuple[Any, Any]]]:
+    """Collect every dense rotation :func:`dense_rotation` computes while active, keyed
+    ``<module>.rot.<site>``."""
+    sink: Dict[str, Tuple[Any, Any]] = {}
+    token = _ROT_RECORDER.set(sink)
+    try:
+        yield sink
+    finally:
+        _ROT_RECORDER.reset(token)
 
 
 @contextlib.contextmanager
@@ -199,6 +231,13 @@ class ReplaySession(dict):
     recorded (format 1); those packs are then recomputed.
     """
 
+    #: ``{site: (perm, R)}`` of the recorded dense rotations, for :func:`dense_rotation`.
+    rotations: Dict[str, Tuple[Any, Any]]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.rotations = {}
+
     @property
     def has_rtn(self) -> bool:
         return any(k == "rtn" or k.startswith("rtn.") for k in self)
@@ -220,6 +259,13 @@ def replay_sites(module_state: "ModuleQuantState") -> ReplaySession:
     for site, entries in module_state.gptq.items():
         key = site[len(prefix):] if site.startswith(prefix) else site
         session[key] = ReplaySite(site, entries)
+    import torch
+
+    rots, perms = module_state.tensor_group("rot"), module_state.tensor_group("perm")
+    for site, R in rots.items():
+        if site not in perms:
+            raise ReplayError(f"{module_state.module}: rotation {site!r} is recorded without its permutation")
+        session.rotations[site] = (perms[site].to(torch.int32), R.to(torch.float32))
     return session
 
 
@@ -259,18 +305,7 @@ class QuantState:
     modules: Dict[str, ModuleQuantState] = field(default_factory=dict)
 
 
-# Serialization
-
-
-def _pack_codes(codes: Any) -> Tuple[Any, str]:
-    """Nibble-pack INT4 codes (half the bytes); keep anything wider as int8."""
-    import torch
-
-    from .rotation import pack_int4_nibbles
-
-    if codes.ndim == 2 and codes.shape[1] % 2 == 0 and int(codes.abs().max()) <= 7:
-        return torch.from_numpy(pack_int4_nibbles(codes)), "int4"
-    return codes.to(torch.int8), "int8"
+# Code packing
 
 
 def _unpack_codes(stored: Any, kind: str) -> Any:
@@ -283,67 +318,3 @@ def _unpack_codes(stored: Any, kind: str) -> Any:
     hi = (packed >> 4) & 0xF
     both = torch.stack([lo, hi], dim=-1).reshape(stored.shape[0], stored.shape[1] * 2)
     return torch.where(both >= 8, both - 16, both).to(torch.int8)
-
-
-def save_state(state: QuantState, directory: Any) -> Path:
-    """Write *state* to *directory* (created) as JSON manifest + one safetensors file."""
-    import torch
-    from safetensors.torch import save_file
-
-    out = Path(directory)
-    out.mkdir(parents=True, exist_ok=True)
-    tensors: Dict[str, Any] = {}
-    modules: Dict[str, Any] = {}
-    for name, ms in state.modules.items():
-        for key, value in ms.tensors.items():
-            tensors[f"{name}/t/{key}"] = torch.as_tensor(value).detach().to("cpu", torch.float32).contiguous()
-        index: Dict[str, List[Dict[str, Any]]] = {}
-        for site, entries in ms.gptq.items():
-            rows = []
-            for i, (codes, scale) in enumerate(entries):
-                stored, kind = _pack_codes(codes)
-                tensors[f"{name}/g/{site}/{i}/codes"] = stored.contiguous()
-                tensors[f"{name}/g/{site}/{i}/scale"] = scale.to(torch.float32).contiguous()
-                rows.append({"kind": kind, "shape": list(codes.shape)})
-            index[site] = rows
-        modules[name] = {
-            "scheme": ms.scheme,
-            "config": ms.config,
-            "tensors": sorted(ms.tensors),
-            "gptq": index,
-        }
-    save_file(tensors, str(out / TENSORS_NAME))
-    manifest = {"format": FORMAT, "format_version": FORMAT_VERSION, **state.manifest, "modules": modules}
-    (out / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=False))
-    return out
-
-
-def load_state(directory: Any) -> QuantState:
-    """Read a directory written by :func:`save_state`."""
-    from safetensors.torch import load_file
-
-    src = Path(directory)
-    manifest = json.loads((src / MANIFEST_NAME).read_text())
-    if manifest.get("format") != FORMAT:
-        raise ValueError(f"{src / MANIFEST_NAME} is not a FoldQuant quant state (format {manifest.get('format')!r})")
-    if int(manifest.get("format_version", 0)) > FORMAT_VERSION:
-        raise ValueError(
-            f"{src} was written by a newer FoldQuant (format {manifest['format_version']} > {FORMAT_VERSION})"
-        )
-    tensors = load_file(str(src / TENSORS_NAME))
-    modules_meta = manifest.pop("modules")
-    state = QuantState(manifest=manifest)
-    for name, meta in modules_meta.items():
-        ms = ModuleQuantState(module=name, scheme=meta["scheme"], config=meta["config"])
-        for key in meta["tensors"]:
-            ms.tensors[key] = tensors[f"{name}/t/{key}"]
-        for site, rows in meta["gptq"].items():
-            entries = []
-            for i, row in enumerate(rows):
-                codes = _unpack_codes(tensors[f"{name}/g/{site}/{i}/codes"], row["kind"])
-                if list(codes.shape) != row["shape"]:
-                    raise ValueError(f"{src}: {name} GPTQ site {site} entry {i} unpacks to {tuple(codes.shape)}")
-                entries.append((codes, tensors[f"{name}/g/{site}/{i}/scale"]))
-            ms.gptq[site] = entries
-        state.modules[name] = ms
-    return state

@@ -1,19 +1,22 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Emit the FoldQuant plugin graphs for a GR00T N1.7 checkpoint.
+"""Quantize a GR00T N1.7 checkpoint with FoldQuant and save the quantized model.
 
-Writes, under ``--output-dir``::
+Calibrates the LLM and DiT folds on ``--num-calib`` dataset observations
+and writes ``--output-dir``, the quantized model::
 
-    onnx/llm_bf16.onnx        FoldQuant LLM graph  (unless --llm-scheme none)
-    onnx/dit_bf16.onnx        FoldQuant DiT graph  (unless --dit-scheme none)
-    onnx/export_metadata.json upstream shape hints for the engine builder
-    onnx/foldquant_export.json what was exported, from which samples, needing which plugins
+    the base checkpoint with each quantized projection's weight
+                       replaced by its integer codes (qweight) and per-row scale
+                       (weight_scale), plus the SmoothQuant scales and fold settings
 
-``--save-fakequant <dir>`` also writes the arm's quant state there (see
-:mod:`.fakequant`): the fake-quant checkpoint that runs the arm in PyTorch,
-converts back to these graphs without calibration data, and can be pushed to
-the Hugging Face Hub.
+The quantized model runs in PyTorch with fake-quant layers in place of the
+quantized projections (``serve``, ``verify`` and ``eval_libero`` load it like a
+checkpoint), can be pushed to the Hugging Face Hub, and is the input of the
+rest of the pipeline: ``export`` (quantized model -> plugin ONNX) and
+``build_engines`` (ONNX -> TensorRT engines). A tower quantized by ModelOpt is
+saved the same way: the checkpoint holds its smoothed weights, the quantizers'
+scales and the call its graph is traced from, and ``export`` traces it.
 
 ``--llm-scheme`` / ``--dit-scheme modelopt_w8a8_smoothquant`` (INT8 SmoothQuant
 Q/DQ) and ``modelopt_w4a16_awq`` (INT4 weight-only AWQ, group 128, rewritten to
@@ -28,15 +31,15 @@ upstream ``export_onnx_n1d7.py --export-mode full_pipeline`` writes: same
 input / output names, dtypes and dynamic-dim names, so upstream's engine
 builder and ``trt_model_forward.py`` consume them unchanged. The other five
 pipeline components (ViT, VL self-attention, state / action encoders, action
-decoder) stay float and come from the upstream export; :mod:`.build_engines`
-merges the two.
+decoder) stay float; ``export`` writes them beside the two graphs with
+upstream's own exporters, from the shapes recorded here.
 
 Example::
 
-    python -m foldquant_integration.export_foldquant \\
+    python -m foldquant_integration.quantize \\
         --model-path nvidia/GR00T-N1.7-LIBERO/libero_spatial \\
         --dataset-path demo_data/libero_demo \\
-        --output-dir exports/n17_w4a4 \\
+        --output-dir exports/n17_w4a4/quantized \\
         --llm-scheme w4a4_srg --dit-scheme w4a4_shg --cascade
 """
 
@@ -45,31 +48,34 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
 import logging
+import shutil
 from pathlib import Path
 import time
 from typing import Any, Dict, Optional
 
 from foldquant import modelopt_int8, schemes
-from foldquant.export import export_dit, export_llm, install_llm_emulation
+from foldquant.export import ExportResult, export_dit, export_llm, install_llm_emulation
+from foldquant.trace_export import call_kwargs, record_trace
+from foldquant.quant_state import ModuleQuantState
 from foldquant.provenance import public_path
+from foldquant.quantized_checkpoint import is_quantized_checkpoint
 import torch
 import tyro
 
 from . import calibration
-from ._upstream import EXPORT_METADATA_NAME, MANIFEST_NAME
+from .quantized import tower_trace
 
 
-logger = logging.getLogger("foldquant.groot_n1_7.export")
+logger = logging.getLogger("foldquant.groot_n1_7.quantize")
 
 #: The upstream export writes ``export_metadata.json`` with these keys; the
 #: engine builder reads the first three as shape hints. ``batch_size`` is what
 #: the FoldQuant LLM graph pins its batch to (the captured batch, 1).
 _NONE = ("", "none")
-FLOAT = "float"
 
 
 @dataclass
-class ExportConfig:
+class QuantizeConfig:
     model_path: str
     """Checkpoint directory or Hugging Face id (as for the upstream tools)."""
 
@@ -77,18 +83,16 @@ class ExportConfig:
     """LeRobot-format dataset the calibration observations are drawn from."""
 
     output_dir: str
-    """Destination; the graphs land in ``<output_dir>/onnx``."""
+    """Destination directory of the quantized model (written as the checkpoint itself)."""
 
     embodiment_tag: Optional[str] = None
     """Embodiment tag; read off the checkpoint's processor_config.json when omitted."""
 
     llm_scheme: str = schemes.W8A8_SR
-    """FoldQuant scheme for the Qwen3-VL text tower; ``float`` takes upstream's full-pipeline export of it
-    (build with ``--float-onnx-dir``); ``none`` keeps PyTorch."""
+    """FoldQuant scheme for the Qwen3-VL text tower; ``none`` keeps it in PyTorch."""
 
     dit_scheme: str = schemes.W4A4_SHG
-    """FoldQuant scheme for the action-head DiT; ``float`` takes upstream's full-pipeline export of it
-    (build with ``--float-onnx-dir``); ``none`` keeps PyTorch."""
+    """FoldQuant scheme for the action-head DiT; ``none`` keeps it in PyTorch."""
 
     num_calib: int = 128
     """Calibration observations (episode, step) pairs spread over the dataset."""
@@ -113,20 +117,10 @@ class ExportConfig:
 
     device: str = "cuda"
 
-    save_fakequant: Optional[str] = None
-    """Also write the quant state (the fake-quant checkpoint) to this directory; needs a local
-    ``--model-path``, whose content digest it records."""
-
     base_model_id: Optional[str] = None
     """Where others get the base checkpoint (``org/name[@revision]`` on the Hub), recorded in the
     state and its model card; defaults to the checkpoint directory's name."""
 
-    fakequant_state_only: bool = False
-    """With ``--save-fakequant``: write the quant state alone, not a self-contained model with the
-    base checkpoint's files linked in."""
-
-    fakequant_copy_base: bool = False
-    """With ``--save-fakequant``: copy the base checkpoint's files into the model instead of linking them."""
 
 
 def _scheme_or_none(value: str) -> Optional[str]:
@@ -158,9 +152,21 @@ def capture_shape_metadata(policy, observation: Dict[str, Any]) -> Dict[str, int
     def _dit_hook(_m, args, kwargs):
         seen["vl_seq_len"] = int(kwargs["encoder_hidden_states"].shape[1])
 
+    def _vit_hook(_m, args, kwargs, output):
+        # What upstream's ViT exporter traces with: the patch tensor's shape and the image
+        # grid, fixed by the checkpoint's cameras and resolution (export_onnx_n1d7.ViTInputCapture).
+        pixel_values = args[0] if args else kwargs["hidden_states"]
+        grid = args[1] if len(args) > 1 else kwargs.get("grid_thw")
+        seen["vit_pixel_values_shape"] = [int(d) for d in pixel_values.shape]
+        seen["vit_grid_thw"] = [[int(v) for v in row] for row in grid.detach().cpu().tolist()]
+        seen["num_patches"] = int(pixel_values.shape[0])
+        merged = output[0] if isinstance(output, tuple) else output
+        seen["num_merged_patches"] = int(merged.shape[0])
+
     handles = [
         modules["llm"].register_forward_pre_hook(_llm_hook, with_kwargs=True),
         modules["dit"].register_forward_pre_hook(_dit_hook, with_kwargs=True),
+        policy.model.backbone.model.model.visual.register_forward_hook(_vit_hook, with_kwargs=True),
     ]
     try:
         with torch.inference_mode():
@@ -168,7 +174,7 @@ def capture_shape_metadata(policy, observation: Dict[str, Any]) -> Dict[str, int
     finally:
         for h in handles:
             h.remove()
-    missing = [k for k in ("llm_seq_len", "vl_seq_len") if k not in seen]
+    missing = [k for k in ("llm_seq_len", "vl_seq_len", "vit_grid_thw") if k not in seen]
     if missing:
         raise RuntimeError(f"shape capture never reached {missing}; is this an N1.7 policy?")
     cfg = policy.model.action_head.config
@@ -177,23 +183,38 @@ def capture_shape_metadata(policy, observation: Dict[str, Any]) -> Dict[str, int
     return seen
 
 
-def main(args: ExportConfig) -> Path:
+def export_metadata(shapes: Dict[str, Any], policy: Any) -> Dict[str, Any]:
+    """``export_metadata.json``: the shape hints the engine builder reads, for any export of this checkpoint."""
+    return {
+        "model_version": "n1d7",
+        "sa_seq_len": shapes["sa_seq_len"],
+        "vl_seq_len": shapes["vl_seq_len"],
+        "llm_seq_len": shapes["llm_seq_len"],
+        "llm_hidden_size": shapes["llm_hidden_size"],
+        "num_deepstack": shapes["num_deepstack"],
+        "num_vis_tokens": shapes["num_vis_tokens"],
+        "num_patches": shapes["num_patches"],
+        "num_merged_patches": shapes["num_merged_patches"],
+        "vit_pixel_values_shape": shapes["vit_pixel_values_shape"],
+        "vit_grid_thw": shapes["vit_grid_thw"],
+        "action_horizon": shapes["action_horizon"],
+        "embodiment_tag": str(policy.embodiment_tag),
+        "export_mode": "foldquant",
+        "precision": "bf16",
+        "batch_size": shapes["batch_size"],
+    }
+
+
+#: The file each module's graph is exported to (the manifest records it; `export` writes it).
+_GRAPH_FILES = {"llm": "llm_bf16.onnx", "dit": "dit_bf16.onnx"}
+
+
+def main(args: QuantizeConfig) -> Path:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     llm_scheme = _scheme_or_none(args.llm_scheme)
     dit_scheme = _scheme_or_none(args.dit_scheme)
     if llm_scheme is None and dit_scheme is None:
         raise SystemExit("nothing to export: both --llm-scheme and --dit-scheme are none")
-    if args.cascade and llm_scheme == FLOAT:
-        raise SystemExit("--cascade emulates a folded LLM; a float LLM folds nothing")
-    # N1.7's FoldQuant graphs share upstream's full-pipeline I/O contract, so the float arm
-    # of a tower IS upstream's ONNX for it: nothing is emitted here, the manifest records the
-    # scheme, and build_engines sources the file from --float-onnx-dir like the other five
-    # components.
-    float_towers = [t for t, sch in (("llm", llm_scheme), ("dit", dit_scheme)) if sch == FLOAT]
-    if float_towers:
-        logger.info("float tower(s) %s: taken from upstream's export at build time (--float-onnx-dir)", float_towers)
-    llm_scheme = None if llm_scheme == FLOAT else llm_scheme
-    dit_scheme = None if dit_scheme == FLOAT else dit_scheme
     # ModelOpt Q/DQ baselines are routed to .modelopt_export, never to the FoldQuant emitters.
     modelopt_towers = {
         t: sch for t, sch in (("llm", llm_scheme), ("dit", dit_scheme)) if modelopt_int8.is_modelopt_scheme(sch)
@@ -213,17 +234,13 @@ def main(args: ExportConfig) -> Path:
         raise SystemExit(f"--cascade emulates a folded LLM; {llm_scheme!r} folds nothing")
     llm_params = json.loads(args.llm_params)
     dit_params = json.loads(args.dit_params)
-    record = args.save_fakequant is not None
-    if record and modelopt_towers:
-        raise SystemExit("--save-fakequant records FoldQuant folds; the ModelOpt baselines have no quant state")
-    if record and not Path(args.model_path).is_dir():
-        raise SystemExit("--save-fakequant needs --model-path to be a local checkpoint directory (its digest is recorded)")
-
+    if not Path(args.model_path).is_dir():
+        raise SystemExit("saving the quantized model needs --model-path to be a local checkpoint directory (its files are hashed)")
     if modelopt_towers:
         modelopt_int8.ensure_cuda_ext()
-
-    out = Path(args.output_dir) / "onnx"
-    out.mkdir(parents=True, exist_ok=True)
+    # Every arm is saved as a quantized model. The FoldQuant graphs are built in memory,
+    # only to fold, round and record the weight codes; a ModelOpt tower records the call its
+    # graph is traced from. `export` writes the ONNX from the quantized model.
 
     t0 = time.time()
     policy = calibration.load_policy(args.model_path, args.embodiment_tag, args.device)
@@ -239,6 +256,7 @@ def main(args: ExportConfig) -> Path:
     shapes = capture_shape_metadata(policy, observations[0])
     logger.info("captured shapes: %s", shapes)
 
+    results = []
     modelopt_calls: Dict[str, list] = {}
     if modelopt_towers:
         from . import modelopt_export
@@ -248,7 +266,6 @@ def main(args: ExportConfig) -> Path:
         modelopt_calls = modelopt_export.capture({t: modules[t] for t in modelopt_towers}, loop)
         logger.info("ModelOpt calibration capture in %.0fs", time.time() - t1)
 
-    results = []
     plugin_libs: list = []
     llm_result = None
     if llm_scheme is not None and "llm" not in modelopt_towers:
@@ -257,12 +274,12 @@ def main(args: ExportConfig) -> Path:
         # decoder layer's PRE-norm output (see upstream export_llm_to_onnx).
         llm_result = export_llm(
             modules["llm"],
-            out / "llm_bf16.onnx",
+            None,
             scheme=llm_scheme,
             forward_loop=loop,
             params=llm_params or None,
             final_norm=False,
-            record=record,
+            record=True,
         )
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
@@ -277,11 +294,11 @@ def main(args: ExportConfig) -> Path:
         try:
             dit_result = export_dit(
                 modules["dit"],
-                out / "dit_bf16.onnx",
+                None,
                 scheme=dit_scheme,
                 forward_loop=loop,
                 params=dit_params or None,
-                record=record,
+                record=True,
             )
         finally:
             if emulation is not None:
@@ -290,102 +307,76 @@ def main(args: ExportConfig) -> Path:
         logger.info("DiT %s exported in %.0fs", dit_scheme, time.time() - t1)
 
     # After the FoldQuant towers: ModelOpt quantizes in place, so a FoldQuant replay
-    # that ran later would calibrate through a fake-quantized tower.
-    modelopt_records: Dict[str, Any] = {}
-    modelopt_files: Dict[str, str] = {}
-    if "llm" in modelopt_towers:
+    # that ran later would calibrate through a fake-quantized tower. The checkpoint keeps
+    # the smoothed weights, the quantizers' scales and the first captured call as the trace.
+    for tower, algo in modelopt_towers.items():
         t1 = time.time()
-        modelopt_records["llm"] = modelopt_export.export_llm(
-            modules["llm"],
-            modelopt_calls["llm"],
-            out / "llm_bf16.onnx",
-            num_layers=int(policy.model.backbone.select_layer),
-            algorithm=modelopt_towers["llm"],
-            opset=args.modelopt_opset,
-        )
-        modelopt_files["llm"] = "llm_bf16.onnx"
-        logger.info("LLM %s exported in %.0fs", modelopt_towers["llm"], time.time() - t1)
-    if "dit" in modelopt_towers:
-        t1 = time.time()
-        modelopt_records["dit"] = modelopt_export.export_dit(
-            modules["dit"],
-            modelopt_calls["dit"],
-            out / "dit_bf16.onnx",
-            algorithm=modelopt_towers["dit"],
-            opset=args.modelopt_opset,
-        )
-        modelopt_files["dit"] = "dit_bf16.onnx"
-        logger.info("DiT %s exported in %.0fs", modelopt_towers["dit"], time.time() - t1)
+        module = modules[tower]
+        record = modelopt_export.quantize_tower(module, modelopt_calls[tower], algorithm=algo)
+        config = {
+            "bits": 4 if modelopt_int8.is_weight_only(algo) else 8,
+            "act_bits": 16 if modelopt_int8.is_weight_only(algo) else 8,
+            "modelopt": record,
+            "modelopt_state": modelopt_int8.modelopt_state_of(module),
+            "opset": args.modelopt_opset,
+        }
+        if tower == "llm":
+            config["num_layers"] = int(policy.model.backbone.select_layer)
+        ms = ModuleQuantState(tower, algo, config=config)
+        ms.put_group("modelopt", modelopt_int8.quantizer_buffers(module))
+        record_trace(ms, tower_trace(tower, call_kwargs(module, *modelopt_calls[tower][0])))
+        libs = []
+        if modelopt_int8.is_weight_only(algo):
+            from foldquant.kernels.locator import INT4_GROUPWISE_LIB
+
+            libs = [INT4_GROUPWISE_LIB]
+        results.append(ExportResult(tower, algo, None, libs, state=ms))
+        logger.info("%s %s quantized in %.0fs", tower, algo, time.time() - t1)
+    modelopt_calls = {}
 
     for r in results:
         for lib in r.plugin_libs:
             if lib not in plugin_libs:
                 plugin_libs.append(lib)
-    # A weight-only ModelOpt arm carries Int4GroupwiseGemmPlugin nodes after the
-    # surgery in modelopt_export; the manifest is what build_engines and serve read
-    # to load a plugin library, so declare it here rather than re-derive it.
-    if any(modelopt_int8.is_weight_only(sch) for sch in modelopt_towers.values()):
-        from foldquant.kernels.locator import INT4_GROUPWISE_LIB
 
-        if INT4_GROUPWISE_LIB not in plugin_libs:
-            plugin_libs.append(INT4_GROUPWISE_LIB)
-
-    metadata = {
-        "model_version": "n1d7",
-        "sa_seq_len": shapes["sa_seq_len"],
-        "vl_seq_len": shapes["vl_seq_len"],
-        "llm_seq_len": shapes["llm_seq_len"],
-        "llm_hidden_size": shapes["llm_hidden_size"],
-        "num_deepstack": shapes["num_deepstack"],
-        "num_vis_tokens": shapes["num_vis_tokens"],
-        "action_horizon": shapes["action_horizon"],
-        "embodiment_tag": str(policy.embodiment_tag),
-        "export_mode": "foldquant",
-        "precision": "bf16",
-        "batch_size": shapes["batch_size"],
-    }
-    (out / EXPORT_METADATA_NAME).write_text(json.dumps(metadata, indent=2))
-
+    metadata = export_metadata(shapes, policy)
+    results_by = {r.module: r for r in results}
     manifest = {
         "model_path": public_path(args.model_path),
         "embodiment_tag": str(policy.embodiment_tag),
         "dataset_path": public_path(args.dataset_path),
-        "schemes": {
-            **{r.module: r.scheme for r in results},
-            **modelopt_towers,
-            **{t: FLOAT for t in float_towers},
-        },
-        **{t: FLOAT for t in float_towers},
+        "schemes": {r.module: r.scheme for r in results},
         "params": {"llm": llm_params, "dit": dit_params},
         "cascade": bool(args.cascade),
         "plugin_libs": plugin_libs,
-        "files": {**{r.module: r.onnx_path.name for r in results}, **modelopt_files},
-        "modelopt": modelopt_records,
+        "files": {r.module: _GRAPH_FILES[r.module] for r in results},
+        "modelopt": {t: results_by[t].state.config["modelopt"] for t in modelopt_towers},
         "calibration": {
             "seed": args.seed,
             "num_samples": len(samples),
             "samples": [asdict(s) for s in samples],
         },
     }
-    (out / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2))
-    logger.info(
-        "wrote %s and %s (total %.0fs)", EXPORT_METADATA_NAME, MANIFEST_NAME, time.time() - t0
-    )
-    if record:
-        from .fakequant import save_arm_state
+    from .quantized import save_arm_state
 
-        save_arm_state(
-            Path(args.save_fakequant),
-            model_path=args.model_path,
-            results=results,
-            export_metadata=metadata,
-            export_manifest=manifest,
-            base_model_id=args.base_model_id,
-            bundle=not args.fakequant_state_only,
-            copy_base=args.fakequant_copy_base,
-        )
-    return out
+    model_dir = Path(args.output_dir)
+    if model_dir.exists() and any(model_dir.iterdir()):
+        if not is_quantized_checkpoint(model_dir):
+            raise SystemExit(f"{model_dir} exists and is not a FoldQuant quantized model; refusing to overwrite it")
+        logger.info("replacing %s", model_dir)
+        shutil.rmtree(model_dir)
+    save_arm_state(
+        model_dir,
+        model_path=args.model_path,
+        results=results,
+        export_metadata=metadata,
+        export_manifest=manifest,
+        base_model_id=args.base_model_id,
+        policy=policy,
+    )
+    logger.info("quantized model: %s", model_dir)
+    return model_dir
 
 
 if __name__ == "__main__":
-    main(tyro.cli(ExportConfig))
+    main(tyro.cli(QuantizeConfig))

@@ -66,6 +66,7 @@ from .dit_common import (
     to_bytes_f32,
 )
 from .onnx_io import save_plugin_onnx
+from .quant_state import site_scope
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +200,8 @@ def _build_w4a4_graph(
     assert kv_stacked.shape[1] % block_size == 0, (
         f"kv_dim {kv_stacked.shape[1]} not divisible by block_size {block_size}"
     )
-    enc_perm, enc_R = foldq.site_rotation(kv_stacked, block_size, fwht)
+    with site_scope("encoder"):
+        enc_perm, enc_R = foldq.site_rotation(kv_stacked, block_size, fwht)
     # The encoder rotation is the one bake site NOT produced by fold_macro_site
     # (EncoderPreQuantInt4 shares it across all cross blocks), so it must fold
     # by the SAME order the KV weights pack with. A mismatch here breaks every
@@ -231,7 +233,8 @@ def _build_w4a4_graph(
         attn_kind = "self" if (idx % 2 == 1) else "cross"
 
         # AdaLN modulation (INT4 weight-only) → {b}_lin, split into (scale, shift).
-        _emit_adaln_int4(w, idx, nodes, adaln_act_bits)
+        with site_scope(f"{b}_adaln"):
+            _emit_adaln_int4(w, idx, nodes, adaln_act_bits)
         inits.append(
             oh.make_tensor(
                 f"{b}_split", onnx.TensorProto.INT64, [2], np.array([dim, dim], dtype=np.int64).tobytes(), raw=True
@@ -245,11 +248,12 @@ def _build_w4a4_graph(
         bOf = bias_f32(bO)
 
         # attn_O rotation (input = inner_dim), shared by self and cross blocks.
-        permO, RO = foldq.site_rotation(wO, block_size, fwht)
         s_o = sq_scales[f"block{idx}_o"] if sq_scales is not None else None
-        o_i4, o_sc, RO_use = foldq.fold_macro_site(
-            wO, permO, RO, block_size, s_o, fold_order=sq_fold_order, gptq=_g(f"block{idx}_o")
-        )
+        with site_scope(f"{b}_o"):
+            permO, RO = foldq.site_rotation(wO, block_size, fwht)
+            o_i4, o_sc, RO_use = foldq.fold_macro_site(
+                wO, permO, RO, block_size, s_o, fold_order=sq_fold_order, gptq=_g(f"block{idx}_o")
+            )
         perm_o_b = rotations.to_bytes_i32(permO.detach().cpu().numpy())
         rot_o_b = b"" if fwht else rotations.to_bytes_bf16(RO_use)
         # Butterfly sites carry rot_block_size plus the SmoothQuant vector
@@ -268,17 +272,18 @@ def _build_w4a4_graph(
 
         if attn_kind == "self":
             wQKV = torch.cat([wQ, wK, wV], dim=0)  # (3*inner, dim), input = x
-            permQKV, RQKV = foldq.site_rotation(wQKV, block_size, fwht)
             s_qkv = sq_scales[f"block{idx}_qkv"] if sq_scales is not None else None
-            qkv_i4, qkv_sc, RQKV_use = foldq.fold_macro_site(
-                wQKV,
-                permQKV,
-                RQKV,
-                block_size,
-                s_qkv,
-                fold_order=sq_fold_order,
-                gptq=_g(f"block{idx}_qkv"),
-            )
+            with site_scope(f"{b}_qkv"):
+                permQKV, RQKV = foldq.site_rotation(wQKV, block_size, fwht)
+                qkv_i4, qkv_sc, RQKV_use = foldq.fold_macro_site(
+                    wQKV,
+                    permQKV,
+                    RQKV,
+                    block_size,
+                    s_qkv,
+                    fold_order=sq_fold_order,
+                    gptq=_g(f"block{idx}_qkv"),
+                )
             bf_qkv = _pre_vec("act_scale_pre_in", s_qkv)
             bQKV = np.concatenate([bQf, bKf, bVf])
             nodes.append(
@@ -313,19 +318,21 @@ def _build_w4a4_graph(
             )
         else:
             assert attn_mask_name is not None  # cross-attn always routes a mask
-            permQ, RQ = foldq.site_rotation(wQ, block_size, fwht)  # cross-attn Q input = x
             s_q = sq_scales[f"block{idx}_q"] if sq_scales is not None else None
-            q_i4, q_sc, RQ_use = foldq.fold_macro_site(
-                wQ, permQ, RQ, block_size, s_q, fold_order=sq_fold_order, gptq=_g(f"block{idx}_q")
-            )
+            with site_scope(f"{b}_q"):
+                permQ, RQ = foldq.site_rotation(wQ, block_size, fwht)  # cross-attn Q input = x
+                q_i4, q_sc, RQ_use = foldq.fold_macro_site(
+                    wQ, permQ, RQ, block_size, s_q, fold_order=sq_fold_order, gptq=_g(f"block{idx}_q")
+                )
             bf_q = _pre_vec("act_scale_pre_in", s_q)
             # KV weight rotated by the SHARED encoder rotation (enc_perm/enc_R); under
             # SQ the same shared encoder per-channel scale is folded into the KV weight.
             wKV = torch.cat([wK, wV], dim=0)  # (2*inner, kv_dim)
             s_enc = sq_scales["encoder"] if sq_scales is not None else None
-            kv_i4, kv_sc, _ = foldq.fold_macro_site(
-                wKV, enc_perm, enc_R, block_size, s_enc, fold_order=sq_fold_order, gptq=_g("encoder")
-            )
+            with site_scope(f"{b}_kv"):
+                kv_i4, kv_sc, _ = foldq.fold_macro_site(
+                    wKV, enc_perm, enc_R, block_size, s_enc, fold_order=sq_fold_order, gptq=_g("encoder")
+                )
             bKV = np.concatenate([bKf, bVf])
             nodes.append(
                 oh.make_node(
@@ -365,16 +372,18 @@ def _build_w4a4_graph(
 
         # FFN plugin: proj0 input = dim (post-LN), proj2 input = ff_inner (post-GELU).
         (wP0, bP0), (wP2, bP2) = w.ffn(idx)
-        perm0, R0 = foldq.site_rotation(wP0, block_size, fwht)
-        perm2, R2 = foldq.site_rotation(wP2, block_size, fwht)
         s0 = sq_scales[f"block{idx}_ffn0"] if sq_scales is not None else None
         s2 = sq_scales[f"block{idx}_ffn2"] if sq_scales is not None else None
-        p0_i4, p0_sc, R0_use = foldq.fold_macro_site(
-            wP0, perm0, R0, block_size, s0, fold_order=sq_fold_order, gptq=_g(f"block{idx}_ffn0")
-        )
-        p2_i4, p2_sc, R2_use = foldq.fold_macro_site(
-            wP2, perm2, R2, block_size, s2, fold_order=sq_fold_order, gptq=_g(f"block{idx}_ffn2")
-        )
+        with site_scope(f"{b}_ffn0"):
+            perm0, R0 = foldq.site_rotation(wP0, block_size, fwht)
+            p0_i4, p0_sc, R0_use = foldq.fold_macro_site(
+                wP0, perm0, R0, block_size, s0, fold_order=sq_fold_order, gptq=_g(f"block{idx}_ffn0")
+            )
+        with site_scope(f"{b}_ffn2"):
+            perm2, R2 = foldq.site_rotation(wP2, block_size, fwht)
+            p2_i4, p2_sc, R2_use = foldq.fold_macro_site(
+                wP2, perm2, R2, block_size, s2, fold_order=sq_fold_order, gptq=_g(f"block{idx}_ffn2")
+            )
         bf_2 = _pre_vec("act_scale_pre2", s2)
         bf_0 = _pre_vec("act_scale_pre0", s0)
         nodes.append(
@@ -555,7 +564,7 @@ def compute_dit_sq_scales(
             group_weights[f"block{idx}_ffn0"] = wP0
             group_weights[f"block{idx}_ffn2"] = wP2
         scales = foldq.finalize_scales(amax, weights=group_weights, alpha=alpha)
-        logger.info("    Computed W4A4 SmoothRot (fold-before, alpha=%.2f) scales for %d groups.", alpha, len(scales))
+        logger.info("    Computed W4A4 scales (fold-before, alpha=%.2f) for %d groups.", alpha, len(scales))
         return scales
 
     logger.info("    Computed SmoothQuant scales for %d rotation groups.", len(amax))
@@ -621,6 +630,8 @@ def build_dit_plugin_onnx_int4(
         opset_imports=[oh.make_opsetid("", opset), oh.make_opsetid("trt.plugins", 1)],
     )
 
+    if output_path is None:
+        return model
     out_path = Path(output_path)
     save_plugin_onnx(model, out_path)
     logger.info(

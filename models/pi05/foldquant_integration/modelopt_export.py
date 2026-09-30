@@ -5,9 +5,11 @@
 
 Reproduces the framework preset ``pi05/tensorrt/modelopt_w8a8_smoothquant``: the
 PaliGemma language model and the action expert are quantized **in place on the
-live policy**, then traced by the same wrappers as the float arm
-(:func:`.export_foldquant.export_llm_float_pi05` /
-:func:`.export_foldquant.export_expert_float_pi05`), so ``llm_bf16.onnx`` and
+live policy** by ``quantize`` (the checkpoint keeps the smoothed weights, the
+quantizers' scales and one captured call), then, in ``export``, with the
+quantizers restored, traced by the KV-stack contract wrappers
+(:func:`.quantize.trace_llm_pi05` /
+:func:`.quantize.trace_expert_pi05`), so ``llm_bf16.onnx`` and
 ``expert_bf16.onnx`` keep the FoldQuant file names, bindings and dtypes, and
 ``build_engines``, ``runtime.install_engines``, ``verify`` and ``serve`` load
 them unchanged.
@@ -42,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from foldquant import modelopt_int8
+from foldquant.int4_groupwise import apply_int4_surgery_in_place
 import torch
 from torch import nn
 
@@ -195,7 +198,7 @@ def _referenced_files(onnx_path: Path) -> set[str]:
     }
 
 
-def _finish_graph(onnx_path: Path, name: str, output_dtype: torch.dtype, before: set[str]) -> dict[str, Any]:
+def _finish_graph(onnx_path: Path, name: str, output_dtype: torch.dtype, before: set[str], *, algorithm: str) -> dict[str, Any]:
     """Post-process a traced graph; *before* lists the directory's files ahead of the trace."""
     import onnx
 
@@ -217,8 +220,9 @@ def _finish_graph(onnx_path: Path, name: str, output_dtype: torch.dtype, before:
     if orphans:
         logger.info("%s: removed %d unreferenced files the exporter left", name, len(orphans))
     stripped = modelopt_int8.strip_default_scatternd_reduction(onnx_path, name)
+    # Counted BEFORE the INT4 surgery, which consumes the weight DQ nodes it rewrites.
     qdq = modelopt_int8.require_qdq(onnx_path, name)
-    return {
+    record = {
         "dtype_repairs": repairs,
         "output_casts": {c: str(output_dtype).removeprefix("torch.") for c in output_casts},
         "external_data_files_merged": merged,
@@ -226,63 +230,68 @@ def _finish_graph(onnx_path: Path, name: str, output_dtype: torch.dtype, before:
         "scatternd_reduction_stripped": stripped,
         "qdq_nodes": qdq,
     }
-
-
-def _record(record: dict[str, Any], module: nn.Module, onnx_path: Path, calls: int, opset: int) -> dict[str, Any]:
-    state_path = onnx_path.with_name(onnx_path.stem.replace("_bf16", "") + "_modelopt_quantizers.pt")
-    torch.save(modelopt_int8.quantizer_state(module), state_path)
-    record.update(opset=opset, calibration_calls=calls, quantizer_state=state_path.name)
+    if modelopt_int8.is_weight_only(algorithm):
+        record["int4_groupwise_surgery"] = apply_int4_surgery_in_place(onnx_path, name)
     return record
 
 
-def export_llm(policy, captures: Captures, onnx_path: Path, *, algorithm: str, opset: int) -> dict[str, Any]:
-    """Quantize the live language model on its captured prefix passes and trace ``llm_bf16.onnx``."""
-    from .export_foldquant import export_llm_float_pi05
-
+def quantize_llm(policy, captures: Captures, *, algorithm: str) -> dict[str, Any]:
+    """Quantize the live language model in place on its captured prefix passes."""
     module = llm_module(policy)
     leaves = _quantizable_leaves(module)
     record = modelopt_int8.quantize_module(module, _llm_replay(policy, captures.llm), algorithm=algorithm)
     _require_live(policy, module, "llm")
-    record["quantizable_leaves"] = len(leaves)
-    first = captures.llm[0]
-    seen = {
-        "inputs_embeds": [first["prefix_embs"], None],
-        "attention_mask": first["attention_mask"],
-        "position_ids": first["position_ids"],
-    }
-    logger.info("exporting ModelOpt LLM -> %s (opset %d)", onnx_path, opset)
-    before = {f.name for f in Path(onnx_path).parent.iterdir()}
-    export_llm_float_pi05(policy, onnx_path, seen=seen, opset=opset)
-    # The engine hands its KV stack to the expert, which binds it as bf16.
-    record.update(_finish_graph(Path(onnx_path), "llm", torch.bfloat16, before))
-    return _record(record, module, Path(onnx_path), len(captures.llm), opset)
+    record.update(quantizable_leaves=len(leaves), calibration_calls=len(captures.llm))
+    return record
 
 
-def export_expert(policy, captures: Captures, onnx_path: Path, *, algorithm: str, opset: int) -> dict[str, Any]:
-    """Quantize the live action expert on its captured denoise steps and trace ``expert_bf16.onnx``."""
-    from .export_foldquant import export_expert_float_pi05
-
-    model = model_of(policy)
+def quantize_expert(policy, captures: Captures, *, algorithm: str) -> dict[str, Any]:
+    """Quantize the live action expert in place on its captured denoise steps."""
     view = expert_view(policy)
     leaves = _quantizable_leaves(view)
-    replay = _expert_replay(policy, captures.expert)
-    record = modelopt_int8.quantize_module(view, replay, algorithm=algorithm)
+    record = modelopt_int8.quantize_module(view, _expert_replay(policy, captures.expert), algorithm=algorithm)
     # The view's children are the model's own modules; a quantizer ModelOpt placed on a
     # replacement bound to the view alone would leave the served projection float.
     _require_live(policy, view, "expert")
-    record["quantizable_leaves"] = len(leaves)
-    first = captures.expert[0]
+    record.update(quantizable_leaves=len(leaves), calibration_calls=len(captures.expert))
+    return record
+
+
+def export_llm(policy, trace: dict[str, torch.Tensor], onnx_path: Path, *, algorithm: str, opset: int) -> dict[str, Any]:
+    """Trace ``llm_bf16.onnx`` from the quantized live language model on the recorded prefix pass."""
+    from .quantize import trace_llm_pi05
+
+    seen = {
+        "inputs_embeds": [trace["prefix_embs"], None],
+        "attention_mask": trace["attention_mask"],
+        "position_ids": trace["position_ids"],
+    }
+    logger.info("exporting ModelOpt LLM -> %s (opset %d)", onnx_path, opset)
+    before = {f.name for f in Path(onnx_path).parent.iterdir()}
+    trace_llm_pi05(policy, onnx_path, seen=seen, opset=opset)
+    # The engine hands its KV stack to the expert, which binds it as bf16.
+    record = _finish_graph(Path(onnx_path), "llm", torch.bfloat16, before, algorithm=algorithm)
+    record["opset"] = opset
+    return record
+
+
+def export_expert(policy, trace: dict[str, torch.Tensor], onnx_path: Path, *, algorithm: str, opset: int) -> dict[str, Any]:
+    """Trace ``expert_bf16.onnx`` from the quantized live action expert on the recorded denoise step."""
+    from .quantize import trace_expert_pi05
+
+    model = model_of(policy)
     with torch.inference_mode():
         out = model.denoise_step(
-            first["state"],
-            first["prefix_pad_masks"],
-            cache_from_stack(first["kv_stack"]),
-            first["x_t"],
-            first["timestep"],
+            trace["state"],
+            trace["prefix_pad_masks"],
+            cache_from_stack(trace["kv_stack"]),
+            trace["x_t"],
+            trace["timestep"],
         )
     logger.info("exporting ModelOpt expert -> %s (opset %d)", onnx_path, opset)
     before = {f.name for f in Path(onnx_path).parent.iterdir()}
-    export_expert_float_pi05(policy, onnx_path, seen=first, opset=opset)
+    trace_expert_pi05(policy, onnx_path, seen=trace, opset=opset)
     # upstream's denoise_step returns this dtype; the runtime casts it to x_t's.
-    record.update(_finish_graph(Path(onnx_path), "expert", out.dtype, before))
-    return _record(record, view, Path(onnx_path), len(captures.expert), opset)
+    record = _finish_graph(Path(onnx_path), "expert", out.dtype, before, algorithm=algorithm)
+    record["opset"] = opset
+    return record

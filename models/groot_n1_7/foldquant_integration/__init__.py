@@ -9,7 +9,8 @@ TensorRT plugins are the top-level ``foldquant`` package. The upstream
 
 * :mod:`.calibration`:  load the upstream policy / dataset and sample
   calibration observations through the upstream data path.
-* :mod:`.export_foldquant`:  emit the FoldQuant ``llm_bf16.onnx`` /
+* :mod:`.quantize`:  calibrate the FoldQuant folds and save the quantized model.
+* :mod:`.export`:  emit from it the FoldQuant ``llm_bf16.onnx`` /
   ``dit_bf16.onnx`` plugin graphs in the upstream drop-in I/O contract.
 * :mod:`.build_engines`:  compile them with the upstream engine builder
   (plugins loaded first) and complete the engine directory with the float

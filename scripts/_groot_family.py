@@ -25,7 +25,7 @@ logger = logging.getLogger("groot_family")
 
 
 def integration(family: str) -> Tuple[Any, Any]:
-    """``(calibration, export_foldquant)`` modules of ``models/<family>/foldquant_integration``."""
+    """``(calibration, quantize)`` modules of ``models/<family>/foldquant_integration``."""
     if family not in FAMILIES:
         raise SystemExit(f"--family must be one of {FAMILIES}; {family!r} has a different calibration API")
     root = REPO / "models" / family
@@ -34,9 +34,9 @@ def integration(family: str) -> Tuple[Any, Any]:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     import foldquant_integration.calibration as calibration
-    import foldquant_integration.export_foldquant as export_foldquant
+    import foldquant_integration.quantize as quantize
 
-    return calibration, export_foldquant
+    return calibration, quantize
 
 
 class Loaded:
@@ -56,7 +56,7 @@ class Loaded:
     ) -> None:
         from foldquant.llm import resolve_qwen3_decoder
 
-        self.calibration, self.export_foldquant = integration(family)
+        self.calibration, self.quantize = integration(family)
         self.family = family
         self.seed = seed
         self.policy = self.calibration.load_policy(model_path, embodiment_tag)
@@ -70,7 +70,7 @@ class Loaded:
             _, self.heldout = self.calibration.sample_observations(
                 self.policy, dataset, num_heldout, seed=seed, exclude_episodes=excluded, heldout=True
             )
-        modules = self.export_foldquant._module_paths(self.policy)
+        modules = self.quantize._module_paths(self.policy)
         self.decoder = resolve_qwen3_decoder(modules["llm"])
         logger.info(
             "%s: %d calibration + %d held-out observations, decoder %s (%d layers)",

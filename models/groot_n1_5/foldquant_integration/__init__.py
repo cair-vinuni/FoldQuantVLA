@@ -9,7 +9,8 @@ TensorRT plugins and the engine builder / runtime wrapper are the top-level
 
 * :mod:`.calibration`:  load the upstream policy / dataset and sample
   calibration observations through the upstream data path.
-* :mod:`.export_foldquant`:  emit the FoldQuant ``llm_bf16.onnx`` /
+* :mod:`.quantize`:  calibrate the FoldQuant folds and save the quantized model.
+* :mod:`.export`:  emit from it the FoldQuant ``llm_bf16.onnx`` /
   ``dit_bf16.onnx`` plugin graphs.
 * :mod:`.build_engines`:  compile them (plugins loaded first) into an engine
   directory.

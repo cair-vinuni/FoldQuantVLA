@@ -31,7 +31,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 import torch.nn as nn
 
 from . import calibrate, schemes
-from .quant_state import ModuleQuantState, pack_scope, record_gptq, replay_sites
+from .quant_state import ModuleQuantState, pack_scope, record_gptq, record_rotations, replay_sites
 from .llm_gptq import gptq_prepare, tag_site
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,8 @@ class ExportResult:
 
     module: str
     scheme: str
-    onnx_path: Path
+    #: Where the graph was written; ``None`` when it was only built in memory (quantizing).
+    onnx_path: Optional[Path]
     #: Plugin libraries the engine build and the runtime must load.
     plugin_libs: List[str]
     #: Folded-LLM only: everything :func:`install_llm_emulation` needs to
@@ -61,6 +62,20 @@ class ExportResult:
     emulation: Optional[Dict[str, Any]] = field(default=None, repr=False)
     #: The calibration result, when the export ran with ``record=True`` or replayed one.
     state: Optional[ModuleQuantState] = field(default=None, repr=False)
+    #: :func:`foldquant.onnx_io.graph_digest` of the graph, when it was recorded or replayed.
+    graph_digest: Optional[str] = field(default=None, repr=False)
+
+
+def _finish(model: Any, onnx_path: Optional[Path], want_digest: bool) -> Optional[str]:
+    """Digest the in-memory graph (recording or replaying a quant state), then write it if
+    *onnx_path* names a file. The digest comes before the write: saving with external data
+    moves the tensors out of the proto."""
+    from .onnx_io import graph_digest, save_plugin_onnx
+
+    digest = graph_digest(model) if want_digest else None
+    if onnx_path is not None:
+        save_plugin_onnx(model, onnx_path, size_threshold=1024)
+    return digest
 
 
 def _check_state(state: ModuleQuantState, module: str, scheme: str, params: Mapping[str, Any]) -> Dict[str, Any]:
@@ -83,10 +98,22 @@ def _packing(module: str, record: bool, ms: Optional[ModuleQuantState], replay: 
         if not record:
             yield
             return
-        with record_gptq() as sink:
+        with record_gptq() as sink, record_rotations() as rots:
             yield
         assert ms is not None
         ms.gptq.update(sink)
+        head = f"{module}.rot."
+        ms.put_group("perm", {k[len(head):]: perm for k, (perm, _R) in rots.items()})
+        ms.put_group("rot", {k[len(head):]: R for k, (_perm, R) in rots.items()})
+
+
+def _log_emitted(kind: str, scheme: str, onnx_path: Optional[Path], record: bool, detail: str = "") -> None:
+    """While quantizing, the graph is built in memory only to pack and record the weight codes;
+    say so rather than naming a file."""
+    if record:
+        logger.info("Quantized %s %s%s: weight codes recorded", kind, scheme, detail)
+    else:
+        logger.info("Emitted %s %s graph%s at %s", scheme, kind, detail, onnx_path)
 
 
 def _prepare_gptq(hessians: Dict[str, Any], module: str) -> Dict[str, Any]:
@@ -188,7 +215,7 @@ def export_llm(
     params = dict(params or {})
     if state is not None:
         params = _check_state(state, "llm", scheme, params)
-    onnx_path = Path(onnx_path)
+    onnx_path = Path(onnx_path) if onnx_path is not None else None
     folded = scheme in schemes.LLM_FOLDED_SCHEMES
     if not folded:
         _refuse_params("llm", scheme, params)
@@ -233,11 +260,12 @@ def export_llm(
     if not folded:
         replay = replay_sites(state) if state is not None else None
         with _packing("llm", record, ms, replay):
-            build_llm_plugin_onnx(module, onnx_path, max_seq_len=max_seq_len, **mode_kwargs)
+            model = build_llm_plugin_onnx(module, None, max_seq_len=max_seq_len, **mode_kwargs)
         if replay is not None:
             replay.assert_consumed()
-        logger.info("Emitted %s LLM graph at %s", scheme, onnx_path)
-        return ExportResult("llm", scheme, onnx_path, schemes.plugin_libs(scheme, params=params), state=ms or state)
+        digest = _finish(model, onnx_path, record or state is not None)
+        _log_emitted("LLM", scheme, onnx_path, record)
+        return ExportResult("llm", scheme, onnx_path, schemes.plugin_libs(scheme, params=params), state=ms or state, graph_digest=digest)
 
     bits = schemes.bits_of(scheme)
     fold = resolve_llm_plugin_params(scheme, bits=bits, overrides=params or None)
@@ -302,11 +330,12 @@ def export_llm(
         ms.put_group("sq", sq_scales)
         ms.put_group("weight_clip", weight_clip)
     with _packing("llm", record, ms, replay):
-        build_llm_plugin_onnx(module, onnx_path, max_seq_len=max_seq_len, **fold_kwargs, **mode_kwargs)
+        model = build_llm_plugin_onnx(module, None, max_seq_len=max_seq_len, **fold_kwargs, **mode_kwargs)
     if replay is not None:
         replay.assert_consumed()
+    digest = _finish(model, onnx_path, record or state is not None)
     family = "gemma" if prefix_graph else "qwen"
-    logger.info("Emitted %s LLM graph (%s, %d-bit)%s at %s", scheme, family, bits, " from quant state" if state else "", onnx_path)
+    _log_emitted("LLM", scheme, onnx_path, record, f" ({family}, {bits}-bit)" + (" from quant state" if state else ""))
     # A replayed export has no Hessians; cascade calibration needs a calibrating export.
     emulation = {"family": family, **fold_kwargs} if state is None else None
     return ExportResult(
@@ -316,6 +345,7 @@ def export_llm(
         schemes.plugin_libs(scheme, params=params),
         emulation=emulation,
         state=ms or state,
+        graph_digest=digest,
     )
 
 
@@ -375,7 +405,7 @@ def export_dit(
     params = dict(params or {})
     if state is not None:
         params = _check_state(state, "dit", scheme, params)
-    onnx_path = Path(onnx_path)
+    onnx_path = Path(onnx_path) if onnx_path is not None else None
     libs = schemes.plugin_libs(scheme, params=params)
     ms = ModuleQuantState("dit", scheme, config={"params": params}) if record else None
 
@@ -385,10 +415,12 @@ def export_dit(
 
         _refuse_params("dit", scheme, params)
         with _packing("dit", record, ms, replay):
-            build_dit_plugin_onnx(module, onnx_path)
+            model = build_dit_plugin_onnx(module, None)
         if replay is not None:
             replay.assert_consumed()
-        return ExportResult("dit", scheme, onnx_path, libs, state=ms or state)
+        digest = _finish(model, onnx_path, record or state is not None)
+        _log_emitted("DiT", scheme, onnx_path, record)
+        return ExportResult("dit", scheme, onnx_path, libs, state=ms or state, graph_digest=digest)
 
     from .dit_int4 import compute_dit_sq_scales
 
@@ -414,10 +446,12 @@ def export_dit(
         from .dit_int8 import build_dit_plugin_onnx
 
         with _packing("dit", record, ms, replay):
-            build_dit_plugin_onnx(module, onnx_path, sq_scales=sq, sq_fold_order=knobs["fold_order"], fwht=True)
+            model = build_dit_plugin_onnx(module, None, sq_scales=sq, sq_fold_order=knobs["fold_order"], fwht=True)
         if replay is not None:
             replay.assert_consumed()
-        return ExportResult("dit", scheme, onnx_path, libs, state=ms or state)
+        digest = _finish(model, onnx_path, record or state is not None)
+        _log_emitted("DiT", scheme, onnx_path, record)
+        return ExportResult("dit", scheme, onnx_path, libs, state=ms or state, graph_digest=digest)
 
     from .dit_int4 import build_dit_plugin_onnx_int4
 
@@ -432,12 +466,14 @@ def export_dit(
             )
             gptq = _prepare_gptq(hess, "dit")
     with _packing("dit", record, ms, replay):
-        build_dit_plugin_onnx_int4(
-            module, onnx_path, sq_scales=sq, sq_fold_order=knobs["fold_order"], fwht=knobs["fwht"], gptq=gptq
+        model = build_dit_plugin_onnx_int4(
+            module, None, sq_scales=sq, sq_fold_order=knobs["fold_order"], fwht=knobs["fwht"], gptq=gptq
         )
     if replay is not None:
         replay.assert_consumed()
-    return ExportResult("dit", scheme, onnx_path, libs, state=ms or state)
+    digest = _finish(model, onnx_path, record or state is not None)
+    _log_emitted("DiT", scheme, onnx_path, record)
+    return ExportResult("dit", scheme, onnx_path, libs, state=ms or state, graph_digest=digest)
 
 
 # expert
@@ -464,7 +500,7 @@ def export_expert(
     params = dict(params or {})
     if state is not None:
         params = _check_state(state, "expert", scheme, params)
-    onnx_path = Path(onnx_path)
+    onnx_path = Path(onnx_path) if onnx_path is not None else None
     if not hasattr(module, "expert_model"):
         raise TypeError(
             f"export_expert: expected a Pi action expert exposing 'expert_model', got {type(module).__name__}."
@@ -500,10 +536,12 @@ def export_expert(
         if knobs["fwht"]:
             kwargs["fwht"] = True
     with _packing("expert", record, ms, replay):
-        build(module, onnx_path, **kwargs)
+        model = build(module, None, **kwargs)
     if replay is not None:
         replay.assert_consumed()
-    return ExportResult("expert", scheme, onnx_path, schemes.plugin_libs(scheme, params=params), state=ms or state)
+    digest = _finish(model, onnx_path, record or state is not None)
+    _log_emitted("expert", scheme, onnx_path, record)
+    return ExportResult("expert", scheme, onnx_path, schemes.plugin_libs(scheme, params=params), state=ms or state, graph_digest=digest)
 
 
 # dispatch

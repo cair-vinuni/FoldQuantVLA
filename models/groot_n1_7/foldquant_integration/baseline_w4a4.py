@@ -13,7 +13,7 @@ Two recipes, selected with ``--method``:
   ``W^T W``), and a frozen per-channel q99.9 activation scale on both towers.
 
 Calibration replays ``--num-calib`` seeded observations from a LeRobot dataset
-through the bf16 policy, exactly as :mod:`.export_foldquant` does for the
+through the bf16 policy, exactly as :mod:`.quantize` does for the
 FoldQuant arms, so the two families of arms see the same data. The pack is then
 served with ``serve --baseline-pack`` or rolled out with
 ``eval_libero --baseline-pack``. Both arms are *emulated* (INT4 codes are
@@ -76,7 +76,7 @@ class BaselineConfig:
     """Embodiment tag (resolved from the checkpoint when omitted)."""
 
     num_calib: int = 128
-    """Calibration observations, sampled as :mod:`.export_foldquant` samples them."""
+    """Calibration observations, sampled as :mod:`.quantize` samples them."""
 
     seed: int = 0
     """Seed of the calibration sample and of the denoising noise replayed during calibration."""

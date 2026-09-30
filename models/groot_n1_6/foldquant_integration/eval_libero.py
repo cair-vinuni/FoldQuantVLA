@@ -71,7 +71,7 @@ class EvalConfig:
     engine_dir: Optional[str] = None
     """FoldQuant engine directory. Omit for the bf16 PyTorch arm."""
 
-    fakequant_dir: Optional[str] = None
+    quantized_model: Optional[str] = None
     """FoldQuant fake-quant state for ``--model-path`` (a state saved without the base files); a
     self-contained fake-quant model given as ``--model-path`` is detected by itself. Mutually
     exclusive with ``--engine-dir``."""
@@ -145,13 +145,13 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     # later one leaves the first failing with the path correctly set.
     ensure_libero_on_path()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    from foldquant.fakequant import fakequant_arm
+    from foldquant.quantized import quantized_arm
 
-    args.fakequant_dir = fakequant_arm(
-        args.model_path, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    args.quantized_model = quantized_arm(
+        args.model_path, args.quantized_model, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
     )
-    if args.engine_dir and args.fakequant_dir:
-        raise ValueError("--engine-dir and --fakequant-dir are mutually exclusive")
+    if args.engine_dir and args.quantized_model:
+        raise ValueError("--engine-dir and --quantized-model are mutually exclusive")
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     summary_path = out / "summary.json"
@@ -168,8 +168,8 @@ def main(args: EvalConfig) -> Dict[str, Any]:
         "model": artifact_digest(args.model_path),
         "engine_dir": public_path(args.engine_dir),
         "engines": artifact_digest(args.engine_dir),
-        "fakequant_dir": public_path(args.fakequant_dir),
-        "fakequant": artifact_digest(args.fakequant_dir),
+        "quantized_model": public_path(args.quantized_model),
+        "quantized": artifact_digest(args.quantized_model),
         "suites": list(args.suites),
         "tasks": sorted(args.tasks) if args.tasks else None,
         "n_envs": args.n_envs,
@@ -215,10 +215,10 @@ def main(args: EvalConfig) -> Dict[str, Any]:
     if args.engine_dir:
         installed = install_engines(gr00t_policy, args.engine_dir)
         summary["components"] = sorted(installed.engines)
-    if args.fakequant_dir:
-        from foldquant.fakequant import install_on_policy
+    if args.quantized_model:
+        from foldquant.quantized import install_on_policy
 
-        _, fq_state = install_on_policy(gr00t_policy, args.fakequant_dir, args.model_path)
+        _, fq_state = install_on_policy(gr00t_policy, args.quantized_model, args.model_path)
         summary["schemes"] = {**{k: v.scheme for k, v in fq_state.modules.items()}, "execution": "fake-quant"}
     policy = Gr00tSimPolicyWrapper(gr00t_policy)
     wrapper_configs = WrapperConfigs(

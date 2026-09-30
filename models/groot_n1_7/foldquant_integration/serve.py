@@ -70,7 +70,7 @@ class ServeConfig:
     baseline_pack: Optional[str] = None
     """Emulated W4A4 baseline pack (:mod:`.baseline_w4a4`); mutually exclusive with ``--engine-dir``."""
 
-    fakequant_dir: Optional[str] = None
+    quantized_model: Optional[str] = None
     """FoldQuant fake-quant state for ``--model-path``; a self-contained fake-quant model given as
     ``--model-path`` is detected by itself and served fake-quantized."""
 
@@ -106,24 +106,24 @@ _MODE_ENGINES = {
 
 def main(args: ServeConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    from foldquant.fakequant import fakequant_arm
+    from foldquant.quantized import quantized_arm
 
-    args.fakequant_dir = fakequant_arm(
+    args.quantized_model = quantized_arm(
         args.model_path,
-        args.fakequant_dir,
+        args.quantized_model,
         no_fakequant=args.no_fakequant,
         other_arms=(args.engine_dir, getattr(args, "baseline_pack", None)),
     )
     policy = calibration.load_policy(args.model_path, args.embodiment_tag, args.device)
 
-    if sum(bool(x) for x in (args.engine_dir, args.baseline_pack, args.fakequant_dir)) > 1:
-        raise ValueError("--engine-dir, --baseline-pack and --fakequant-dir are mutually exclusive")
-    if args.fakequant_dir:
-        from .fakequant import install as install_fakequant
+    if sum(bool(x) for x in (args.engine_dir, args.baseline_pack, args.quantized_model)) > 1:
+        raise ValueError("--engine-dir, --baseline-pack and --quantized-model are mutually exclusive")
+    if args.quantized_model:
+        from .quantized import install as install_fakequant
 
-        install_fakequant(policy, args.fakequant_dir, args.model_path)
+        install_fakequant(policy, args.quantized_model, args.model_path)
         logger.info("serving the FAKE-QUANT arm from %s (PyTorch arithmetic of the engines; not a latency arm)",
-                    args.fakequant_dir)
+                    args.quantized_model)
     elif args.baseline_pack:
         from .baselines import apply_pack, install_dit_step_context
 

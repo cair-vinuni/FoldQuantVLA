@@ -1,14 +1,22 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""Emit the FoldQuant plugin graphs for a Pi0 / Pi0.5 PyTorch checkpoint.
+"""Quantize a Pi0 / Pi0.5 PyTorch checkpoint with FoldQuant and save the quantized model.
 
-Writes, under ``--output-dir``::
+Calibrates the LLM and action-expert folds on ``--num-calib`` dataset observations
+and writes ``--output-dir``, the quantized model::
 
-    onnx/llm_bf16.onnx         FoldQuant PaliGemma prefix graph (unless --llm-scheme none)
-    onnx/expert_bf16.onnx      FoldQuant action-expert denoise-step graph (unless --expert-scheme none)
-    onnx/export_metadata.json  captured shapes, for the engine builder
-    onnx/foldquant_export.json what was exported, from which samples, needing which plugins
+    the base checkpoint with each quantized projection's weight
+                       replaced by its integer codes (qweight) and per-row scale
+                       (weight_scale), plus the SmoothQuant scales and fold settings
+
+The quantized model runs in PyTorch with fake-quant layers in place of the
+quantized projections (``serve``, ``verify`` and ``eval_libero`` load it like a
+checkpoint), can be pushed to the Hugging Face Hub, and is the input of the
+rest of the pipeline: ``export`` (quantized model -> plugin ONNX) and
+``build_engines`` (ONNX -> TensorRT engines). A tower quantized by ModelOpt is
+saved the same way: the checkpoint holds its smoothed weights, the quantizers'
+scales and the call its graph is traced from, and ``export`` traces it.
 
 The LLM graph is the prefix pass only: ``prefix_embs`` (SigLIP features +
 prompt embeddings, produced in PyTorch), the 4-D additive attention mask and
@@ -27,10 +35,10 @@ unchanged.
 
 Example::
 
-    python -m foldquant_integration.export_foldquant \\
+    python -m foldquant_integration.quantize \\
         --checkpoint-dir <pi05_libero PyTorch checkpoint> \\
         --dataset-path <LeRobot LIBERO dataset> \\
-        --output-dir exports/pi05_w4a4 \\
+        --output-dir exports/pi05_w4a4/quantized \\
         --llm-scheme w4a4_srg --expert-scheme w4a4_shg
 """
 
@@ -40,6 +48,7 @@ from dataclasses import asdict
 from dataclasses import dataclass
 import json
 import logging
+import shutil
 from pathlib import Path
 import time
 from typing import Any
@@ -48,28 +57,28 @@ from foldquant import modelopt_int8
 from foldquant import schemes
 from foldquant.export import export_expert
 from foldquant.export import export_llm
-from foldquant.export import install_llm_emulation
-from foldquant.float_export import FLOAT, Binding, export_with_example
+from foldquant.export import ExportResult, install_llm_emulation
+from foldquant.quant_state import ModuleQuantState
+from foldquant.trace_export import Binding, export_with_example, record_trace
 from foldquant.provenance import public_path
+from foldquant.quantized_checkpoint import is_quantized_checkpoint
 import torch
 import tyro
 
 from . import calibration
-from ._upstream import EXPORT_METADATA_NAME
 from ._upstream import LIBERO_TRAIN_CONFIG
-from ._upstream import MANIFEST_NAME
 from .runtime import PrefixCapture
 from .runtime import expert_view
 from .runtime import llm_module
 from .runtime import model_of
 
-logger = logging.getLogger("foldquant.pi05.export")
+logger = logging.getLogger("foldquant.pi05.quantize")
 
 _NONE = ("", "none")
 
 
 @dataclass
-class ExportConfig:
+class QuantizeConfig:
     checkpoint_dir: str
     """PyTorch checkpoint directory (``model.safetensors`` + ``assets/``), as for ``scripts/serve_policy.py``."""
 
@@ -77,16 +86,16 @@ class ExportConfig:
     """LeRobot-format dataset the calibration observations are drawn from."""
 
     output_dir: str
-    """Destination; the graphs land in ``<output_dir>/onnx``."""
+    """Destination directory of the quantized model (written as the checkpoint itself)."""
 
     config: str = LIBERO_TRAIN_CONFIG
     """Upstream training config name (model variant, transforms, norm-stats asset)."""
 
     llm_scheme: str = schemes.W4A4_SRG
-    """FoldQuant scheme for the PaliGemma language model, or ``none`` to keep it float."""
+    """FoldQuant scheme for the PaliGemma language model; ``none`` keeps it in PyTorch."""
 
     expert_scheme: str = schemes.W4A4_SHG
-    """FoldQuant scheme for the Gemma-300M action expert, or ``none`` to keep it float."""
+    """FoldQuant scheme for the Gemma-300M action expert; ``none`` keeps it in PyTorch."""
 
     num_calib: int = 128
     """Calibration observations (episode, step) pairs spread over the dataset."""
@@ -108,19 +117,9 @@ class ExportConfig:
 
     device: str = "cuda"
 
-    save_fakequant: str | None = None
-    """Also write the quant state (:mod:`foldquant.fakequant`) to this directory; needs a local
-    ``--checkpoint-dir``, whose content digest it records."""
-
     base_model_id: str | None = None
     """Where others get the base checkpoint (``org/name[@revision]``), recorded in the state."""
 
-    fakequant_state_only: bool = False
-    """With ``--save-fakequant``: write the quant state alone, not a self-contained model with the
-    base checkpoint's files linked in."""
-
-    fakequant_copy_base: bool = False
-    """With ``--save-fakequant``: copy the base checkpoint's files into the model instead of linking them."""
 
 
 def _scheme_or_none(value: str) -> str | None:
@@ -164,14 +163,16 @@ def capture_shape_metadata(policy, observation: dict[str, Any], *, seed: int) ->
     return seen
 
 
-# Float engines under the KV-stack contract. Pi0.5's
+# Tracers under the KV-stack contract (the all-float baseline and the ModelOpt arm). Pi0.5's
 # prefix seam already receives upstream's 4-D additive mask, so it passes through.
+
 
 class _Stop(Exception):
     pass
 
 
-def _capture_prefix(model, forward_loop):
+def capture_prefix(model, forward_loop):
+    """The kwargs of the first prefix pass *forward_loop* makes (``paligemma_with_expert.forward``)."""
     pwe = model.paligemma_with_expert
     seen, orig = {}, pwe.forward
 
@@ -195,12 +196,35 @@ def _capture_prefix(model, forward_loop):
     return seen
 
 
-def export_llm_float_pi05(policy, onnx_path, *, forward_loop=None, seen=None, opset=17):
-    """Trace the live prefix pass. *seen* (the prefix call's kwargs) skips the capture replay."""
+def capture_denoise(model, forward_loop):
+    """The inputs of the first denoise step *forward_loop* makes (``state``, ``prefix_pad_masks``,
+    ``kv_stack``, ``x_t``, ``timestep``)."""
+    from .runtime import stack_cache
+    seen: dict[str, Any] = {}
+
+    def spy(state, prefix_pad_masks, past_key_values, x_t, timestep):
+        seen.update(state=state.detach(), prefix_pad_masks=prefix_pad_masks.detach(),
+                    kv_stack=(past_key_values if torch.is_tensor(past_key_values) else stack_cache(past_key_values)).detach(),
+                    x_t=x_t.detach(), timestep=timestep.detach())
+        raise _Stop()
+
+    model.denoise_step = spy
+    try:
+        with torch.inference_mode():
+            try:
+                forward_loop(model)
+            except _Stop:
+                pass
+    finally:
+        model.__dict__.pop("denoise_step", None)
+    if "x_t" not in seen:
+        raise RuntimeError("forward_loop never reached denoise_step")
+    return seen
+
+def trace_llm_pi05(policy, onnx_path, *, seen, opset=17):
+    """Trace the live prefix pass to ONNX from *seen*, the prefix call's kwargs (ModelOpt arm)."""
     from .runtime import model_of, stack_cache
     model = model_of(policy)
-    if seen is None:
-        seen = _capture_prefix(model, forward_loop)
     prefix = seen["inputs_embeds"][0]
     am, pid = seen["attention_mask"], seen["position_ids"]
     am_dtype = torch.bfloat16 if am.is_floating_point() else torch.bool   # the runtime feeds the engine bf16
@@ -224,35 +248,11 @@ def export_llm_float_pi05(policy, onnx_path, *, forward_loop=None, seen=None, op
     )
 
 
-def export_expert_float_pi05(policy, onnx_path, *, forward_loop=None, seen=None, opset=17):
-    """Trace the live denoise step. *seen* (one step's inputs, KV stacked) skips the capture replay."""
-    from .runtime import cache_from_stack, model_of, stack_cache
+def trace_expert_pi05(policy, onnx_path, *, seen, opset=17):
+    """Trace the live denoise step to ONNX from *seen*, one step's inputs (KV stacked; ModelOpt arm)."""
+    from .runtime import cache_from_stack, model_of
     model = model_of(policy)
     orig = model.denoise_step
-    if seen is not None:
-        seen = dict(seen)
-        forward_loop = None
-    else:
-        seen = {}
-
-    def spy(state, prefix_pad_masks, past_key_values, x_t, timestep):
-        seen.update(state=state.detach(), prefix_pad_masks=prefix_pad_masks.detach(),
-                    kv_stack=(past_key_values if torch.is_tensor(past_key_values) else stack_cache(past_key_values)).detach(),
-                    x_t=x_t.detach(), timestep=timestep.detach())
-        raise _Stop()
-
-    if forward_loop is not None:
-        model.denoise_step = spy
-        try:
-            with torch.inference_mode():
-                try:
-                    forward_loop(model)
-                except _Stop:
-                    pass
-        finally:
-            model.__dict__.pop("denoise_step", None)
-    if "x_t" not in seen:
-        raise RuntimeError("forward_loop never reached denoise_step")
 
     def call(x_t, timestep, prefix_pad_masks, kv_stack, state, **_):
         return orig(state, prefix_pad_masks.to(torch.bool), cache_from_stack(kv_stack), x_t, timestep.reshape(-1))
@@ -269,7 +269,31 @@ def export_expert_float_pi05(policy, onnx_path, *, forward_loop=None, seen=None,
         extract=lambda o: o, call=call, opset=opset,
     )
 
-def main(args: ExportConfig) -> Path:
+def export_metadata(shapes: dict[str, Any], config: str) -> dict[str, Any]:
+    """``export_metadata.json``: the shape hints the engine builder reads, for any export of this checkpoint."""
+    return {
+        "model": "pi05" if shapes["use_adarms"] else "pi0",
+        "config": config,
+        "prefix_len": shapes["prefix_len"],
+        "llm_hidden_size": shapes["llm_hidden_size"],
+        "llm_layers": shapes["llm_layers"],
+        "llm_kv_heads": shapes["llm_kv_heads"],
+        "llm_head_dim": shapes["llm_head_dim"],
+        "action_horizon": shapes["action_horizon"],
+        "action_dim": shapes["action_dim"],
+        "use_adarms": shapes["use_adarms"],
+        "num_steps": shapes["num_steps"],
+        "export_mode": "foldquant",
+        "precision": "bf16",
+        "batch_size": shapes["batch_size"],
+    }
+
+
+#: The file each module's graph is exported to (the manifest records it; `export` writes it).
+_GRAPH_FILES = {"llm": "llm_bf16.onnx", "expert": "expert_bf16.onnx"}
+
+
+def main(args: QuantizeConfig) -> Path:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     llm_scheme = _scheme_or_none(args.llm_scheme)
     expert_scheme = _scheme_or_none(args.expert_scheme)
@@ -298,14 +322,11 @@ def main(args: ExportConfig) -> Path:
     if modelopt_towers:
         modelopt_int8.ensure_cuda_ext()
 
-    if args.save_fakequant is not None:
-        if modelopt_towers or FLOAT in (args.llm_scheme, args.expert_scheme):
-            raise SystemExit("--save-fakequant records FoldQuant folds; float and ModelOpt towers have no quant state")
-        if not Path(args.checkpoint_dir).is_dir():
-            raise SystemExit("--save-fakequant needs --checkpoint-dir to be a local checkpoint directory")
-
-    out = Path(args.output_dir) / "onnx"
-    out.mkdir(parents=True, exist_ok=True)
+    if not Path(args.checkpoint_dir).is_dir():
+        raise SystemExit("saving the quantized model needs --checkpoint-dir to be a local checkpoint directory (its files are hashed)")
+    # Every arm is saved as a quantized model. The FoldQuant graphs are built in memory,
+    # only to fold, round and record the weight codes; a ModelOpt tower records the call its
+    # graph is traced from. `export` writes the ONNX from the quantized model.
 
     t0 = time.time()
     policy = calibration.load_policy(args.checkpoint_dir, config_name=args.config, device=args.device, compile=False)
@@ -337,13 +358,7 @@ def main(args: ExportConfig) -> Path:
         t1 = time.time()
         # Gemma pins the prefix length from a captured call, so the loop is
         # passed for every scheme, the per-row one included.
-        if llm_scheme == FLOAT:
-            llm_result = export_llm_float_pi05(policy, out / "llm_bf16.onnx", forward_loop=loop)
-        else:
-            llm_result = export_llm(
-                llm, out / "llm_bf16.onnx", scheme=llm_scheme, forward_loop=loop, params=llm_params or None,
-                record=args.save_fakequant is not None,
-            )
+        llm_result = export_llm(llm, None, scheme=llm_scheme, forward_loop=loop, params=llm_params or None, record=True)
         results.append(llm_result)
         logger.info("LLM %s exported in %.0fs", llm_scheme, time.time() - t1)
 
@@ -355,17 +370,14 @@ def main(args: ExportConfig) -> Path:
             emulation = install_llm_emulation(llm, llm_result)
             logger.info("cascade: expert calibration runs under the quantized-LLM emulation")
         try:
-            if expert_scheme == FLOAT:
-                expert_result = export_expert_float_pi05(policy, out / "expert_bf16.onnx", forward_loop=loop)
-            else:
-                expert_result = export_expert(
-                    expert_view(policy),
-                    out / "expert_bf16.onnx",
-                    scheme=expert_scheme,
-                    forward_loop=loop,
-                    params=expert_params or None,
-                    record=args.save_fakequant is not None,
-                )
+            expert_result = export_expert(
+                expert_view(policy),
+                None,
+                scheme=expert_scheme,
+                forward_loop=loop,
+                params=expert_params or None,
+                record=True,
+            )
         finally:
             if emulation is not None:
                 emulation.remove()
@@ -373,21 +385,27 @@ def main(args: ExportConfig) -> Path:
         logger.info("expert %s exported in %.0fs", expert_scheme, time.time() - t1)
 
     # After the FoldQuant towers: ModelOpt quantizes in place, so a FoldQuant replay
-    # that ran later would calibrate through a fake-quantized tower.
-    modelopt_records: dict[str, Any] = {}
-    modelopt_files: dict[str, str] = {}
-    for tower, exporter, file_name in (
-        ("llm", "export_llm", "llm_bf16.onnx"),
-        ("expert", "export_expert", "expert_bf16.onnx"),
-    ):
-        if tower not in modelopt_towers:
-            continue
+    # that ran later would calibrate through a fake-quantized tower. The checkpoint keeps
+    # the smoothed weights, the quantizers' scales and the first captured call as the trace.
+    modules = {"llm": llm, "expert": expert_view(policy)}
+    for tower, algo in modelopt_towers.items():
         t1 = time.time()
-        modelopt_records[tower] = getattr(modelopt_export, exporter)(
-            policy, modelopt_captures, out / file_name, algorithm=modelopt_towers[tower], opset=args.modelopt_opset
-        )
-        modelopt_files[tower] = file_name
-        logger.info("%s %s exported in %.0fs", tower, modelopt_towers[tower], time.time() - t1)
+        record = getattr(modelopt_export, f"quantize_{tower}")(policy, modelopt_captures, algorithm=algo)
+        ms = ModuleQuantState(tower, algo, config={
+            "bits": 4 if modelopt_int8.is_weight_only(algo) else 8,
+            "act_bits": 16 if modelopt_int8.is_weight_only(algo) else 8, "modelopt": record,
+            "modelopt_state": modelopt_int8.modelopt_state_of(modules[tower]),
+            "opset": args.modelopt_opset,
+        })
+        ms.put_group("modelopt", modelopt_int8.quantizer_buffers(modules[tower]))
+        record_trace(ms, getattr(modelopt_captures, tower)[0])
+        libs = []
+        if modelopt_int8.is_weight_only(algo):
+            from foldquant.kernels.locator import INT4_GROUPWISE_LIB
+
+            libs = [INT4_GROUPWISE_LIB]
+        results.append(ExportResult(tower, algo, None, libs, state=ms))
+        logger.info("%s %s quantized in %.0fs", tower, algo, time.time() - t1)
     modelopt_captures = None
 
     for r in results:
@@ -395,50 +413,39 @@ def main(args: ExportConfig) -> Path:
             if lib not in plugin_libs:
                 plugin_libs.append(lib)
 
-    metadata = {
-        "model": "pi05" if shapes["use_adarms"] else "pi0",
-        "config": args.config,
-        "prefix_len": shapes["prefix_len"],
-        "llm_hidden_size": shapes["llm_hidden_size"],
-        "llm_layers": shapes["llm_layers"],
-        "llm_kv_heads": shapes["llm_kv_heads"],
-        "llm_head_dim": shapes["llm_head_dim"],
-        "action_horizon": shapes["action_horizon"],
-        "action_dim": shapes["action_dim"],
-        "use_adarms": shapes["use_adarms"],
-        "num_steps": shapes["num_steps"],
-        "export_mode": "foldquant",
-        "precision": "bf16",
-        "batch_size": shapes["batch_size"],
-    }
-    (out / EXPORT_METADATA_NAME).write_text(json.dumps(metadata, indent=2))
+    metadata = export_metadata(shapes, args.config)
+    results_by = {r.module: r for r in results}
     manifest = {
         "checkpoint_dir": public_path(args.checkpoint_dir),
         "config": args.config,
         "dataset_path": public_path(args.dataset_path),
-        "schemes": {**{r.module: r.scheme for r in results}, **modelopt_towers},
+        "schemes": {r.module: r.scheme for r in results},
         "params": {"llm": llm_params, "expert": expert_params},
         "cascade": bool(args.cascade),
         "plugin_libs": plugin_libs,
-        "files": {**{r.module: r.onnx_path.name for r in results}, **modelopt_files},
-        "modelopt": modelopt_records,
+        "files": {r.module: _GRAPH_FILES[r.module] for r in results},
+        "modelopt": {t: results_by[t].state.config["modelopt"] for t in modelopt_towers},
         "calibration": {
             "seed": args.seed,
             "num_samples": len(samples),
             "samples": [asdict(s) for s in samples],
         },
     }
-    (out / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2))
-    logger.info("wrote %s and %s (total %.0fs)", EXPORT_METADATA_NAME, MANIFEST_NAME, time.time() - t0)
-    if args.save_fakequant is not None:
-        from .fakequant import save_arm_state
+    from .quantized import save_arm_state
 
-        save_arm_state(Path(args.save_fakequant), model_path=args.checkpoint_dir, results=results,
-                       export_metadata=metadata, export_manifest=manifest, base_model_id=args.base_model_id,
-                       bundle=not args.fakequant_state_only, copy_base=args.fakequant_copy_base,
-                       load_kwargs={"config_name": args.config})
-    return out
+    model_dir = Path(args.output_dir)
+    if model_dir.exists() and any(model_dir.iterdir()):
+        if not is_quantized_checkpoint(model_dir):
+            raise SystemExit(f"{model_dir} exists and is not a FoldQuant quantized model; refusing to overwrite it")
+        logger.info("replacing %s", model_dir)
+        shutil.rmtree(model_dir)
+    save_arm_state(model_dir, model_path=args.checkpoint_dir, results=results,
+                   export_metadata=metadata, export_manifest=manifest, base_model_id=args.base_model_id,
+                   policy=policy,
+                   load_kwargs={"config_name": args.config})
+    logger.info("quantized model: %s", model_dir)
+    return model_dir
 
 
 if __name__ == "__main__":
-    main(tyro.cli(ExportConfig))
+    main(tyro.cli(QuantizeConfig))

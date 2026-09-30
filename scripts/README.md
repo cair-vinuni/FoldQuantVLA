@@ -55,7 +55,7 @@ output is a `.pt` of `{sq_scales, act_clip, weight_clip, config}` consumed by
 `foldquant.calibrate.load_learned_calib`, which the export takes as
 
 ```bash
-python -m foldquant_integration.export_foldquant ... \
+python -m foldquant_integration.quantize ... \
     --llm-scheme w4a4_srg --llm-params '{"learned_calib": "path/to/calib.pt"}'
 ```
 

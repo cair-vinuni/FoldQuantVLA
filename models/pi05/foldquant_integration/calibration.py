@@ -138,7 +138,25 @@ def load_policy(
     if not compile:
         model_config = dataclasses.replace(train_config.model, pytorch_compile_mode=None)
         train_config = dataclasses.replace(train_config, model=model_config)
-    policy = _policy_config.create_trained_policy(train_config, checkpoint, pytorch_device=device)
+    from foldquant.quantized_checkpoint import is_quantized_checkpoint
+
+    if is_quantized_checkpoint(checkpoint):
+        # A quantized checkpoint holds codes and scales under other names in place of the
+        # quantized projections' `weight`s; openpi's strict load would refuse the missing keys.
+        # Those projections are replaced by fake-quant layers right after loading
+        # (foldquant.quantized.install_on_policy), so their initial values do not matter.
+        import safetensors.torch as _st
+        from unittest import mock
+
+        _load = _st.load_model
+
+        def _lenient(model, filename, strict=True, **kw):
+            return _load(model, filename, strict=False, **kw)
+
+        with mock.patch.object(_st, "load_model", _lenient):
+            policy = _policy_config.create_trained_policy(train_config, checkpoint, pytorch_device=device)
+    else:
+        policy = _policy_config.create_trained_policy(train_config, checkpoint, pytorch_device=device)
     if not policy._is_pytorch_model:  # noqa: SLF001
         raise RuntimeError("create_trained_policy returned a JAX policy; the engines need the PyTorch model")
     return policy
@@ -170,7 +188,15 @@ def load_dataset(dataset_path: str, video_backend: str | None = None):
     with open(root / "meta" / "episodes.jsonl") as f:
         indices = sorted(int(json.loads(line)["episode_index"]) for line in f if line.strip())
     episodes = None if indices == list(range(len(indices))) else indices
-    return LeRobotDataset(repo_id=root.name, root=root, episodes=episodes, video_backend=video_backend)
+    # lerobot's default 1e-4 s timestamp tolerance rejects videos whose frames sit a
+    # fraction of a millisecond off the nominal grid (0.7 ms on the SO101 recordings).
+    # A quarter of the frame interval still admits only the nearest frame: its
+    # neighbours are a full interval away, so no other frame can pass instead.
+    with open(root / "meta" / "info.json") as f:
+        fps = float(json.load(f)["fps"])
+    return LeRobotDataset(
+        repo_id=root.name, root=root, episodes=episodes, video_backend=video_backend, tolerance_s=0.25 / fps
+    )
 
 
 def episode_table(dataset) -> tuple[list[int], list[int], list[int]]:
@@ -192,15 +218,18 @@ def plan_samples(
     seed: int,
     exclude_episodes: Sequence[int] = (),
     heldout: bool = False,
+    first_step: Callable[[int], int] | None = None,
 ) -> list[SampleId]:
     """Choose ``(episode, step)`` pairs spread across episodes.
 
     Episodes are visited round-robin in a seeded shuffled order so the sample
     covers as many episodes (tasks, scenes) as the budget allows; the step
-    inside each episode is drawn uniformly. ``exclude_episodes`` keeps a
-    verification split disjoint from the calibration split at the episode
-    level. A held-out *step* of a calibrated episode is not held out.
-    ``heldout`` only changes the stream so the two splits never coincide.
+    inside each episode is drawn uniformly from ``[first_step(episode), length)``
+    (``first_step`` defaults to 0, which draws exactly what it always drew).
+    ``exclude_episodes`` keeps a verification split disjoint from the
+    calibration split at the episode level. A held-out *step* of a calibrated
+    episode is not held out. ``heldout`` only changes the stream so the two
+    splits never coincide.
     """
     if len(episode_ids) != len(episode_lengths):
         raise ValueError("episode_ids and episode_lengths differ in length")
@@ -216,8 +245,41 @@ def plan_samples(
             if len(samples) >= num_samples:
                 break
             n = int(episode_lengths[i])
-            samples.append(SampleId(int(episode_ids[i]), int(rng.integers(0, n))))
+            lo = int(first_step(int(episode_ids[i]))) if first_step is not None else 0
+            if lo >= n:
+                raise ValueError(f"episode {episode_ids[i]}: no step has a video frame (first {lo}, length {n})")
+            samples.append(SampleId(int(episode_ids[i]), int(rng.integers(lo, n))))
     return samples
+
+
+def first_decodable_step(dataset) -> Callable[[int], int]:
+    """Per episode, the first step every camera video holds a frame for.
+
+    Some recordings start their video a few frames after the episode's first
+    timestamp (the SO101 set: first frame at 0.066 s, 2 frames at 30 fps).
+    lerobot refuses those steps, and loosening its tolerance would hand back a
+    frame from another step. Such steps are left out of the draw instead. Read
+    from the first decoded frame of each video, once per episode, only for the
+    episodes a plan visits; a video that starts at 0 gives 0.
+    """
+    import av
+
+    fps = float(dataset.fps)
+    tol = float(dataset.tolerance_s)
+    cache: dict[int, int] = {}
+
+    def first(episode: int) -> int:
+        if episode not in cache:
+            start = 0.0
+            for key in dataset.meta.video_keys:
+                path = Path(dataset.root) / dataset.meta.get_video_file_path(episode, key)
+                with av.open(str(path)) as container:
+                    frame = next(container.decode(video=0))
+                    start = max(start, float(frame.time or 0.0))
+            cache[episode] = max(0, int(np.ceil((start - tol) * fps - 1e-9)))
+        return cache[episode]
+
+    return first
 
 
 def _client_frame(frame: Any) -> np.ndarray:
@@ -292,7 +354,8 @@ def sample_observations(
 ) -> tuple[list[SampleId], list[dict[str, Any]]]:
     """:func:`plan_samples` + :func:`build_observations`."""
     ids, lengths, _starts = episode_table(dataset)
-    samples = plan_samples(ids, lengths, num_samples, seed=seed, exclude_episodes=exclude_episodes, heldout=heldout)
+    samples = plan_samples(ids, lengths, num_samples, seed=seed, exclude_episodes=exclude_episodes, heldout=heldout,
+                           first_step=first_decodable_step(dataset))
     return samples, build_observations(dataset, samples, keys)
 
 

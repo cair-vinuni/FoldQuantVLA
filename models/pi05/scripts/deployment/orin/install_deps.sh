@@ -67,7 +67,7 @@ done
 echo
 echo "Done. Use it with:"
 echo "  export PYTHONPATH=\$(cd "$REPO_ROOT/../.." && pwd):$REPO_ROOT"
-echo "  $VENV_PYTHON -m foldquant_integration.export_foldquant --help"
+echo "  $VENV_PYTHON -m foldquant_integration.quantize --help"
 echo
 echo "Plugin libraries are built separately and cached per (SM, machine, TensorRT):"
 echo "  $VENV_PYTHON -m foldquant.kernels build && $VENV_PYTHON -m foldquant.kernels status"

@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import sys
 
@@ -18,14 +17,11 @@ DEPLOYMENT_DIR = UPSTREAM_ROOT / "scripts" / "deployment"
 
 #: The two modules FoldQuant replaces, the graph each is exported to and the
 #: engine it is served from. N1.6's upstream deployment path compiles the DiT
-#: only (``export_onnx_n1d6.py`` writes ``dit_model.onnx``); the LLM engine is
 #: FoldQuant's own.
 COMPONENTS = (
     ("llm", "llm_bf16.onnx", "llm_bf16.engine"),
     ("dit", "dit_bf16.onnx", "dit_bf16.engine"),
 )
-#: Name of the float DiT graph upstream's ``export_onnx_n1d6.py`` writes.
-UPSTREAM_DIT_ONNX = "dit_model.onnx"
 
 #: Names of the FoldQuant export manifest, the shape-hint file the export
 #: writes beside it, and the record :mod:`.build_engines` leaves in the engine

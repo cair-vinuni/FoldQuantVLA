@@ -81,12 +81,19 @@ LLM backbone `r` is the fixed block Hadamard (block 64), also applied as an
 FWHT inside the plugin. `w8a8` alone is the dynamic per-row baseline and folds
 nothing.
 
-`float` exports an unquantized engine with the same runtime bindings as the
-quantized graph; `none` keeps the module in PyTorch. GR00T N1.7 uses upstream
-float graphs through `build_engines --float-onnx-dir`.
+`none` keeps a module in PyTorch. Every arm, the ModelOpt baselines included,
+is saved by `quantize` as a quantized model and exported from it; GR00T N1.7's
+five float components (ViT, VL self-attention, state / action encoders, action
+decoder) are written beside the two quantized graphs by `export`.
 
-Float and quantized engines use strong typing to preserve the graph's declared
-dtypes. This keeps the float baseline comparable to the BF16 reference.
+Engines are built strongly typed, so each graph keeps its declared dtypes and
+the quantized arms differ from the BF16 reference only in the projections.
+The all-float TensorRT baseline never goes through `quantize`: `export` on
+the unquantized checkpoint (with `--dataset-path`, for one observation to
+trace on) writes the same set of graphs with no plugin nodes, and
+`build_engines` compiles them like any other arm. On GR00T N1.7 those are
+upstream's own `export_onnx_n1d7` graphs, so the arm equals upstream's
+`build_trt_pipeline.py`.
 
 | target | schemes | plugin library |
 |---|---|---|
@@ -161,16 +168,18 @@ pytest tests -q
 ```
 
 Then follow the family's integration README, e.g.
-[GR00T N1.7](models/groot_n1_7/foldquant_integration/README.md): float
-export/engines with the upstream pipeline → `export_foldquant` → `build_engines`
-→ `verify` / `eval_libero` / `benchmark`.
+[GR00T N1.7](models/groot_n1_7/foldquant_integration/README.md): `quantize` →
+`export` → `build_engines` → `verify` / `eval_libero` / `benchmark`, the same
+four steps for every family.
 
-Fake-quant checkpoint: quantize → fake-quant checkpoint → export → real-quant
-ONNX → build → TensorRT engines. `export_foldquant --save-fakequant <dir>` saves
-the checkpoint when quantization finishes; it runs in PyTorch and can be pushed
-to the Hugging Face Hub. `python -m foldquant.fakequant convert` then exports and
-builds from it, without calibration data
+The pipeline is quantize → quantized checkpoint → export → real-quant ONNX →
+build → TensorRT engines. `quantize` saves the quantized checkpoint when
+calibration finishes: the base checkpoint with each quantized weight replaced
+by its integer codes and scale, as GPTQ and AWQ checkpoints are laid out. It
+runs in PyTorch with fake-quant layers and can be pushed to the Hugging Face
+Hub. `export` and `build_engines` work from it without calibration data
 ([GR00T N1.7](models/groot_n1_7/foldquant_integration/README.md#fake-quant-checkpoints-pytorch-the-hub-then-onnx-and-engines)).
+Given the base checkpoint instead, `export` traces the all-float baseline.
 
 ## Results
 

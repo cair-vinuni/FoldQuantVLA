@@ -69,36 +69,56 @@ checkpoint's `processor_config.json` names a single embodiment; a fine-tune
 that names several (the LIBERO 4-suite checkpoint lists nine) is refused
 without it, by upstream's loader as much as by these tools.
 
-1. **Float export and engines (upstream).** Everything FoldQuant does not
-   replace (ViT, VL self-attention, state/action encoders, action decoder)
-   comes from the upstream pipeline:
+1. **Nothing to export first.** GR00T N1.7 runs as seven engines. FoldQuant
+   replaces two (LLM and DiT); the other five (ViT, VL self-attention,
+   state/action encoders, action decoder) are float and are exported by
+   `export` below, with upstream's own `export_onnx_n1d7.py` exporters, from
+   the shapes `quantize` records. A tower quantized by ModelOpt goes the same
+   way: the quantized model records the call its graph is traced from, and
+   `export` traces it with upstream's own exporter. The all-float TensorRT
+   baseline is `export` on the unquantized checkpoint: with `--dataset-path`
+   it traces all seven graphs with upstream's `export_onnx_n1d7` exporters
+   (what `build_trt_pipeline.py --steps export` writes), and `build_engines`
+   compiles them.
 
    ```bash
-   python scripts/deployment/build_trt_pipeline.py \
-       --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 \
-       --dataset-path demo_data/libero_demo --embodiment-tag LIBERO_PANDA \
-       --output-dir exports/n17_float --steps export,build
+   python -m foldquant_integration.export --model-path <checkpoint> --dataset-path <dataset> \
+       --embodiment-tag <tag> --output-dir exports/float/onnx
+   python -m foldquant_integration.build_engines --onnx-dir exports/float/onnx --engine-dir exports/float/engines
    ```
 
-2. **Calibrate and emit the FoldQuant graphs.** Observations are drawn
+2. **Quantize, then export the FoldQuant graphs.** Observations are drawn
    through the upstream data path (`LeRobotEpisodeLoader` →
    `extract_step_data` → `parse_observation_gr00t`) from a seeded, episode-
    balanced plan; the forward loop replays `policy.get_action` so every
    capture sees exactly the inference-time tensors.
 
    ```bash
-   python -m foldquant_integration.export_foldquant \
+   python -m foldquant_integration.quantize \
        --model-path checkpoints/GR00T-N1.7-LIBERO/libero_10 \
        --dataset-path <calibration dataset> --num-calib 128 \
        --llm-scheme w8a8_sr --dit-scheme w4a4_shg \
-       --output-dir exports/n17_w8a8_w4a4
+       --output-dir exports/n17_w8a8_w4a4/quantized
+   ```
+
+   `quantize` writes the quantized model, `exports/n17_w8a8_w4a4/quantized`: the
+   base checkpoint with each quantized projection's weight replaced by its
+   integer codes (`qweight`) and per-row scale (`weight_scale`), the same
+   bytes the engines carry, plus the SmoothQuant scales and fold settings.
+   Everything unquantized, tokenizer and processor files included, is copied
+   from the base as it is. It runs in PyTorch with fake-quant layers in place
+   of the quantized projections, and the plugin graphs are exported from it,
+   with no dataset:
+
+   ```bash
+   python -m foldquant_integration.export --model-path exports/n17_w8a8_w4a4/quantized \
+       --output-dir exports/n17_w8a8_w4a4/onnx
    ```
 
    `--cascade` calibrates the DiT while the LLM runs under FoldQuant's
    fake-quant emulation of its own fold, so the DiT's SmoothQuant scales and
    GPTQ Hessians see the activations it will receive at deployment. Pass
-   `--llm-scheme none` (or `--dit-scheme none`) to leave a module at the
-   float export.
+   `--llm-scheme none` (or `--dit-scheme none`) to leave a module in PyTorch.
 
    `--llm-params` / `--dit-params` take the fold's knobs as JSON (`sq_alpha`,
    `act_clip_ratio`, `site_bits`, `rot_block_size`, `learned_calib`). The
@@ -127,16 +147,14 @@ without it, by upstream's loader as much as by these tools.
 
    ```bash
    python -m foldquant_integration.build_engines \
-       --onnx-dir exports/n17_w8a8_w4a4/onnx --engine-dir exports/n17_w8a8_w4a4/engines \
-       --float-onnx-dir exports/n17_float/onnx --float-engine-dir exports/n17_float/engines
+       --onnx-dir exports/n17_w8a8_w4a4/onnx --engine-dir exports/n17_w8a8_w4a4/engines
    ```
 
-   Loads the plugin library, compiles each FoldQuant graph with upstream's
-   `build_engine` (strongly typed, same shape profiles), and fills the
-   remaining components from the float directory, building their ONNX when
-   given or copying their `.engine`. The result is a complete
-   `n17_full_pipeline` directory; `foldquant_export.json` travels with it so
-   the runtime tools know which plugin library to load.
+   Loads the plugin library and compiles each of the seven graphs in the
+   directory with upstream's `build_engine` (strongly typed, same shape
+   profiles). The result is a complete `n17_full_pipeline` directory;
+   `foldquant_export.json` travels with it so the runtime tools know which
+   plugin library to load.
 
 4. **Verify, evaluate, benchmark.**
 
@@ -168,24 +186,34 @@ TensorRT arms run `--n-envs 1`; the PyTorch arm may batch.
 ## Fake-quant checkpoints: PyTorch, the Hub, then ONNX and engines
 
 A calibration is expensive (a dataset, GPU replays, GPTQ solves) and its result
-is small. `export_foldquant --save-fakequant <dir>` writes a **fake-quant model**
-next to the graphs: one directory holding the base checkpoint's files (linked;
-`--fakequant-copy-base` copies them) and the quant state, which is the
-SmoothQuant scales, the fold settings and the integer codes of every quantized
-weight. It loads like the checkpoint, runs quantized in PyTorch, pushes to the
-Hub as one model repo, and converts to the real-quant graphs and engines with no
-dataset.
+is small. `quantize` writes it as a **quantized checkpoint**,
+`<output-dir>`: the base checkpoint with every quantized
+projection's `weight` replaced by `qweight` (its integer codes: INT8, or INT4
+nibble-packed) and `weight_scale` (its per-row scale), the bytes the TensorRT
+plugins carry, in the same layout GPTQ, AWQ and compressed-tensors checkpoints
+use. Each site's activation transform (the SmoothQuant vector, a dense
+rotation and its permutation) is stored beside them as `foldquant.<module>.*`
+tensors; `foldquant_quant.json` records the schemes, the fold settings, which
+projections make up each site and the graph digests; `hf_quant_config.json`
+summarises it the way NVIDIA ModelOpt's Hugging Face export does. Everything
+unquantized (the vision tower, encoders, norms, biases) is the base's, and
+every other file of the base, the tokenizer and processor files included, is
+copied from disk as it is: nothing is saved from the calibrated policy, whose
+tokenizer would otherwise carry the calibration's `max_length` and truncate at
+inference. It loads like the checkpoint, runs quantized in PyTorch (fake-quant
+layers in place of the quantized projections), pushes to the Hub as one model
+repo, and is what the rest of the pipeline reads: `export` emits the real-quant
+graphs from it and `build_engines` compiles them, with no dataset.
 
 ```bash
-# calibrate once (workstation or server); writes exports/w4a4/onnx and the fake-quant model
-python -m foldquant_integration.export_foldquant --model-path <ckpt> --dataset-path <data> \
+# quantize once (workstation or server): calibrate and save exports/w4a4/quantized
+python -m foldquant_integration.quantize --model-path <ckpt> --dataset-path <data> \
     --embodiment-tag libero_sim --llm-scheme w4a4_srg --dit-scheme w4a4_shg \
-    --output-dir exports/w4a4 --save-fakequant exports/w4a4/fakequant \
-    --base-model-id nvidia/GR00T-N1.7-LIBERO
+    --output-dir exports/w4a4/quantized --base-model-id nvidia/GR00T-N1.7-LIBERO
 
-python -m foldquant.fakequant info --fakequant-dir exports/w4a4/fakequant
-python -m foldquant.fakequant push --fakequant-dir exports/w4a4/fakequant \
-    --repo-id <org>/<name>             # private unless --public; --dry-run lists files; --state-only skips the weights
+python -m foldquant.quantized info --quantized-model exports/w4a4/quantized
+python -m foldquant.quantized push --quantized-model exports/w4a4/quantized \
+    --repo-id <org>/<name>             # private unless --public; --dry-run lists files
 
 # anywhere else, after `huggingface-cli download <org>/<name> --local-dir fq_model`:
 # the model in PyTorch, fake-quantized (the engine's codes and transforms, not its speed)
@@ -193,37 +221,35 @@ MUJOCO_GL=egl python -m foldquant_integration.eval_libero --protocol p3 --model-
 python -m foldquant_integration.verify --model-path fq_model --dataset-path <data>
 python -m foldquant_integration.serve --model-path fq_model --embodiment-tag libero_panda
 
-# the pipeline in foldquant: fake-quant model -> real-quant ONNX -> TensorRT engines
-python -m foldquant.fakequant convert --fakequant-dir fq_model --output-dir exports/w4a4 \
-    --float-onnx-dir exports/float/onnx     # or step by step: to-onnx, then build
+# quantized model -> real-quant ONNX -> TensorRT engines
+python -m foldquant_integration.export --model-path fq_model --output-dir exports/w4a4/onnx
+python -m foldquant_integration.build_engines --onnx-dir exports/w4a4/onnx --engine-dir exports/w4a4/engines
 ```
 
-A `--model-path` that is a fake-quant model runs fake-quantized; `--no-fakequant`
-loads its base weights plainly. A state saved with `--fakequant-state-only`
-(about 0.9 GB instead of the checkpoint's size) is applied to a separate base
-checkpoint with `--fakequant-dir <state> --model-path <ckpt>`, and
-`python -m foldquant.fakequant bundle` turns it into a self-contained model later.
+`export` writes all seven graphs: the two FoldQuant graphs from the recorded
+codes, and the five float components with upstream's exporters, from the ViT
+grid and sequence lengths `quantize` recorded. A `--model-path` that is a
+quantized checkpoint runs fake-quantized. Its
+quantized projections hold codes, not bf16 weights, so there is no bf16 arm in
+it: the bf16 baseline (`--no-fakequant`) runs from the base checkpoint. A
+directory in the earlier layout, the quant state beside the base checkpoint's
+linked files, still loads.
 
-Every command that applies a state first checks the base checkpoint file by
-file (weights, index, configs; a README, a licence or Hub metadata in the copy
-are ignored) and refuses another checkpoint. `to-onnx` (the first half of
-`convert`) writes the same bytes the calibrating export wrote: every weight
-pack the emitter made, GPTQ and round-to-nearest alike, is recorded in the
-state and handed back, so no code is recomputed on the converting device, and
-the state records each graph's digest so a conversion that still differs
-stops with an error instead of producing a mismatched engine. Checked on the
-LIBERO checkpoint: CPU and Orin GPU conversions of W4A4 and W8A8 states are
-byte-identical to the recording export. Dense `_sr` rotations are rebuilt from
-the weights by a CPU SVD, the same on one platform; conversion across CPU
-architectures is untested. This makes `to-onnx` the way to put a GPTQ arm on a
-Jetson, where the GPTQ factorization falls back to the CPU. The float
-components (`exports/float`) still come from upstream's pipeline, as in step 1.
+Loading a quantized checkpoint leaves the quantized projections uninitialised
+(their `weight` is absent; the loader warns) until the fake-quant layers are
+installed over them from the codes, which every tool does right after loading.
+`export` writes the same bytes the quantization built: every weight pack, GPTQ
+and round-to-nearest alike, and every dense rotation is recorded in the
+checkpoint and handed back, so nothing is recomputed from weights on the
+converting device, and the recorded graph digests make a conversion that still
+differs stop with an error instead of producing a mismatched engine. Checked on
+the LIBERO checkpoint: CPU and Orin GPU conversions of W4A4 and W8A8 arms are
+byte-identical to the recording export. This makes `export` the way to put a
+GPTQ arm on a Jetson, where the GPTQ factorization falls back to the CPU.
 
-The quant state holds the integer codes of every quantized weight (INT4 packed
-two per byte) plus the scales: about 0.9 GB for the W4A4 LIBERO arm and 1.7 GB
-for W8A8, against about 1 GB and 2 GB of plugin graphs. A self-contained model
-adds the checkpoint (12.6 GB for GR00T N1.7), as links on disk and as files on
-the Hub.
+The codes and scales take about 0.9 GB for the W4A4 LIBERO arm and 1.7 GB for
+W8A8, so the quantized checkpoint is the base (12.6 GB for GR00T N1.7) minus
+the replaced bf16 weights plus that.
 
 The PyTorch fake-quant replaces each quantized projection with the kernel's
 arithmetic in fp32 (`foldquant.fake_quant_linear.FakeQuantLinear`: transform,
@@ -243,11 +269,11 @@ tenth of its input elements change by one bf16 ULP (the bf16 model moves
 so no second implementation can agree more closely. At W8A8 all three
 (fake-quant, engine, bf16) agree to 1e-5.
 
-The pipeline itself (`foldquant.fakequant`) is family-agnostic; this
-integration's `fakequant.py` is its GR00T N1.7 adapter. N1.6, N1.5 and π₀.₅
-have the same adapter, `--save-fakequant`, and `--fakequant-dir` /
-`--no-fakequant` on `eval_libero`, `serve` and `verify`, so their fake-quant
-models run, convert and build the same way. π₀.₅'s action expert is read off
+The pipeline itself (`foldquant.quantized`) is family-agnostic; this
+integration's `quantized.py` is its GR00T N1.7 adapter. N1.6, N1.5 and π₀.₅
+have the same `quantize`, `export` and adapter, and `--quantized-model` /
+`--no-fakequant` on `eval_libero`, `serve` and `verify`, so their quantized
+models run, export and build the same way. π₀.₅'s action expert is read off
 its plugin graph like the DiT (`foldquant.expert_fake_quant`). Each of its
 GEMM plugin nodes, built alone into an engine for every expert scheme and both
 SmoothQuant sides, returns the fake-quant's output to bf16 precision on the
@@ -283,7 +309,7 @@ observations: the means tie and its worst observation is worse. Success rate
 under the upstream LIBERO harness (`eval_libero`) decides between them.
 
 Cost on that GPU: kernels build 30 s; upstream float export + engines
-3.5 min; `export_foldquant` LLM `w8a8_sr` 17 s, DiT `w4a4_sh` 20 s, DiT
+3.5 min; `quantize` LLM `w8a8_sr` 17 s, DiT `w4a4_sh` 20 s, DiT
 `w4a4_shg` 20 min (the 129 Hessians are accumulated on the host in float64;
 they do not fit next to the model on 16 GB); `build_engines` 47 s; `verify`
 40 s for 32 observations.
@@ -332,6 +358,11 @@ could drift from it.
 
 ## ModelOpt INT8 SmoothQuant baseline
 
+`modelopt_w4a16_awq` is the INT4 weight-only counterpart (AWQ, group 128,
+bf16 activations, `Int4GroupwiseGemmPlugin` in the engine). Same commands,
+different scheme name. On the SO101 checkpoint it scores 0.99988 action cos
+against the bf16 policy.
+
 `modelopt_w8a8_smoothquant` is not a FoldQuant fold. It applies NVIDIA ModelOpt's
 INT8 SmoothQuant recipe to the same two modules, so a FoldQuant arm and
 the ModelOpt baseline can be built, verified and served by the same tools and
@@ -343,13 +374,14 @@ uv pip install --python .venv/bin/python nvidia-modelopt==0.45.0 onnx-graphsurge
 ```
 
 ```bash
-python -m foldquant_integration.export_foldquant --model-path ... --dataset-path ... \
+python -m foldquant_integration.quantize --model-path ... --dataset-path ... \
     --embodiment-tag ... --num-calib 64 --seed 0 \
     --llm-scheme modelopt_w8a8_smoothquant --dit-scheme modelopt_w8a8_smoothquant \
-    --output-dir exports/modelopt_w8a8_sq
+    --output-dir exports/modelopt_w8a8_sq/quantized
+python -m foldquant_integration.export --model-path exports/modelopt_w8a8_sq/quantized \
+    --output-dir exports/modelopt_w8a8_sq/onnx
 python -m foldquant_integration.build_engines \
-    --onnx-dir exports/modelopt_w8a8_sq/onnx --engine-dir exports/modelopt_w8a8_sq/engines \
-    --float-onnx-dir exports/float/onnx --float-engine-dir exports/float/engines
+    --onnx-dir exports/modelopt_w8a8_sq/onnx --engine-dir exports/modelopt_w8a8_sq/engines
 ```
 
 What the arm does (`foldquant/modelopt_int8.py`, `modelopt_export.py`):
@@ -360,6 +392,7 @@ What the arm does (`foldquant/modelopt_int8.py`, `modelopt_export.py`):
 | config | `mtq.INT8_SMOOTHQUANT_CFG`: per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant pre-quant scales |
 | excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*` |
 | quantization | `mtq.quantize` on the live module, calibrated by replaying its captured calls; the DiT sees float-LLM activations (no cascade) |
+| checkpoint | `quantize` saves the quantized model with the smoothed weights, every enabled quantizer's `amax` / `pre_quant_scale` (`foldquant.<module>.modelopt.*` tensors), the ModelOpt mode state (`foldquant_modelopt_<module>.pt`) and one captured call as the trace; `export` restores the quantizers on the live policy and traces from it |
 | export | legacy TorchScript exporter, opset 20 (`--modelopt-opset`), dtype repairs for TensorRT's parser, export refused when no Q/DQ node survived |
 | graph outputs | ModelOpt dequantizes to float32, so `embeddings` / `output` would be float32; a final `Cast` to bf16 keeps upstream's contract (a ModelOpt engine that outputs float32 and casts at the next engine's bf16 input computes the same thing) |
 | engine | strongly-typed network (the provider records `builder_flags: {strongly_typed: true}`), built by upstream's `build_engine` like every other graph; the other five components stay upstream bf16 |
@@ -403,7 +436,7 @@ FoldQuant engines quantise those too).
 | DiT weights | RTN, per-output-channel INT4 | same |
 | LLM activations | dynamic per-token INT4 (`max|x|` of the token) | **static per-channel** INT4: q99.9 of each channel over the calibration tokens, running max across observations, frozen |
 | DiT activations | static per-denoising-step per-channel INT4 (q99.9) | static per-channel INT4 (one table, no step dependence) |
-| calibration | 128 seeded dataset observations, seed 0 (same sampler as `export_foldquant`) | same |
+| calibration | 128 seeded dataset observations, seed 0 (same sampler as `quantize`) | same |
 
 The two arms differ **only** in the rotation and in the activation-scale rule;
 solvers, scope, permutation, block sizes and calibration data are identical, so
@@ -463,13 +496,14 @@ tasks × 20 initial states per suite, `n_action_steps` 8, cap 720; successes of 
 | file | role |
 |---|---|
 | `calibration.py` | upstream policy / dataset loading, seeded sample plan, observation building, forward loop |
-| `export_foldquant.py` | scheme validation, shape-metadata capture, `export_llm` / `export_dit`, manifests |
+| `quantize.py` | scheme validation, shape-metadata capture, `export_llm` / `export_dit`, the quantized model |
+| `export.py` | quantized model -> the plugin graphs and manifests, from the recorded codes |
 | `modelopt_export.py` | ModelOpt INT8 SmoothQuant baseline: live-module quantization, upstream-contract Q/DQ export |
 | `build_engines.py` | plugin load + upstream `build_engine` per component; float completion |
 | `verify.py` | held-out PyTorch-vs-engine drift report |
 | `serve.py` | upstream's ZMQ `PolicyServer` with the engines installed |
 | `eval_libero.py` | LIBERO sweep over suites × tasks, per-task `summary.json` |
-| `fakequant.py` | N1.7 adapter of the `foldquant.fakequant` pipeline: policy loading, module paths, engine assembly |
+| `quantized.py` | N1.7 adapter of the `foldquant.quantized` pipeline: policy loading, module paths, engine assembly |
 | `rollout.py`, `benchmark.py` | upstream tools with plugins preloaded |
 | `_upstream.py`, `_runpy.py` | paths, component table, `runpy` hand-off |
 

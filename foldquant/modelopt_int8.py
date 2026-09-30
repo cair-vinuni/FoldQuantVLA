@@ -287,6 +287,66 @@ def quantizer_state(module: nn.Module) -> Dict[str, Dict[str, Any]]:
     return state
 
 
+# checkpoint state: what a ModelOpt tower stores beside its (smoothed) weights
+
+
+def modelopt_state_of(module: nn.Module) -> Dict[str, Any]:
+    """``mto.modelopt_state(module)``: the mode and its config, which :func:`restore_quantizers`
+    rebuilds the quantizers from. Not JSON (it carries dtypes and calibration intermediates);
+    the checkpoint stores it with ``torch.save``."""
+    import modelopt.torch.opt as mto
+
+    return mto.modelopt_state(module)
+
+
+def quantizer_buffers(module: nn.Module) -> Dict[str, torch.Tensor]:
+    """``{"<quantizer>.amax" | ".pre_quant_scale": tensor}`` of **every** quantizer, in its own dtype.
+
+    Disabled quantizers included: AWQ smooths each weight by its scale ``s`` and leaves ``1/s``
+    as the ``pre_quant_scale`` of the linear's input quantizer, which a weight-only config keeps
+    disabled. ``TensorQuantizer.forward`` applies the pre-quant scale before its disabled early
+    return, so that scale is part of the arithmetic; dropping it leaves the ``W*s`` weights
+    uncompensated.
+    """
+    from modelopt.torch.quantization.nn import TensorQuantizer
+
+    out: Dict[str, torch.Tensor] = {}
+    for name, m in module.named_modules():
+        if not isinstance(m, TensorQuantizer):
+            continue
+        for attr in ("amax", "pre_quant_scale"):
+            value = getattr(m, attr, None)
+            if isinstance(value, torch.Tensor):
+                out[f"{name}.{attr}"] = value.detach().cpu().contiguous()
+    return out
+
+
+def restore_quantizers(module: nn.Module, modelopt_state: Mapping[str, Any], buffers: Mapping[str, torch.Tensor]) -> Dict[str, int]:
+    """Put the quantizers of a saved ModelOpt tower back on the live *module*: the mode from
+    *modelopt_state*, then each quantizer's ``amax`` / ``pre_quant_scale`` from *buffers*.
+    The weights ModelOpt smoothed are the checkpoint's own. Returns the quantizer counts."""
+    import modelopt.torch.opt as mto
+    from modelopt.torch.quantization.nn import TensorQuantizer
+
+    load_mtq()
+    device = next(module.parameters()).device
+    mto.restore_from_modelopt_state(module, dict(modelopt_state))
+    # The restored quantizers are created with their state tensors on the CPU (ModelOpt warns
+    # "could not identify the device for TensorQuantizer states"); a CUDA fake-quant kernel
+    # reading them is an illegal memory access. Move them where the weights are.
+    module.to(device)
+    quantizers = {n: m for n, m in module.named_modules() if isinstance(m, TensorQuantizer)}
+    for key, value in buffers.items():
+        name, attr = key.rsplit(".", 1)
+        if name not in quantizers:
+            raise KeyError(f"{name}: no quantizer at this path after restoring the ModelOpt state")
+        setattr(quantizers[name], attr, value.to(device))
+    counts = quantizer_counts(module)
+    logger.info("ModelOpt quantizers restored: %d enabled of %d, %d pre-quant scales",
+                counts["enabled"], counts["inserted"], counts["pre_quant_scales"])
+    return counts
+
+
 # export
 
 

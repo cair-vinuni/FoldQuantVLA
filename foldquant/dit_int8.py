@@ -90,6 +90,7 @@ from .dit_common import (
     to_bytes_f32 as _to_bytes_f32,
 )
 from .onnx_io import save_plugin_onnx
+from .quant_state import site_scope
 
 logger = logging.getLogger(__name__)
 
@@ -150,12 +151,17 @@ def _build_v2_dynamic_graph(
     def _scale(key: str) -> Any:
         return sq_scales[key] if sq_scales is not None else None
 
-    def _macro(weight: Any, s_ch: Any, rotation: Any = None) -> tuple:
+    def _macro(site: str, weight: Any, s_ch: Any, rotation: Any = None) -> tuple:
         """One site of a fused macro node -> ``(i8_bytes, scale_bytes, perm, R_use)``.
 
         The same shared fold the INT4 emitter uses; bit width is the only
         difference, which is why it is a parameter and not a second code path.
+        *site* names the pack in the quant state.
         """
+        with site_scope(site):
+            return _macro_site(weight, s_ch, rotation)
+
+    def _macro_site(weight: Any, s_ch: Any, rotation: Any = None) -> tuple:
         if sq_scales is None:
             # Unfolded W8A8: these nodes carry no rotation slot, so the weight has to
             # be packed in its own frame. Packing it under a dense rotation (what
@@ -245,8 +251,8 @@ def _build_v2_dynamic_graph(
             attn_mask_name = "non_img_mask_add" if (idx % (2 * attend_n) == 0) else "img_mask_add"
 
         if attn_kind == "self":
-            qkv_i8, sQKV_b, _, _ = _macro(torch.cat([wQ, wK, wV], dim=0), s_in)
-            o_i8, sO_b, _, _ = _macro(wO, s_o)
+            qkv_i8, sQKV_b, _, _ = _macro(f"{b}_qkv", torch.cat([wQ, wK, wV], dim=0), s_in)
+            o_i8, sO_b, _, _ = _macro(f"{b}_o", wO, s_o)
             bQKV = np.concatenate([bQf, bKf, bVf])
             nodes.append(
                 oh.make_node(
@@ -277,9 +283,9 @@ def _build_v2_dynamic_graph(
             assert attn_mask_name is not None  # cross-attn always routes a mask
             # Q reads the block's own X; K/V read the encoder, so they fold under
             # the SHARED encoder rotation, the same pairing the INT4 emitter uses.
-            q_i8, sQ_b, _, _ = _macro(wQ, s_in)
-            o_i8, sO_b, _, _ = _macro(wO, s_o)
-            kv_i8, sKV_b, _, _ = _macro(torch.cat([wK, wV], dim=0), _scale("encoder"))
+            q_i8, sQ_b, _, _ = _macro(f"{b}_q", wQ, s_in)
+            o_i8, sO_b, _, _ = _macro(f"{b}_o", wO, s_o)
+            kv_i8, sKV_b, _, _ = _macro(f"{b}_kv", torch.cat([wK, wV], dim=0), _scale("encoder"))
             bKV = np.concatenate([bKf, bVf])
             nodes.append(
                 oh.make_node(
@@ -315,8 +321,8 @@ def _build_v2_dynamic_graph(
         (wP0, bP0), (wP2, bP2) = w.ffn(idx)
         s0 = _scale(f"{b}_ffn0")
         s2 = _scale(f"{b}_ffn2")
-        p0_i8, sP0_b, _, _ = _macro(wP0, s0)
-        p2_i8, sP2_b, _, _ = _macro(wP2, s2)
+        p0_i8, sP0_b, _, _ = _macro(f"{b}_ffn0", wP0, s0)
+        p2_i8, sP2_b, _, _ = _macro(f"{b}_ffn2", wP2, s2)
         nodes.append(
             oh.make_node(
                 "FusedFfnBlock",
@@ -396,6 +402,8 @@ def build_dit_plugin_onnx(
         opset_imports=[oh.make_opsetid("", opset), oh.make_opsetid("trt.plugins", 1)],
     )
 
+    if output_path is None:
+        return model
     out_path = Path(output_path)
     save_plugin_onnx(model, out_path)
     logger.info("    Exported v2 dynamic plugin ONNX (5-input/1-output): %s", out_path)

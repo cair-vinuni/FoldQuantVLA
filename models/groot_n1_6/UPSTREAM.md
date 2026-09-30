@@ -34,6 +34,18 @@ checkout avoids a second download.
 
 ## Local edits to upstream files
 
+`gr00t/model/gr00t_n1d6/processing_gr00t_n1d6.py` and
+`gr00t/model/gr00t_n1d6/image_augmentations.py`: the two preprocessing hunks
+of upstream commit `9b37aa1` ("Make N1.6 letterbox transforms opt-in",
+branch `n1d6`), applied verbatim except for the default. Upstream adds a
+`letter_box_transform` processor option and defaults it to `False`; here it
+defaults to `True`, the behaviour of this release, which letterboxes every
+image. Checkpoints trained on this release (the LIBERO, UR10E and SO101 ones
+used here) carry no such key and keep their preprocessing; a checkpoint
+trained after the upstream change records `letter_box_transform: false` in
+its `processor_config.json` and is preprocessed without letterboxing, as it
+was trained. The commit's training, dataset and test changes are not applied.
+
 `.gitignore`: two agent-tool ignore patterns removed. Nothing else; this
 release's `pyproject.toml` carries no path sources, so it resolves as shipped
 (`uv sync --python 3.10`; the `flash-attn` wheel is fetched from the GitHub

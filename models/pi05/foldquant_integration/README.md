@@ -39,8 +39,10 @@ be installed alone: the runtime stacks the PyTorch `DynamicCache` when the
 LLM stays float, and rebuilds one from the engine's stack when the expert
 stays float.
 
-Use `float` to export an unquantized engine baseline or `none` to keep a
-module in PyTorch. `verify` compares all engines against the BF16 PyTorch policy.
+Use `none` to keep a module in PyTorch. The all-float baseline is `export` on
+the unquantized checkpoint (`--checkpoint-dir <checkpoint> --dataset-path
+<dataset>`): both graphs traced with no plugin nodes. `verify` compares all
+engines against the BF16 PyTorch policy.
 
 Engines are served by [`runtime.py`](runtime.py), which rebinds
 `paligemma_with_expert.forward` (prefix branch only) and
@@ -120,11 +122,25 @@ policy sees exactly what the websocket server hands it.
    inference-time tensors and the same inputs emit byte-identical graphs.
 
    ```bash
-   python -m foldquant_integration.export_foldquant \
+   python -m foldquant_integration.quantize \
        --checkpoint-dir <pi05_libero PyTorch checkpoint> \
        --dataset-path <LeRobot LIBERO dataset> --num-calib 128 \
        --llm-scheme w4a4_srg --expert-scheme w4a4_shg \
-       --output-dir exports/pi05_w4a4
+       --output-dir exports/pi05_w4a4/quantized
+   ```
+
+   `quantize` writes the quantized model, `exports/pi05_w4a4/quantized`: the
+   base checkpoint with each quantized projection's weight replaced by its
+   integer codes (`qweight`) and per-row scale (`weight_scale`), the same
+   bytes the engines carry, plus the SmoothQuant scales and fold settings.
+   Everything unquantized, tokenizer and processor files included, is copied
+   from the base as it is. It runs in PyTorch with fake-quant layers in place
+   of the quantized projections, and the plugin graphs are exported from it,
+   with no dataset:
+
+   ```bash
+   python -m foldquant_integration.export --checkpoint-dir exports/pi05_w4a4/quantized \
+       --output-dir exports/pi05_w4a4/onnx
    ```
 
    That is the paper's W4A4 arm. Its W4A4 o/d8 arm keeps `o_proj` and
@@ -193,21 +209,25 @@ policy sees exactly what the websocket server hands it.
 Plugin graphs are emitted at batch 1; the upstream client sends one
 observation per request.
 
-### Fake-quant models
+### Quantized models
 
-`export_foldquant --save-fakequant <dir>` writes the arm as a fake-quant model:
-the base checkpoint's files plus the quant state (SmoothQuant scales and every
-weight code). `eval_libero`, `serve` and `verify` run it in PyTorch with the engines'
-arithmetic when `--checkpoint-dir` names it (`--no-fakequant` loads the base weights
-plainly), or take a state saved with `--fakequant-state-only` through
-`--fakequant-dir <state>`. `python -m foldquant.fakequant convert` turns it into
-the plugin ONNX graphs and engines without calibration data, and
-`python -m foldquant.fakequant push` uploads it to the Hugging Face Hub
-(private by default). The full description, with measured agreement against
+`quantize` writes the arm as a quantized checkpoint, `<output-dir>`:
+the base checkpoint with every quantized projection's weight replaced by its
+integer codes and per-row scale, the rest copied from the base. `eval_libero`,
+`serve` and `verify` run it in PyTorch with the engines' arithmetic when
+`--checkpoint-dir` names it; the bf16 baseline runs from the base checkpoint, since
+the quantized projections' bf16 weights are not in it. `export` turns it into
+the plugin ONNX graphs and `build_engines` into engines, without calibration
+data, and `python -m foldquant.quantized push` uploads it to the Hugging Face
+Hub (private by default). The full description, with measured agreement against
 the engines, is in the
 [GR00T N1.7 README](../../groot_n1_7/foldquant_integration/README.md#fake-quant-checkpoints-pytorch-the-hub-then-onnx-and-engines).
 
 ## ModelOpt INT8 SmoothQuant baseline
+
+`modelopt_w4a16_awq` (INT4 weights, group 128, bf16 activations) works the
+same way as the SmoothQuant arm below; its weights go through the
+`Int4GroupwiseGemmPlugin`, so the engine really runs INT4.
 
 `modelopt_w8a8_smoothquant` is not a FoldQuant fold. It applies NVIDIA ModelOpt's
 INT8 SmoothQuant recipe to the same two modules, so a FoldQuant arm and the
@@ -216,10 +236,12 @@ compared on a robot. It needs `nvidia-modelopt==0.45.0` (and `ninja`, for its
 CUDA extension) in the environment.
 
 ```bash
-python -m foldquant_integration.export_foldquant --checkpoint-dir ... --dataset-path ... \
+python -m foldquant_integration.quantize --checkpoint-dir ... --dataset-path ... \
     --num-calib 64 --seed 0 \
     --llm-scheme modelopt_w8a8_smoothquant --expert-scheme modelopt_w8a8_smoothquant \
-    --output-dir exports/pi05_modelopt_w8a8_sq
+    --output-dir exports/pi05_modelopt_w8a8_sq/quantized
+python -m foldquant_integration.export --checkpoint-dir exports/pi05_modelopt_w8a8_sq/quantized \
+    --output-dir exports/pi05_modelopt_w8a8_sq/onnx
 python -m foldquant_integration.build_engines \
     --onnx-dir exports/pi05_modelopt_w8a8_sq/onnx --engine-dir exports/pi05_modelopt_w8a8_sq/engines
 python -m foldquant_integration.verify --checkpoint-dir ... --dataset-path ... \
@@ -235,15 +257,16 @@ What the arm does (`foldquant/modelopt_int8.py`, `modelopt_export.py`):
 | calibration replay | LLM: the captured `prefix_embs` / 4-D mask / `position_ids` through `paligemma_with_expert.forward`; expert: the captured `x_t` / `timestep` / `prefix_pad_masks` / KV stack through `denoise_step`; the expert sees float-LLM caches (no cascade) |
 | config | `mtq.INT8_SMOOTHQUANT_CFG`: per-channel INT8 weights, per-tensor static INT8 activations, SmoothQuant pre-quant scales |
 | excluded leaves | Linear / Conv whose name matches `*norm*`, `*layernorm*`, `*final_action*`, `*action_proj*`: on Pi0.5 that is the adaRMS `dense` modulation of every expert norm; `action_in_proj` / `action_out_proj` and the time MLP are quantized |
-| export | the float arm's own trace wrappers over the quantized live modules (same bindings and dtypes), legacy TorchScript exporter at opset 20 (`--modelopt-opset`), dtype repairs, graph outputs cast back to the runtime dtype (ModelOpt's Q/DQ dequantizes to float32), one external-data sidecar, default ScatterND `reduction` stripped for TensorRT 10.3, export refused when no Q/DQ node survived |
+| checkpoint | `quantize` saves the quantized model with the smoothed weights, every enabled quantizer's `amax` / `pre_quant_scale` (`foldquant.<module>.modelopt.*` tensors), the ModelOpt mode state (`foldquant_modelopt_<module>.pt`) and one captured call as the trace; `export` restores the quantizers on the live policy and traces from it |
+| export | the KV-stack contract trace wrappers over the quantized live modules (same bindings and dtypes), legacy TorchScript exporter at opset 20 (`--modelopt-opset`), dtype repairs, graph outputs cast back to the runtime dtype (ModelOpt's Q/DQ dequantizes to float32), one external-data sidecar, default ScatterND `reduction` stripped for TensorRT 10.3, export refused when no Q/DQ node survived |
 | engine | strongly typed, by the unchanged `build_engines` (no plugin library) |
 
 `--cascade` and `--llm-params` / `--expert-params` are refused for this
 scheme. `foldquant_export.json` records, per module, the excluded leaves,
 the inserted / enabled quantizer counts, the Q/DQ node counts and the repairs
-made; `onnx/<module>_modelopt_quantizers.pt` holds every enabled quantizer's
-`amax` and `pre_quant_scale` under ModelOpt's names relative to the quantized
-scope, for a key-by-key comparison with the same module quantized elsewhere.
+made; the quantized model holds every enabled quantizer's `amax` and
+`pre_quant_scale` under ModelOpt's names relative to the quantized scope, for a
+key-by-key comparison with the same module quantized elsewhere.
 
 The reference policy keeps upstream openpi's mixed precision (the norms, and
 the projections around the expert, in float32); the graphs use the FoldQuant
@@ -285,9 +308,9 @@ _config._CONFIGS_DICT.setdefault("pi05_mine", TrainConfig(name="pi05_mine", ...)
 
 ```bash
 export FOLDQUANT_PI05_PLUGIN=/path/to/my_plugin.py
-python -m foldquant_integration.export_foldquant \
+python -m foldquant_integration.quantize \
     --checkpoint-dir <ckpt> --config pi05_mine --dataset-path <lerobot dataset> \
-    --output-dir exports/mine
+    --output-dir exports/mine/quantized
 ```
 
 An import error in the plugin is raised, not swallowed; otherwise it would
@@ -321,6 +344,10 @@ ffmpeg -nostdin -fflags +genpts -i in.mp4 -c copy -reset_timestamps 1 out.mp4
 
 Raising the tolerance instead would silently accept the wrong frame.
 
+Some recordings start the video a couple of frames after the episode (the
+SO101 set starts at 0.066 s). Those first steps have no frame at all, so the
+sampler skips them and draws from the first step every camera can serve.
+
 ## Smoke check
 
 `w8a8_sr` LLM + `w4a4_sh` expert, 16 calibration observations, 8 held-out
@@ -348,7 +375,8 @@ installation check.
 | file | role |
 |---|---|
 | `calibration.py` | upstream policy / dataset loading, seeded sample plan, client-format observations, forward loop |
-| `export_foldquant.py` | scheme validation, shape capture, `export_llm` / `export_expert`, manifests |
+| `quantize.py` | scheme validation, shape capture, `export_llm` / `export_expert`, the quantized model |
+| `export.py` | quantized model -> the plugin graphs and manifests, from the recorded codes |
 | `modelopt_export.py` | ModelOpt INT8 SmoothQuant baseline: seam capture, live-module quantization, Q/DQ export under the FoldQuant contract |
 | `build_engines.py` | plugin load + `foldquant.runtime.builder.build_engine` per component |
 | `runtime.py` | engine installer (`install_engines`), the two rebinds, KV-stack helpers, `PrefixCapture` |

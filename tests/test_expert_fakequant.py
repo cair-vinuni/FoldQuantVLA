@@ -28,7 +28,7 @@ from foldquant import export as fq_export  # noqa: E402
 from foldquant import gemma_expert, schemes  # noqa: E402
 from foldquant.expert_fake_quant import install_expert_fake_quant  # noqa: E402
 from foldquant.fake_quant_linear import FakeQuantLinear  # noqa: E402
-from foldquant.quant_state import QuantState, load_state, save_state  # noqa: E402
+from foldquant.quant_state import QuantState  # noqa: E402
 
 HIDDEN, FF, LAYERS, HEADS, KV_HEADS, HEAD_DIM = 64, 128, 2, 2, 1, 32
 
@@ -107,6 +107,20 @@ def capture(monkeypatch):
     monkeypatch.setattr(gemma_expert, "compute_gemma_expert_sq_scales", _fake_capture)
 
 
+def _through_checkpoint(module, ms, directory):
+    """*ms* written as a quantized checkpoint over *module*'s weights and read back."""
+    from foldquant import quantized
+    from foldquant.export import ExportResult
+    from test_quantized import _base_checkpoint
+
+    ckpt = _base_checkpoint(directory / "ckpt", module)
+    out = quantized.save_arm_state(
+        directory / "q", family="test", model_path=str(ckpt), results=[ExportResult("expert", ms.scheme, None, [], state=ms)],
+        modules={"expert": module}, checkpoint_root=module, export_manifest={"files": {"expert": "expert.onnx"}},
+    )
+    return quantized.load_quantized_model(out).modules["expert"]
+
+
 def _record(module, scheme, params, path):
     return fq_export.export_expert(
         module, path, scheme=scheme, forward_loop=lambda m: None, params=params, record=True
@@ -120,8 +134,7 @@ def test_expert_state_replays_to_the_same_graph(case, capture, tmp_path: Path) -
     (tmp_path / "a").mkdir()
     (tmp_path / "b").mkdir()
     ms = _record(module, scheme, params, tmp_path / "a" / "expert.onnx")
-    save_state(QuantState({"family": "test"}, {"expert": ms}), tmp_path / "state")
-    loaded = load_state(tmp_path / "state").modules["expert"]
+    loaded = _through_checkpoint(module, ms, tmp_path / "state")
     fq_export.export_expert(module, tmp_path / "b" / "expert.onnx", scheme=scheme, state=loaded)
     for name in ("expert.onnx", "expert.onnx.data"):
         assert filecmp.cmp(tmp_path / "a" / name, tmp_path / "b" / name, shallow=False), name
@@ -135,7 +148,7 @@ def _cos(a: torch.Tensor, b: torch.Tensor) -> float:
 def test_expert_fake_quant_tracks_the_float_expert(case, capture, tmp_path: Path) -> None:
     scheme, params = case
     module = _TinyExpert()
-    ms = load_state(save_state(QuantState({"family": "test"}, {"expert": _record(module, scheme, params, tmp_path / "a.onnx")}), tmp_path / "s")).modules["expert"]
+    ms = _through_checkpoint(module, _record(module, scheme, params, tmp_path / "a.onnx"), tmp_path / "s")
     int4 = scheme in schemes.ACT_W4A4_SCHEMES
     decoder = module.expert_model.model
     x = torch.randn(1, 6, HIDDEN, generator=torch.Generator().manual_seed(2))
@@ -181,7 +194,7 @@ def test_expert_fake_quant_reads_the_scale_on_the_side_the_node_names(capture, t
 
 
 def test_install_fake_quant_routes_the_expert(capture, tmp_path: Path) -> None:
-    from foldquant.fakequant import install_fake_quant
+    from foldquant.quantized import install_fake_quant
 
     module = _TinyExpert()
     ms = _record(module, schemes.W8A8_SH, {}, tmp_path / "a.onnx")

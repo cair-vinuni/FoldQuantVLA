@@ -48,10 +48,10 @@ class VerifyConfig:
     engine_dir: Optional[str] = None
     """Engine directory produced by :mod:`.build_engines`."""
 
-    fakequant_dir: Optional[str] = None
+    quantized_model: Optional[str] = None
     """Score a fake-quant state in PyTorch instead of engines; its calibration split is the state's.
     A self-contained fake-quant model given as ``--model-path`` is detected by itself (it is then
-    scored against its own base weights). Exactly one of ``--engine-dir`` / ``--fakequant-dir``."""
+    scored against its own base weights). Exactly one of ``--engine-dir`` / ``--quantized-model``."""
 
     no_fakequant: bool = False
     """When ``--model-path`` is a FoldQuant fake-quant model, load it as the plain base policy."""
@@ -193,22 +193,22 @@ def run_pass(
 
 def main(args: VerifyConfig) -> Dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    from foldquant.fakequant import fakequant_arm
+    from foldquant.quantized import quantized_arm
 
-    args.fakequant_dir = fakequant_arm(
+    args.quantized_model = quantized_arm(
         args.model_path,
-        args.fakequant_dir,
+        args.quantized_model,
         no_fakequant=args.no_fakequant,
         other_arms=(args.engine_dir, getattr(args, "baseline_pack", None)),
     )
-    if bool(args.engine_dir) == bool(args.fakequant_dir):
-        raise SystemExit("pass exactly one of --engine-dir and --fakequant-dir")
+    if bool(args.engine_dir) == bool(args.quantized_model):
+        raise SystemExit("pass exactly one of --engine-dir and --quantized-model")
     fq_state = None
-    if args.fakequant_dir:
-        from .fakequant import load_state_for
+    if args.quantized_model:
+        from .quantized import load_state_for
 
-        fq_state = load_state_for(args.fakequant_dir, args.model_path)
-        engine_dir = Path(args.fakequant_dir)
+        fq_state = load_state_for(args.quantized_model, args.model_path)
+        engine_dir = Path(args.quantized_model)
         manifest = fq_state.manifest["export_manifest"]
     else:
         engine_dir = Path(args.engine_dir)
@@ -252,9 +252,9 @@ def main(args: VerifyConfig) -> Dict[str, Any]:
     logger.info("PyTorch repeatability (seeded): action cosine min %.6f", repeat)
 
     if fq_state is not None:
-        from foldquant.fakequant import install_fake_quant
+        from foldquant.quantized import install_fake_quant
 
-        from .fakequant import module_paths
+        from .quantized import module_paths
 
         install_fake_quant(module_paths(policy), fq_state)
     else:

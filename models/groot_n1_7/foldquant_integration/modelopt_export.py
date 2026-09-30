@@ -3,9 +3,11 @@
 
 """The ModelOpt INT8 SmoothQuant baseline arm for GR00T N1.7 (see :mod:`foldquant.modelopt_int8`).
 
-Both towers are quantized **in place on the live policy**, calibrated by
-replaying the calls captured on them, and exported with upstream's
-full-pipeline contract. The graphs therefore replace ``llm_bf16.onnx`` and
+Both towers are quantized **in place on the live policy** by ``quantize``,
+calibrated by replaying the calls captured on them; the quantized checkpoint
+keeps the smoothed weights, the quantizers' scales and one captured call.
+``export`` restores the quantizers and traces the graph from that call with
+upstream's full-pipeline contract. The graphs therefore replace ``llm_bf16.onnx`` and
 ``dit_bf16.onnx`` exactly as the FoldQuant graphs do, with the same names,
 dtypes and dynamic dims:
 
@@ -26,6 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
 from foldquant import modelopt_int8
+from foldquant.int4_groupwise import apply_int4_surgery_in_place
 import torch
 from torch import nn
 
@@ -160,69 +163,28 @@ def _finish_graph(
         "qdq_nodes": qdq,
     }
     if modelopt_int8.is_weight_only(algorithm):
-        record["int4_groupwise_surgery"] = _int4_surgery(onnx_path, name)
+        record["int4_groupwise_surgery"] = apply_int4_surgery_in_place(onnx_path, name)
     return record
-
-
-def _int4_surgery(onnx_path: Path, name: str) -> Dict[str, int]:
-    """Rewrite the INT4 weight-only DQ chains to ``Int4GroupwiseGemmPlugin`` nodes, in place.
-
-    TensorRT 10.3 has no INT4 weight-only kernel, so the graph ModelOpt exports
-    parses but runs dequantized. The surgery is what makes this arm an INT4
-    engine; the plugin library it needs is declared in the export manifest.
-    """
-    from foldquant.int4_groupwise import apply_int4_modelopt_surgery
-
-    # Staged under the SAME basename: the sidecar's name is baked into every
-    # initializer's ``external_data`` location at save time, so writing
-    # "<name>.int4.onnx" and renaming afterwards leaves the graph pointing at a
-    # sidecar that no longer exists, and TensorRT fails the whole parse with
-    # "Failed to import initializer".
-    stage_dir = onnx_path.parent / f".int4_{onnx_path.stem}"
-    stage_dir.mkdir(parents=True, exist_ok=True)
-    staged = stage_dir / onnx_path.name
-    replaced, materialized = apply_int4_modelopt_surgery(onnx_path, staged)
-    if replaced == 0:
-        raise RuntimeError(
-            f"{name}: INT4 surgery rewrote no weight; the engine would run dequantized"
-        )
-    for old in (onnx_path, Path(str(onnx_path) + ".data")):
-        if old.exists():
-            old.unlink()
-    staged.replace(onnx_path)
-    staged_data = Path(str(staged) + ".data")
-    if staged_data.exists():
-        staged_data.replace(Path(str(onnx_path) + ".data"))
-    stage_dir.rmdir()
-    logger.info(
-        "%s: INT4 groupwise surgery replaced %d weights (%d constants materialized)",
-        name,
-        replaced,
-        materialized,
-    )
-    return {"replaced": replaced, "materialized": materialized}
 
 
 def export_llm(
     text_model: nn.Module,
-    calls: Sequence[Tuple[tuple, dict]],
+    trace: Dict[str, torch.Tensor],
     onnx_path: Path,
     *,
     num_layers: int,
     algorithm: str = modelopt_int8.MODELOPT_W8A8_SMOOTHQUANT,
     opset: int = modelopt_int8.DEFAULT_OPSET,
 ) -> Dict[str, Any]:
-    """Quantize the live text tower on *calls* (its captured forwards) and export the Q/DQ graph."""
-    record = modelopt_int8.quantize_module(
-        text_model, modelopt_int8.replay_loop(calls), algorithm=algorithm
-    )
-
-    args, kwargs = calls[0]
-    embeds = kwargs.get("inputs_embeds", args[0] if args else None)
-    deepstack = list(kwargs.get("deepstack_visual_embeds") or [])
+    """Export the Q/DQ graph of the quantized live text tower, traced from *trace* (one recorded
+    call: ``inputs_embeds``, ``position_ids``, ``attention_mask``, ``visual_pos_masks``, ``deepstack_<i>``)."""
+    record: Dict[str, Any] = {}
+    kwargs = dict(trace)
+    embeds = kwargs.get("inputs_embeds")
+    deepstack = [kwargs[f"deepstack_{i}"] for i in range(sum(k.startswith("deepstack_") for k in kwargs))]
     vis_mask = kwargs.get("visual_pos_masks")
     if embeds is None or kwargs.get("position_ids") is None:
-        raise RuntimeError("captured LLM call carries no inputs_embeds / position_ids")
+        raise RuntimeError("recorded LLM call carries no inputs_embeds / position_ids")
     attention_mask = kwargs.get("attention_mask")
     if attention_mask is None:
         attention_mask = torch.ones(embeds.shape[:2], dtype=torch.int64, device=embeds.device)
@@ -265,44 +227,25 @@ def export_llm(
         _finish_graph(Path(onnx_path), "llm", strip_scatternd_reduction=True, algorithm=algorithm)
     )
     record["opset"] = opset
-    record["calibration_calls"] = len(calls)
     return record
 
 
 def export_dit(
     dit: nn.Module,
-    calls: Sequence[Tuple[tuple, dict]],
+    trace: Dict[str, torch.Tensor],
     onnx_path: Path,
     *,
     algorithm: str = modelopt_int8.MODELOPT_W8A8_SMOOTHQUANT,
     opset: int = modelopt_int8.DEFAULT_OPSET,
 ) -> Dict[str, Any]:
-    """Quantize the live DiT on *calls* (every denoising step it saw) and export the Q/DQ graph."""
-    record = modelopt_int8.quantize_module(
-        dit, modelopt_int8.replay_loop(calls), algorithm=algorithm
-    )
-
-    _, kwargs = calls[0]
-    missing = [
-        k
-        for k in (
-            "hidden_states",
-            "encoder_hidden_states",
-            "timestep",
-            "image_mask",
-            "backbone_attention_mask",
-        )
-        if kwargs.get(k) is None
-    ]
+    """Export the Q/DQ graph of the quantized live DiT, traced from *trace* (one recorded denoising
+    step under upstream's binding names)."""
+    record: Dict[str, Any] = {}
+    names = ("sa_embs", "vl_embs", "timestep", "image_mask", "backbone_attention_mask")
+    missing = [k for k in names if trace.get(k) is None]
     if missing:
-        raise RuntimeError(f"captured DiT call lacks {missing}; is use_alternate_vl_dit off?")
-    export_args = (
-        kwargs["hidden_states"].clone(),
-        kwargs["encoder_hidden_states"].clone(),
-        kwargs["timestep"].clone(),
-        kwargs["image_mask"].clone(),
-        kwargs["backbone_attention_mask"].clone(),
-    )
+        raise RuntimeError(f"recorded DiT call lacks {missing}; is use_alternate_vl_dit off?")
+    export_args = tuple(trace[k].clone() for k in names)
     wrapper = DiTQDQExport(dit).eval()
     logger.info("exporting ModelOpt DiT -> %s (opset %d)", onnx_path, opset)
     with torch.no_grad():
@@ -323,6 +266,12 @@ def export_dit(
         _finish_graph(Path(onnx_path), "dit", strip_scatternd_reduction=True, algorithm=algorithm)
     )
     record["opset"] = opset
+    return record
+
+
+def quantize_tower(module: nn.Module, calls: Sequence[Tuple[tuple, dict]], *, algorithm: str) -> Dict[str, Any]:
+    """Quantize the live tower in place on *calls* (its captured forwards); the provenance record."""
+    record = modelopt_int8.quantize_module(module, modelopt_int8.replay_loop(calls), algorithm=algorithm)
     record["calibration_calls"] = len(calls)
     return record
 

@@ -52,10 +52,10 @@ class VerifyConfig:
     engine_dir: str | None = None
     """Engine directory produced by :mod:`.build_engines`."""
 
-    fakequant_dir: str | None = None
+    quantized_model: str | None = None
     """Score a fake-quant state in PyTorch instead of engines; its calibration split is the state's.
     A self-contained fake-quant model given as ``--model-path`` is detected by itself (it is then
-    scored against its own base weights). Exactly one of ``--engine-dir`` / ``--fakequant-dir``."""
+    scored against its own base weights). Exactly one of ``--engine-dir`` / ``--quantized-model``."""
 
     no_fakequant: bool = False
     """When ``--model-path`` is a FoldQuant fake-quant model, load it as the plain base policy."""
@@ -160,21 +160,20 @@ def run_pass(policy, observations: list[dict[str, Any]], seed: int) -> dict[str,
 
 def main(args: VerifyConfig) -> dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    from foldquant.fakequant import fakequant_arm
+    from foldquant.quantized import quantized_arm
 
-    args.fakequant_dir = fakequant_arm(
-        args.model_path, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    args.quantized_model = quantized_arm(
+        args.model_path, args.quantized_model, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
     )
-    if bool(args.engine_dir) == bool(args.fakequant_dir):
-        raise SystemExit("pass exactly one of --engine-dir and --fakequant-dir")
+    if bool(args.engine_dir) == bool(args.quantized_model):
+        raise SystemExit("pass exactly one of --engine-dir and --quantized-model")
     fq_state = None
-    if args.fakequant_dir:
-        from foldquant.fakequant import resolve_model_path, verify_base_checkpoint
-        from foldquant.quant_state import load_state
+    if args.quantized_model:
+        from foldquant.quantized import load_quantized_model, resolve_model_path, verify_base_checkpoint
 
-        fq_state = load_state(args.fakequant_dir)
-        verify_base_checkpoint(fq_state, resolve_model_path(fq_state, args.fakequant_dir, args.model_path))
-        engine_dir = Path(args.fakequant_dir)
+        fq_state = load_quantized_model(args.quantized_model)
+        verify_base_checkpoint(fq_state, resolve_model_path(fq_state, args.quantized_model, args.model_path))
+        engine_dir = Path(args.quantized_model)
         manifest = fq_state.manifest["export_manifest"]
     else:
         engine_dir = Path(args.engine_dir)
@@ -216,10 +215,10 @@ def main(args: VerifyConfig) -> dict[str, Any]:
 
     wanted = [c.strip() for c in args.components.split(",") if c.strip()] or None
     if fq_state is not None:
-        from foldquant.fakequant import install_fake_quant
+        from foldquant.quantized import install_fake_quant
         from foldquant.quant_state import QuantState
 
-        from .fakequant import module_paths
+        from .quantized import module_paths
 
         unknown = sorted(set(wanted or ()) - set(fq_state.modules))
         if unknown:

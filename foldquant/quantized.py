@@ -1,19 +1,22 @@
 # Copyright (c) 2026 The FoldQuant Authors.
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 
-"""The FoldQuant fake-quant pipeline: fake-quant state -> real-quant ONNX -> TensorRT engines.
+"""The FoldQuant pipeline: quantized checkpoint -> real-quant ONNX -> TensorRT engines.
 
-A fake-quant model is one directory: the base checkpoint's files (weights,
-index, configs; linked or copied, see :func:`bundle_base`) next to the
-:mod:`foldquant.quant_state` files calibrated on them. Loading it means loading
-the policy from that directory as usual and calling :func:`install_fake_quant`
-on its quantized modules, which replaces their projections with the arithmetic
-the TensorRT engine runs (the same codes, scales, rotations and per-token
-quantization). The family tools do that by themselves when ``--model-path``
-names a fake-quant model. A state saved without the base files (``state_only``)
-is applied to a separately loaded base checkpoint instead. The same directory converts to the plugin ONNX graphs with
+A quantized checkpoint (:mod:`foldquant.quantized_checkpoint`) is the base
+checkpoint with every quantized projection's weight replaced by its integer
+codes and per-row scale, plus the fold settings and activation transforms of
+each site. Loading it means loading the policy from that directory as usual,
+which leaves the quantized projections uninitialised, and calling
+:func:`install_fake_quant` on its quantized modules, which replaces those
+projections with the arithmetic the TensorRT engine runs (the same codes,
+scales, rotations and per-token quantization). The family tools do that by
+themselves when ``--model-path`` names a quantized checkpoint. The same
+directory converts to the plugin ONNX graphs with
 :func:`foldquant.export.export_llm` / ``export_dit`` / ``export_expert`` and
-``state=``, without calibration data.
+``state=``, without calibration data. A ModelOpt baseline tower has its
+quantizers restored from the checkpoint and is traced from the example inputs
+the checkpoint recorded.
 
 Coverage: the LLM backbones (Qwen3 / Qwen3-VL, Gemma prefix) for the folded
 schemes, the GR00T DiT for every DiT scheme, and the π₀.₅ action expert for
@@ -22,22 +25,23 @@ every expert scheme (:mod:`foldquant.expert_fake_quant`).
 Command line, run inside a model family's environment (``models/<family>``, with
 ``foldquant`` and the family's ``foldquant_integration`` importable)::
 
-    python -m foldquant.fakequant info    --fakequant-dir D
-    python -m foldquant.fakequant bundle  --fakequant-dir D --model-path CKPT [--copy]
-    python -m foldquant.fakequant push    --fakequant-dir D --repo-id org/name [--public] [--dry-run]
-    python -m foldquant.fakequant to-onnx --fakequant-dir D --output-dir OUT
-    python -m foldquant.fakequant build   --output-dir OUT [family engine options]
-    python -m foldquant.fakequant convert --fakequant-dir D --output-dir OUT [...]
+    python -m foldquant.quantized info    --quantized-model D
+    python -m foldquant.quantized push    --quantized-model D --repo-id org/name [--public] [--dry-run]
+    python -m foldquant.quantized to-onnx --quantized-model D --output-dir ONNX
+    python -m foldquant.quantized build   --onnx-dir ONNX --engine-dir ENGINES [family engine options]
+    python -m foldquant.quantized convert --quantized-model D --output-dir OUT [...]
 
-(``--model-path CKPT`` names the base checkpoint only for a state saved without it.)
-
-``to-onnx`` writes ``OUT/onnx`` (the real-quant plugin graphs, byte-identical to
-the calibrating export), ``build`` compiles ``OUT/onnx`` into ``OUT/engines``,
-``convert`` does both. The family-specific parts (loading the policy, which
-modules are quantized, how the engine directory is assembled) come from the
-family's adapter, ``foldquant_integration.fakequant``, which defines ``FAMILY``,
-``load_policy(model_path, embodiment_tag, device)``, ``module_paths(policy)``
-and ``build_engines(onnx_dir, engine_dir, **options)``.
+The families wrap ``to-onnx`` as ``foldquant_integration.export`` and ``build``
+as ``foldquant_integration.build_engines``. ``to-onnx`` writes ``OUT/onnx`` (the
+real-quant plugin graphs, byte-identical to the ones the quantization built),
+``build`` compiles ``OUT/onnx`` into ``OUT/engines``, ``convert`` does both. The
+family-specific parts (loading the policy, which modules are quantized, how
+the engine directory is assembled) come from the family's adapter,
+``foldquant_integration.quantized``, which defines ``FAMILY``,
+``load_policy(model_path, embodiment_tag, device)``, ``module_paths(policy)``,
+``checkpoint_root(policy)``, ``build_engines(onnx_dir, engine_dir, **options)``
+and, for a family whose engine set also holds float components,
+``complete_onnx(policy, onnx_dir, state)``.
 """
 
 from __future__ import annotations
@@ -50,28 +54,56 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 from . import schemes
-from .quant_state import MANIFEST_NAME, TENSORS_NAME, ModuleQuantState, QuantState, load_state, save_state
+from .quant_state import MANIFEST_NAME, ModuleQuantState, QuantState
+from .quantized_checkpoint import (
+    LLM_SITES,
+    is_quantized_checkpoint,
+    load_quantized_checkpoint,
+    site_tables,
+    write_quantized_checkpoint,
+)
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "EXPORT_MANIFEST_NAME",
     "FakeQuantHandle",
-    "bundle_base",
-    "fakequant_arm",
-    "is_fakequant_model",
+    "quantized_arm",
+    "is_quantized_model",
     "resolve_model_path",
     "export_onnx",
     "install_fake_quant",
     "load_adapter",
+    "load_quantized_model",
     "push_to_hub",
     "save_arm_state",
     "verify_base_checkpoint",
     "write_model_card",
 ]
 
-#: What a push uploads: the state and its card, nothing else that lands in the directory.
-PUSHED_FILES = (MANIFEST_NAME, TENSORS_NAME, "README.md")
+def load_quantized_model(directory: Any) -> QuantState:
+    """The quant state of a quantized checkpoint."""
+    if not is_quantized_checkpoint(directory):
+        raise ValueError(f"{directory} is not a FoldQuant quantized checkpoint (no {MANIFEST_NAME} in the packed format)")
+    return load_quantized_checkpoint(directory)
+
+
+class _ModelOptHandle:
+    """A restored ModelOpt tower stays quantized: its weights are the smoothed ones the
+    checkpoint holds, so there is no float arm of it to go back to."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def remove(self) -> None:
+        logger.info("%s: ModelOpt quantizers stay in place (the checkpoint holds the smoothed weights)", self.name)
+
+
+def _install_modelopt(name: str, module: Any, ms: ModuleQuantState) -> _ModelOptHandle:
+    from .modelopt_int8 import restore_quantizers
+
+    restore_quantizers(module, ms.config["modelopt_state"], ms.tensor_group("modelopt"))
+    return _ModelOptHandle(name)
 
 #: The export manifest every family writes beside its graphs (``build_engines`` and
 #: the runtimes read the plugin libraries off it).
@@ -92,12 +124,7 @@ class FakeQuantHandle:
 
 #: The row order each LLM site's weights are concatenated in by the emitter
 #: (``llm._emit_layer``): the order its recorded codes are in.
-_LLM_SITES = {
-    "qkv": ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"),
-    "o": ("self_attn.o_proj",),
-    "gateup": ("mlp.gate_proj", "mlp.up_proj"),
-    "down": ("mlp.down_proj",),
-}
+_LLM_SITES = LLM_SITES
 
 
 def install_llm_fake_quant(module: Any, ms: ModuleQuantState) -> Any:
@@ -126,7 +153,10 @@ def install_llm_fake_quant(module: Any, ms: ModuleQuantState) -> Any:
     bits = int(cfg["bits"])
     rot_bs = int(cfg["rot_bs"])
     site_bits = dict(cfg.get("site_bits") or {})
-    act_bits = cfg.get("act_bits")
+    # The emitter's width rule (foldquant.llm, _width): a site kept at 8 bit is the W8A8
+    # plugin pair, 8-bit activations whatever the arm's act_bits; a 4-bit site quantizes its
+    # activations to act_bits (8 for a W4A8 fold, else 4).
+    arm_act_bits = int(cfg.get("act_bits") or bits)
     act_clip = cfg.get("act_clip", 1.0)
     sq = ms.tensor_group("sq")
     decoder = resolve_qwen3_decoder(module)
@@ -147,7 +177,7 @@ def install_llm_fake_quant(module: Any, ms: ModuleQuantState) -> Any:
             s_pre = {"qkv": s_qkv, "gateup": s_gu}
             for site, names in _LLM_SITES.items():
                 w_bits = int(site_bits.get(site, bits))
-                a_bits = int(act_bits) if act_bits is not None else w_bits
+                a_bits = 8 if (w_bits == 8 or arm_act_bits == 8) else 4
                 clip = float(act_clip.get(f"L{i}_{site}", 1.0)) if isinstance(act_clip, dict) else float(act_clip)
                 clip = clip if a_bits == 4 else 1.0
                 entries = ms.gptq.get(f"llm.L{i}_{site}") or ms.gptq.get(f"llm.rtn.L{i}_{site}")
@@ -209,7 +239,9 @@ def install_fake_quant(modules: Mapping[str, Any], state: QuantState) -> FakeQua
         for name, ms in state.modules.items():
             if name not in modules:
                 raise KeyError(f"quant state covers {name!r}, which was not passed in")
-            if name == "llm":
+            if ms.scheme in schemes.MODELOPT_SCHEMES:
+                handles.append(_install_modelopt(name, modules[name], ms))
+            elif name == "llm":
                 handles.append(install_llm_fake_quant(modules[name], ms))
             elif name == "dit":
                 from .dit_fake_quant import install_dit_fake_quant
@@ -239,6 +271,8 @@ def verify_base_checkpoint(state: QuantState, checkpoint: Any) -> None:
     """
     from .eval_protocol import artifact_digest, file_hashes
 
+    if is_quantized_checkpoint(checkpoint):
+        return  # the codes are in the checkpoint itself; there is no separate base to match
     recorded = (state.manifest.get("base") or {}).get("file_hashes")
     if recorded:
         root = Path(checkpoint)
@@ -270,37 +304,33 @@ def verify_base_checkpoint(state: QuantState, checkpoint: Any) -> None:
 
 
 def write_model_card(directory: Any, state: QuantState, *, repo_id: Optional[str] = None) -> Path:
-    """A ``README.md`` for the Hub: what the arm is, what it needs, how to use it."""
+    """A ``README.md`` for the Hub: what the checkpoint is, what it needs, how to use it."""
     m = state.manifest
     base = m.get("base") or {}
-    bundled = bool(base.get("bundled"))
     mods = {k: v.scheme for k, v in state.modules.items()}
     family = m.get("family", "?")
+    n_proj = (m.get("weights") or {}).get("quantized_projections")
     lines = [
         "---",
         "library_name: foldquant",
-        "tags: [foldquant, quantization, vision-language-action, fake-quant]",
+        "tags: [foldquant, quantization, vision-language-action]",
         *( [f"base_model: {base['model_id']}"] if base.get("model_id") and "/" in str(base.get("model_id")) else [] ),
         "---",
         "",
-        f"# FoldQuant fake-quant state: {family} {' / '.join(f'{k} {v}' for k, v in mods.items())}",
+        f"# FoldQuant quantized checkpoint: {family} {' / '.join(f'{k} {v}' for k, v in mods.items())}",
         "",
-        *(
-            [
-                "A self-contained FoldQuant fake-quant model: the base checkpoint's files plus the quant state",
-                "(SmoothQuant scales, fold settings and the integer weight codes) of the modules listed below.",
-                "Load it like the base checkpoint to run the quantized policy in PyTorch",
-            ]
-            if bundled
-            else [
-                "This repository holds the calibration result of a FoldQuant arm, not model weights:",
-                "SmoothQuant scales, fold settings and the integer weight codes, for the modules listed below.",
-                "Apply it to the base checkpoint it was calibrated on to run the quantized policy in PyTorch",
-            ]
-        ),
-        "(fake-quant: the engine's own weight codes, scales and activation transforms, computed in fp32),",
-        "or convert it to the FoldQuant plugin ONNX graphs, byte-identical to the calibrating export, and",
-        "build TensorRT engines, with no calibration data.",
+        f"The base checkpoint with {n_proj or 'every'} quantized projection's weight replaced by its integer",
+        "codes (`qweight`, INT8, or INT4 nibble-packed) and per-row scale (`weight_scale`): the bytes the",
+        "TensorRT plugins carry. Everything not quantized (vision tower, encoders, norms, biases) is the",
+        "base's. Each site's activation transform (SmoothQuant vector, rotation) is stored beside them",
+        "as `foldquant.<module>.*` tensors; `foldquant_quant.json` and `hf_quant_config.json` describe it.",
+        "A ModelOpt baseline tower keeps its smoothed weights, its quantizers' scales and the example",
+        "inputs its graph is traced from.",
+        "Load it like the base checkpoint to run the quantized policy in PyTorch",
+        "(fake-quant layers over the engine's own codes, scales and activation transforms, computed in fp32),",
+        "or export the FoldQuant plugin ONNX graphs from it, byte-identical to the ones the quantization built,",
+        "and build TensorRT engines, with no calibration data. The bf16 weights of the quantized projections",
+        "are not in this checkpoint; a bf16 baseline runs from the base checkpoint.",
         "",
         "| module | scheme | params |",
         "|---|---|---|",
@@ -315,30 +345,15 @@ def write_model_card(directory: Any, state: QuantState, *, repo_id: Optional[str
         "With the FoldQuantVLA repository and the family's environment:",
         "",
         "```bash",
-        f"huggingface-cli download {repo_id or '<this repo>'} --local-dir fq_model",
-        *(
-            [
-                "# PyTorch fake-quant policy, e.g. LIBERO or a robot server",
-                "python -m foldquant_integration.eval_libero --protocol p3 --model-path fq_model --output <out>",
-                "# real-quant plugin ONNX graphs, then TensorRT engines on the target device",
-                "python -m foldquant.fakequant convert --fakequant-dir fq_model --output-dir exports/<arm>",
-            ]
-            if bundled
-            else [
-                "# PyTorch fake-quant policy, e.g. LIBERO or a robot server",
-                "python -m foldquant_integration.eval_libero --protocol p3 --model-path <base checkpoint> \\",
-                "    --fakequant-dir fq_model --output <out>",
-                "# real-quant plugin ONNX graphs, then TensorRT engines on the target device",
-                "python -m foldquant.fakequant convert --fakequant-dir fq_model \\",
-                "    --model-path <base checkpoint> --output-dir exports/<arm>",
-            ]
-        ),
+        f"huggingface-cli download {repo_id or '<this repo>'} --local-dir quantized",
+        "# PyTorch fake-quant policy, e.g. LIBERO or a robot server",
+        "python -m foldquant_integration.eval_libero --protocol p3 --model-path quantized --output <out>",
+        "# real-quant plugin ONNX graphs, then TensorRT engines on the target device",
+        "python -m foldquant_integration.export --model-path quantized --output-dir exports/<arm>/onnx",
+        "python -m foldquant_integration.build_engines --onnx-dir exports/<arm>/onnx --engine-dir exports/<arm>/engines",
         "```",
         "",
-        "The base checkpoint is checked against the recorded digest before anything is applied.",
-        "Its license governs any use of this state together with it.",
-        "",
-        f"Files: `{MANIFEST_NAME}` (settings), `{TENSORS_NAME}` (scales and codes).",
+        "The base checkpoint's license governs any use of these weights.",
         "",
     ]
     path = Path(directory) / "README.md"
@@ -346,79 +361,30 @@ def write_model_card(directory: Any, state: QuantState, *, repo_id: Optional[str
     return path
 
 
-def is_fakequant_model(path: Any) -> bool:
-    """True when *path* is a directory holding a FoldQuant quant state."""
-    return path is not None and (Path(path) / MANIFEST_NAME).is_file()
+def is_quantized_model(path: Any) -> bool:
+    """True when *path* is a FoldQuant quantized checkpoint."""
+    return is_quantized_checkpoint(path)
 
 
-def fakequant_arm(model_path: Any, fakequant_dir: Optional[str], *, no_fakequant: bool = False, other_arms: Any = ()) -> Optional[str]:
-    """The fake-quant state a family tool should run: *fakequant_dir* if given, else *model_path*
+def quantized_arm(model_path: Any, quantized_model: Optional[str], *, no_fakequant: bool = False, other_arms: Any = ()) -> Optional[str]:
+    """The fake-quant state a family tool should run: *quantized_model* if given, else *model_path*
     when it is a fake-quant model and no other arm (engines, a baseline pack) was asked for."""
-    if fakequant_dir or no_fakequant or any(other_arms):
-        return fakequant_dir
-    if is_fakequant_model(model_path):
+    if no_fakequant and is_quantized_checkpoint(model_path):
+        raise SystemExit(
+            f"{model_path} is a quantized checkpoint: its quantized projections hold codes, not bf16 weights, "
+            "so there is no bf16 arm in it. Pass the base checkpoint for the bf16 baseline."
+        )
+    if quantized_model or no_fakequant or any(other_arms):
+        return quantized_model
+    if is_quantized_model(model_path):
         logger.info("%s is a FoldQuant fake-quant model; running it fake-quantized (--no-fakequant for bf16)", model_path)
         return str(model_path)
     return None
 
 
-def _base(state: QuantState) -> Dict[str, Any]:
-    return state.manifest.get("base") or {}
-
-
-def bundle_base(directory: Any, model_path: Any, *, copy: bool = False) -> Dict[str, Any]:
-    """Put the base checkpoint's files into a state directory: the self-contained fake-quant model.
-
-    Every file the state recorded for the base (weights, index, configs) is
-    linked (or, with ``copy``, copied) under the same relative path, in real
-    sub-directories, so the directory loads as the base checkpoint, uploads
-    with its weights (the Hub client reads through file links, not directory
-    links) and converts with no other path. The files are checked against the
-    recorded hashes first.
-    """
-    import os
-    import shutil
-
-    directory = Path(directory)
-    state = load_state(directory)
-    verify_base_checkpoint(state, model_path)
-    src_root = Path(model_path).expanduser().resolve()
-    ours = {MANIFEST_NAME, TENSORS_NAME, "README.md"}
-    names = sorted(_base(state).get("file_hashes") or {})
-    clash = sorted(set(names) & ours)
-    if clash:
-        raise ValueError(f"the base checkpoint has files named like the quant state's: {clash}")
-    total = 0
-    for rel in names:
-        src = (src_root / rel).resolve()
-        dst = directory / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if dst.is_symlink() or dst.exists():
-            dst.unlink()
-        if copy:
-            shutil.copy2(src, dst)
-        else:
-            os.symlink(src, dst)
-        total += src.stat().st_size
-    manifest_path = directory / MANIFEST_NAME
-    data = json.loads(manifest_path.read_text())
-    data.setdefault("base", {})["bundled"] = "copy" if copy else "link"
-    manifest_path.write_text(json.dumps(data, indent=2))
-    write_model_card(directory, load_state(directory))
-    logger.info("bundled %d base files (%.1f GB, %s) into %s", len(names), total / 1e9, "copied" if copy else "linked", directory)
-    return {"files": len(names), "bytes": total, "mode": "copy" if copy else "link"}
-
-
-def resolve_model_path(state: QuantState, fakequant_dir: Any, model_path: Optional[str]) -> str:
+def resolve_model_path(state: QuantState, quantized_model: Any, model_path: Optional[str]) -> str:
     """The base checkpoint to load: *model_path*, else the fake-quant model directory itself."""
-    if model_path:
-        return str(model_path)
-    if _base(state).get("bundled"):
-        return str(fakequant_dir)
-    raise SystemExit(
-        f"{fakequant_dir} holds the quant state only; pass --model-path <base checkpoint>, or make it a "
-        "self-contained model with `python -m foldquant.fakequant bundle`"
-    )
+    return str(model_path) if model_path else str(quantized_model)
 
 
 def push_to_hub(
@@ -429,29 +395,19 @@ def push_to_hub(
     dry_run: bool = False,
     token: Optional[str] = None,
     commit_message: Optional[str] = None,
-    state_only: bool = False,
 ) -> Dict[str, Any]:
-    """Upload a fake-quant model to a Hugging Face model repo (private by default).
+    """Upload a quantized checkpoint to a Hugging Face model repo (private by default).
 
-    A self-contained model uploads its base files too (read through their
-    links); ``state_only`` uploads the quant state alone. Nothing else in the
-    directory is uploaded. ``dry_run`` lists the files without contacting the Hub.
+    Every file of the checkpoint goes (hidden files excluded). ``dry_run`` lists
+    the files without contacting the Hub.
     """
     src = Path(directory)
-    for required in (MANIFEST_NAME, TENSORS_NAME):
-        if not (src / required).is_file():
-            raise FileNotFoundError(f"{src} holds no {required}; not a quant-state directory")
-    names = list(PUSHED_FILES)
-    state = load_state(src)
-    if _base(state).get("bundled") and not state_only:
-        names += sorted(_base(state).get("file_hashes") or {})
-    missing = [n for n in names if n not in PUSHED_FILES and not (src / n).is_file()]
-    if missing:
-        raise FileNotFoundError(f"{src}: bundled base files missing {missing[:3]}; rerun `bundle`")
-    files = sorted(p for p in (src / n for n in names) if p.is_file())
+    if not is_quantized_checkpoint(src):
+        raise FileNotFoundError(f"{src} is not a FoldQuant quantized checkpoint")
+    files = sorted(p for p in src.rglob("*") if p.is_file() and not any(x.startswith(".") for x in p.relative_to(src).parts))
     listing = [{"path": p.relative_to(src).as_posix(), "bytes": p.stat().st_size} for p in files]
     report: Dict[str, Any] = {"repo_id": repo_id, "private": private, "files": listing, "dry_run": dry_run,
-                              "self_contained": bool(_base(state).get("bundled")) and not state_only}
+                              "self_contained": True}
     if dry_run:
         return report
     from huggingface_hub import HfApi
@@ -463,7 +419,7 @@ def push_to_hub(
         repo_id=repo_id,
         repo_type="model",
         allow_patterns=[f["path"] for f in listing],
-        commit_message=commit_message or "Upload FoldQuant fake-quant model",
+        commit_message=commit_message or "Upload FoldQuant quantized checkpoint",
     )
     report["commit"] = getattr(info, "oid", None) or str(info)
     return report
@@ -478,32 +434,37 @@ def save_arm_state(
     family: str,
     model_path: str,
     results: List[Any],
+    modules: Mapping[str, Any],
+    checkpoint_root: Any,
     export_manifest: Dict[str, Any],
     extra_files: Optional[Dict[str, Any]] = None,
     base_model_id: Optional[str] = None,
     embodiment_tag: Optional[str] = None,
     load_kwargs: Optional[Dict[str, Any]] = None,
-    bundle: bool = True,
-    copy_base: bool = False,
 ) -> Path:
-    """Write the fake-quant model of an export that ran with ``record=True``.
+    """Write the quantized checkpoint of an export that ran with ``record=True``.
 
-    With ``bundle`` (the default) the directory is self-contained: the base
-    checkpoint's files are linked into it (copied with ``copy_base``), see
-    :func:`bundle_base`. Without it only the quant state is written.
+    *modules* are the live modules the export quantized (the adapter's
+    ``module_paths``) and *checkpoint_root* the module whose parameter names are
+    the checkpoint's tensor keys (the adapter's ``checkpoint_root``); together
+    they say which checkpoint tensors each recorded pack replaces. The base
+    checkpoint at *model_path* is streamed into *directory* with those tensors
+    swapped for codes and scales (:func:`foldquant.quantized_checkpoint.write_quantized_checkpoint`).
 
     ``base_model_id`` names the base checkpoint where others can get it (a Hub
     ``org/name``, optionally ``@revision``); it defaults to the path's basename.
     ``embodiment_tag`` / ``load_kwargs`` are what the family adapter's
     ``load_policy`` needs to rebuild the same policy (a data config, a train
-    config name); both default to what the export manifest says.
-    The digest of every graph the export wrote is recorded, and
-    :func:`export_onnx` refuses to finish when its rebuild differs.
+    config name); both default to what the export manifest says. The digest of
+    every graph the export built is recorded, and :func:`export_onnx` refuses to
+    finish when its rebuild differs.
 
     *export_manifest* is the family's ``foldquant_export.json`` content;
     *extra_files* are other JSON files the family writes beside its graphs
     (``{"export_metadata.json": {...}}``), rewritten verbatim by :func:`export_onnx`.
     """
+    import torch
+
     from .eval_protocol import file_hashes
     from .provenance import public_path
 
@@ -522,8 +483,8 @@ def save_arm_state(
                 "files": base["files"],
                 "file_hashes": hashes,
             },
-            "graphs": {r.module: _graph_digest(r.onnx_path) for r in results if r.state is not None},
-            "graph_digest": "content",
+            "graphs": {r.module: r.graph_digest for r in results if r.state is not None},
+            "graph_digest": "inline",
             "embodiment_tag": embodiment_tag if embodiment_tag is not None else export_manifest.get("embodiment_tag"),
             "load_kwargs": dict(load_kwargs or {}),
             "dataset_path": export_manifest.get("dataset_path"),
@@ -534,55 +495,54 @@ def save_arm_state(
         },
         modules={r.module: r.state for r in results if r.state is not None},
     )
-    save_state(state, directory)
-    write_model_card(directory, state)
-    if bundle:
-        bundle_base(directory, model_path, copy=copy_base)
-    logger.info(
-        "wrote fake-quant %s %s (%s)", "model" if bundle else "state", directory,
-        ", ".join(f"{k} {v.scheme}" for k, v in state.modules.items()),
-    )
+    sites = site_tables(modules, state, checkpoint_root)
+    # A ModelOpt tower's calibration rescales the weights of the linears it quantizes
+    # (SmoothQuant and AWQ both fold their scale into the weight): the checkpoint holds
+    # those as they are now. Nothing else in the tower changes, and a tied weight (Gemma's
+    # embeddings, stored under the lm_head name) must keep the base checkpoint's layout.
+    names = {id(p): n for n, p in checkpoint_root.named_parameters()}
+    overrides: Dict[str, Any] = {}
+    for name, ms in state.modules.items():
+        if ms.scheme in schemes.MODELOPT_SCHEMES:
+            for rel, sub in modules[name].named_modules():
+                p = getattr(sub, "weight", None)
+                if not hasattr(sub, "weight_quantizer") or not isinstance(p, torch.nn.Parameter):
+                    continue
+                if id(p) not in names:
+                    raise ValueError(f"{rel}.weight of the {name} module is not a parameter of the checkpoint root")
+                overrides[names[id(p)]] = p
+    write_quantized_checkpoint(directory, base_dir=model_path, state=state, sites=sites, overrides=overrides)
+    write_model_card(directory, load_quantized_checkpoint(directory))
     return Path(directory)
-
-
-def _graph_digest(onnx_path: Any) -> str:
-    """SHA-256 over a graph's content (nodes, attributes, initializers, I/O, opsets) and
-    its external-data sidecars, not the file header: ``ir_version`` and the producer
-    fields an ``onnx`` release stamps would otherwise refuse a correct conversion."""
-    import hashlib
-
-    import onnx
-
-    path = Path(onnx_path)
-    model = onnx.load(str(path), load_external_data=False)
-    h = hashlib.sha256()
-    h.update(model.graph.SerializeToString(deterministic=True))
-    for op in sorted((o.domain, o.version) for o in model.opset_import):
-        h.update(repr(op).encode())
-    for f in sorted(p for p in path.parent.glob(path.name + ".*") if p.is_file()):
-        h.update(f.name.replace(path.name, "", 1).encode() + b"\0")
-        with f.open("rb") as fh:
-            for chunk in iter(lambda: fh.read(8 << 20), b""):
-                h.update(chunk)
-    return h.hexdigest()
 
 
 class GraphMismatchError(RuntimeError):
     """A graph rebuilt from a quant state differs from the one its calibrating export wrote."""
 
 
-def export_onnx(state: QuantState, modules: Mapping[str, Any], output_dir: Any, *, source: Any = None) -> Path:
-    """Write the real-quant plugin graphs of *state* to ``<output_dir>/onnx``.
+def export_onnx(
+    state: QuantState,
+    modules: Mapping[str, Any],
+    output_dir: Any,
+    *,
+    source: Any = None,
+    adapter: Any = None,
+    policy: Any = None,
+) -> Path:
+    """Write the real-quant plugin graphs of *state* to *output_dir*.
 
     Each module's graph is emitted from its state (no calibration data, no GPTQ
     solve), under the file name the calibrating export used, together with the
-    export manifest and the family's other JSON files.
+    export manifest and the family's other JSON files. A ModelOpt tower is
+    traced by the family *adapter* (``export_modelopt_graph``) from the example
+    inputs the checkpoint recorded, after its quantizers are restored on the
+    live module.
     """
     from .eval_protocol import artifact_digest
     from .export import export_module
     from .provenance import public_path
 
-    out = Path(output_dir) / "onnx"
+    out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     manifest = dict(state.manifest.get("export_manifest") or {})
     files = manifest.get("files") or {}
@@ -594,9 +554,20 @@ def export_onnx(state: QuantState, modules: Mapping[str, Any], output_dir: Any, 
         if name == "llm" and ms.config.get("max_seq_len"):
             kwargs["max_seq_len"] = int(ms.config["max_seq_len"])
         path = out / files.get(name, f"{name}.onnx")
-        results.append(export_module(name, modules[name], path, scheme=ms.scheme, state=ms, **kwargs))
-        want = (state.manifest.get("graphs") or {}).get(name) if state.manifest.get("graph_digest") == "content" else None
-        if want is not None and _graph_digest(path) != want:
+        if ms.scheme in schemes.MODELOPT_SCHEMES:
+            if adapter is None:
+                raise ValueError(f"{name} is a {ms.scheme} tower; exporting it needs the family adapter and policy")
+            _install_modelopt(name, modules[name], ms)
+            result, record = adapter.export_modelopt_graph(name, policy, modules[name], path, ms)
+            manifest.setdefault("modelopt", {})[name] = {**(ms.config.get("modelopt") or {}), **record}
+            results.append(result)
+            continue
+        result = export_module(name, modules[name], path, scheme=ms.scheme, state=ms, **kwargs)
+        results.append(result)
+        # The digest of the graph in memory (foldquant.onnx_io.graph_digest), as recorded.
+        want = (state.manifest.get("graphs") or {}).get(name)
+        got = result.graph_digest
+        if want is not None and got != want:
             raise GraphMismatchError(
                 f"{path.name} rebuilt from the quant state differs from the graph the calibrating export "
                 "wrote. The weights, the FoldQuant version or the numerical libraries differ from the "
@@ -614,7 +585,7 @@ def export_onnx(state: QuantState, modules: Mapping[str, Any], output_dir: Any, 
     if state.manifest.get("family"):
         manifest["family"] = state.manifest["family"]
     if source is not None:
-        manifest["from_quant_state"] = {
+        manifest["from_quantized_model"] = {
             "path": public_path(str(source)),
             "digest": (artifact_digest(source) or {}).get("digest"),
         }
@@ -624,18 +595,18 @@ def export_onnx(state: QuantState, modules: Mapping[str, Any], output_dir: Any, 
 
 
 def load_adapter(family: Optional[str] = None) -> Any:
-    """The active family's adapter, ``foldquant_integration.fakequant``.
+    """The active family's adapter, ``foldquant_integration.quantized``.
 
     Raises:
         ImportError: no family integration is importable (run from ``models/<family>``).
         ValueError: the importable integration is not *family*.
     """
     try:
-        adapter = importlib.import_module("foldquant_integration.fakequant")
+        adapter = importlib.import_module("foldquant_integration.quantized")
     except ImportError as exc:
         raise ImportError(
             "no family adapter importable: run inside a model family's environment with "
-            "models/<family> on PYTHONPATH (it provides foldquant_integration.fakequant)"
+            "models/<family> on PYTHONPATH (it provides foldquant_integration.quantized)"
         ) from exc
     have = getattr(adapter, "FAMILY", None)
     if family is not None and have != family:
@@ -643,14 +614,14 @@ def load_adapter(family: Optional[str] = None) -> Any:
     return adapter
 
 
-def install_on_policy(policy: Any, fakequant_dir: Any, model_path: Optional[str] = None, *, check_checkpoint: bool = True) -> Any:
+def install_on_policy(policy: Any, quantized_model: Any, model_path: Optional[str] = None, *, check_checkpoint: bool = True) -> Any:
     """Load a state, check the checkpoint *policy* came from, install the fake-quant: ``(handle, state)``."""
-    state = load_state(fakequant_dir)
+    state = load_quantized_model(quantized_model)
     adapter = load_adapter(state.manifest.get("family"))
     if check_checkpoint:
-        verify_base_checkpoint(state, resolve_model_path(state, fakequant_dir, model_path))
+        verify_base_checkpoint(state, resolve_model_path(state, quantized_model, model_path))
     handle = install_fake_quant(adapter.module_paths(policy), state)
-    logger.info("fake-quant arm from %s: %s", fakequant_dir, ", ".join(f"{k} {v.scheme}" for k, v in state.modules.items()))
+    logger.info("fake-quant arm from %s: %s", quantized_model, ", ".join(f"{k} {v.scheme}" for k, v in state.modules.items()))
     return handle, state
 
 
@@ -659,60 +630,44 @@ def install_on_policy(policy: Any, fakequant_dir: Any, model_path: Optional[str]
 
 @dataclass
 class Info:
-    """Print what a quant-state directory holds."""
+    """Print what a quantized checkpoint holds."""
 
-    fakequant_dir: str
-
-
-@dataclass
-class Bundle:
-    """Make a state-only directory a self-contained fake-quant model (link or copy the base files in)."""
-
-    fakequant_dir: str
-    model_path: str
-    """The base checkpoint the state was calibrated on (its files are checked first)."""
-    copy: bool = False
-    """Copy the base files instead of linking them (needed to move the directory elsewhere)."""
+    quantized_model: str
 
 
 @dataclass
 class Push:
     """Upload a fake-quant model to a Hugging Face model repo."""
 
-    fakequant_dir: str
+    quantized_model: str
     repo_id: str
     public: bool = False
     """Create the repo public; private by default."""
     dry_run: bool = False
     """List what would be uploaded, without contacting the Hub."""
-    state_only: bool = False
-    """Upload the quant state without the base checkpoint's files."""
     token: Optional[str] = None
 
 
 @dataclass
 class ToOnnx:
-    """Fake-quant state -> real-quant plugin ONNX in ``<output_dir>/onnx`` (no dataset, no GPTQ)."""
+    """Fake-quant state -> real-quant plugin ONNX in ``output_dir`` (no dataset, no GPTQ)."""
 
-    fakequant_dir: str
+    quantized_model: str
     output_dir: str
-    model_path: Optional[str] = None
-    """The base checkpoint, for a state saved without it; a self-contained model is its own."""
+    """Where the graphs and manifests are written."""
     embodiment_tag: Optional[str] = None
-    """Defaults to the tag the state was calibrated with."""
+    """Defaults to the tag the model was quantized with."""
     device: str = "cuda"
-    skip_checkpoint_check: bool = False
 
 
 @dataclass
 class Build:
-    """``<output_dir>/onnx`` -> TensorRT engines in ``<output_dir>/engines``, by the family's builder."""
+    """ONNX graphs -> TensorRT engines, by the family's builder."""
 
-    output_dir: str
-    float_onnx_dir: Optional[str] = None
-    """Float graphs of the components FoldQuant does not replace (GR00T N1.7: upstream's export)."""
-    float_engine_dir: Optional[str] = None
-    """Or their already-built engines, copied."""
+    onnx_dir: str
+    """The directory ``to-onnx`` / ``export`` wrote."""
+    engine_dir: str
+    """Destination engine directory."""
     max_batch: int = 1
     """Batch bound of every optimization profile; 1 for a single-robot deployment."""
     workspace_mb: int = 8192
@@ -720,16 +675,16 @@ class Build:
 
 @dataclass
 class Convert(ToOnnx):
-    """``to-onnx`` then ``build``: fake-quant state -> real-quant ONNX -> TensorRT engines."""
+    """``to-onnx`` then ``build``: fake-quant state -> real-quant ONNX in ``output_dir`` -> TensorRT
+    engines in ``engine_dir``."""
 
-    float_onnx_dir: Optional[str] = None
-    float_engine_dir: Optional[str] = None
+    engine_dir: str = ""
     max_batch: int = 1
     workspace_mb: int = 8192
 
 
 def info(args: Info) -> Dict[str, Any]:
-    state = load_state(args.fakequant_dir)
+    state = load_quantized_model(args.quantized_model)
     summary = {
         "family": state.manifest.get("family"),
         "base": state.manifest.get("base"),
@@ -745,18 +700,11 @@ def info(args: Info) -> Dict[str, Any]:
     return summary
 
 
-def bundle(args: Bundle) -> Dict[str, Any]:
-    return bundle_base(args.fakequant_dir, args.model_path, copy=args.copy)
-
-
 def push(args: Push) -> Dict[str, Any]:
-    state = load_state(args.fakequant_dir)
+    state = load_quantized_model(args.quantized_model)
     if not args.dry_run:
-        write_model_card(args.fakequant_dir, state, repo_id=args.repo_id)  # names this repo in its commands
-    report = push_to_hub(
-        args.fakequant_dir, args.repo_id, private=not args.public, dry_run=args.dry_run, token=args.token,
-        state_only=args.state_only,
-    )
+        write_model_card(args.quantized_model, state, repo_id=args.repo_id)  # names this repo in its commands
+    report = push_to_hub(args.quantized_model, args.repo_id, private=not args.public, dry_run=args.dry_run, token=args.token)
     size = sum(f["bytes"] for f in report["files"])
     logger.info(
         "%s %d files (%.1f MB) to %s (%s)", "would upload" if args.dry_run else "uploaded", len(report["files"]),
@@ -766,29 +714,33 @@ def push(args: Push) -> Dict[str, Any]:
 
 
 def to_onnx(args: ToOnnx) -> Path:
-    state = load_state(args.fakequant_dir)
+    state = load_quantized_model(args.quantized_model)
     adapter = load_adapter(state.manifest.get("family"))
-    model_path = resolve_model_path(state, args.fakequant_dir, args.model_path)
-    if not args.skip_checkpoint_check:
-        verify_base_checkpoint(state, model_path)
+    # The quantized model is self-contained: the policy is loaded from it, never from the base.
     policy = adapter.load_policy(
-        model_path,
+        str(args.quantized_model),
         args.embodiment_tag or state.manifest.get("embodiment_tag"),
         args.device,
         **(state.manifest.get("load_kwargs") or {}),
     )
-    return export_onnx(state, adapter.module_paths(policy), args.output_dir, source=args.fakequant_dir)
+    out = export_onnx(state, adapter.module_paths(policy), args.output_dir, source=args.quantized_model,
+                      adapter=adapter, policy=policy)
+    # A family whose engine set also holds float components (GR00T N1.7's ViT, encoders and
+    # decoder) exports them here too, so one directory carries everything build needs.
+    complete = getattr(adapter, "complete_onnx", None)
+    if complete is not None:
+        complete(policy, out, state)
+    return out
 
 
 def build(args: Union[Build, Convert]) -> Path:
-    onnx_dir = Path(args.output_dir) / "onnx"
+    onnx_dir = Path(args.onnx_dir if isinstance(args, Build) else args.output_dir)
     manifest = json.loads((onnx_dir / EXPORT_MANIFEST_NAME).read_text())
     adapter = load_adapter(manifest.get("family"))
-    engine_dir = Path(args.output_dir) / "engines"
-    adapter.build_engines(
-        onnx_dir, engine_dir, float_onnx_dir=args.float_onnx_dir, float_engine_dir=args.float_engine_dir,
-        max_batch=args.max_batch, workspace_mb=args.workspace_mb,
-    )
+    if not args.engine_dir:
+        raise SystemExit("--engine-dir is required")
+    engine_dir = Path(args.engine_dir)
+    adapter.build_engines(onnx_dir, engine_dir, max_batch=args.max_batch, workspace_mb=args.workspace_mb)
     logger.info("engines in %s", engine_dir)
     return engine_dir
 
@@ -803,9 +755,9 @@ def main(argv: Optional[List[str]] = None) -> Any:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     cmd = tyro.extras.subcommand_cli_from_dict(
-        {"info": Info, "bundle": Bundle, "push": Push, "to-onnx": ToOnnx, "build": Build, "convert": Convert}, args=argv
+        {"info": Info, "push": Push, "to-onnx": ToOnnx, "build": Build, "convert": Convert}, args=argv
     )
-    handlers = {Info: info, Bundle: bundle, Push: push, ToOnnx: to_onnx, Build: build, Convert: convert}
+    handlers = {Info: info, Push: push, ToOnnx: to_onnx, Build: build, Convert: convert}
     return handlers[type(cmd)](cmd)
 
 

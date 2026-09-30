@@ -62,7 +62,7 @@ class ServeConfig:
     engine_dir: Optional[str] = None
     """FoldQuant engine directory; omit to serve the bf16 PyTorch policy."""
 
-    fakequant_dir: Optional[str] = None
+    quantized_model: Optional[str] = None
     """FoldQuant fake-quant state for ``--model-path`` (a state saved without the base files); a
     self-contained fake-quant model given as ``--model-path`` is detected by itself. Mutually
     exclusive with ``--engine-dir``."""
@@ -82,23 +82,23 @@ class ServeConfig:
 
 def main(args: ServeConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    from foldquant.fakequant import fakequant_arm, install_on_policy
+    from foldquant.quantized import quantized_arm, install_on_policy
 
-    args.fakequant_dir = fakequant_arm(
-        args.model_path, args.fakequant_dir, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
+    args.quantized_model = quantized_arm(
+        args.model_path, args.quantized_model, no_fakequant=args.no_fakequant, other_arms=(args.engine_dir,)
     )
-    if args.engine_dir and args.fakequant_dir:
-        raise ValueError("--engine-dir and --fakequant-dir are mutually exclusive")
+    if args.engine_dir and args.quantized_model:
+        raise ValueError("--engine-dir and --quantized-model are mutually exclusive")
     policy = calibration.load_policy(args.model_path, args.embodiment_tag, args.device)
 
     installed = None
     if args.engine_dir:
         installed = install_engines(policy, args.engine_dir)
         logger.info("serving with FoldQuant engines: %s", ", ".join(sorted(installed.engines)))
-    elif args.fakequant_dir:
-        install_on_policy(policy, args.fakequant_dir, args.model_path)
+    elif args.quantized_model:
+        install_on_policy(policy, args.quantized_model, args.model_path)
         logger.info("serving the FAKE-QUANT arm from %s (PyTorch arithmetic of the engines; not a latency arm)",
-                    args.fakequant_dir)
+                    args.quantized_model)
     else:
         logger.info("serving the bf16 PyTorch policy")
     logger.info(

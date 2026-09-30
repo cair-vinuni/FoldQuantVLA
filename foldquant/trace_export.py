@@ -1,9 +1,12 @@
-"""Export unquantized modules with the same bindings as quantized engines.
+"""Trace a live module to ONNX under an engine's binding names.
 
-A forward pre-hook captures a real call during calibration replay, preserving
-its shapes, dtypes, and non-tensor kwargs. Each family maps engine binding
-names to module keywords, matching its runtime adapter. The resulting graph
-uses the common engine build and installation path with no plugin libraries.
+Two users. The all-float baseline: ``export`` on an unquantized checkpoint
+captures one real call into each tower during a policy forward
+(:func:`trace_module`) and traces the module on it. The ModelOpt baselines:
+``quantize`` records one call (:func:`record_trace`, tensors and JSON scalars,
+stored in the quantized checkpoint) and ``export`` traces the quantized live
+module from it (:func:`export_with_example`). Each :class:`Binding` maps an
+engine input to the module keyword it feeds.
 """
 
 from __future__ import annotations
@@ -17,13 +20,9 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence
 import torch
 import torch.nn as nn
 
-from .export import ExportResult, ForwardLoop
+from .quant_state import ModuleQuantState
 
 logger = logging.getLogger(__name__)
-
-FLOAT = "float"
-"""Scheme key for the unquantized engine. ``none`` keeps the module in PyTorch instead."""
-
 
 @dataclass(frozen=True)
 class Binding:
@@ -48,21 +47,15 @@ class Binding:
     transform: Optional[Callable[[torch.Tensor, Dict[str, Any]], torch.Tensor]] = None
 
 
-@dataclass
-class CapturedCall:
-    args: tuple
-    kwargs: Dict[str, Any]
-
-
-def capture_call(module: nn.Module, forward_loop: ForwardLoop) -> CapturedCall:
-    """Run ``forward_loop`` until *module* is called once; return that call's arguments."""
-    seen: List[CapturedCall] = []
+def capture_call(module: nn.Module, forward_loop: Callable[[Any], None]) -> Dict[str, Any]:
+    """Run *forward_loop* until *module* is called once; that call's arguments as keywords."""
+    seen: List[tuple] = []
 
     class _Stop(Exception):
         pass
 
     def hook(_m: nn.Module, args: tuple, kwargs: Dict[str, Any]) -> None:
-        seen.append(CapturedCall(args, dict(kwargs)))
+        seen.append((args, dict(kwargs)))
         raise _Stop()
 
     handle = module.register_forward_pre_hook(hook, with_kwargs=True)
@@ -76,7 +69,7 @@ def capture_call(module: nn.Module, forward_loop: ForwardLoop) -> CapturedCall:
         handle.remove()
     if not seen:
         raise RuntimeError(f"forward_loop never called {type(module).__name__}; cannot capture example inputs.")
-    return seen[0]
+    return call_kwargs(module, *seen[0])
 
 
 @contextmanager
@@ -102,39 +95,23 @@ def eager_attention(module: nn.Module) -> Iterator[None]:
             cfg._attn_implementation = impl
 
 
-def export_module_float(
+def trace_module(
     module: nn.Module,
     onnx_path: Path,
     *,
     module_name: str,
     bindings: Sequence[Binding],
     output_name: str,
-    forward_loop: ForwardLoop,
+    forward_loop: Callable[[Any], None],
     extract: Callable[[Any], torch.Tensor],
     output_dynamic: Optional[Dict[int, str]] = None,
     opset: int = 17,
-) -> ExportResult:
-    """Trace *module* to ONNX under the engine's binding names.
-
-    Args:
-        bindings: engine inputs in binding order; each names the module kwarg it feeds.
-        output_name: the engine's output binding.
-        extract: maps the module's return value to the tensor the engine emits
-            (e.g. ``lambda o: o.hidden_states[-1]`` for a decoder).
-        output_dynamic: dynamic axes of the output, ``{axis: dim_name}``.
-    """
-    call = capture_call(module, forward_loop)
-    kw = dict(call.kwargs)
-    # Positional args are folded into kwargs by the forward signature's parameter names.
-    if call.args:
-        import inspect
-
-        names = [p for p in inspect.signature(module.forward).parameters if p not in ("self",)]
-        for name, val in zip(names, call.args):
-            kw.setdefault(name, val)
+) -> Path:
+    """Trace the unquantized *module* to ONNX on the first call *forward_loop* makes into it
+    (the all-float baseline's graph, under the same bindings as the quantized one)."""
     return export_with_example(
         module, onnx_path, module_name=module_name, bindings=bindings, output_name=output_name,
-        example_kwargs=kw, extract=extract, output_dynamic=output_dynamic, opset=opset,
+        example_kwargs=capture_call(module, forward_loop), extract=extract, output_dynamic=output_dynamic, opset=opset,
     )
 
 
@@ -150,13 +127,17 @@ def export_with_example(
     output_dynamic: Optional[Dict[int, str]] = None,
     opset: int = 17,
     call: Optional[Callable[..., Any]] = None,
-) -> ExportResult:
-    """Like :func:`export_module_float` but with the module's call given explicitly.
+) -> Path:
+    """Trace *module* to ONNX under the engine's binding names, on *example_kwargs*.
 
-    For modules whose deployed step is not their ``forward`` (a head that runs its Euler loop
-    inside a sampling method, with the engine being one step of it), the caller assembles the
-    example kwargs itself and may pass ``call`` (a function taking the same kwargs) in place
-    of ``module(**kwargs)``.
+    Args:
+        bindings: engine inputs in binding order; each names the module kwarg it feeds.
+        output_name: the engine's output binding.
+        extract: maps the module's return value to the tensor the engine emits.
+        output_dynamic: dynamic axes of the output, ``{axis: dim_name}``.
+        call: for modules whose deployed step is not their ``forward`` (a head that runs its
+            Euler loop inside a sampling method, with the engine being one step of it), a
+            function taking the same kwargs, in place of ``module(**kwargs)``.
     """
     kw = dict(example_kwargs)
     fn = call if call is not None else (lambda **k: module(**k))
@@ -226,11 +207,57 @@ def export_with_example(
         module.train(was_training)
     n_fixed = sanitize_onnx(onnx_path)
     logger.info(
-        "Emitted float %s graph at %s (%s)%s",
+        "Traced %s graph at %s (%s)%s",
         module_name, onnx_path, ", ".join(b.engine_name for b in bindings),
         f"; rewrote {n_fixed} TensorRT-unsupported Cast target(s) to FLOAT" if n_fixed else "",
     )
-    return ExportResult(module_name, FLOAT, onnx_path, [])
+    return onnx_path
+
+
+#: Tensor group of a traced tower's state: the example inputs its graph is traced from.
+TRACE_GROUP = "trace"
+_SCALAR_TYPES = (bool, int, float, str, type(None))
+
+
+def call_kwargs(module: nn.Module, args: tuple, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """One call's arguments as keywords (positional ones by the forward signature's names)."""
+    kw = dict(kwargs)
+    if args:
+        import inspect
+
+        names = [p for p in inspect.signature(module.forward).parameters if p not in ("self",)]
+        for name, val in zip(names, args):
+            kw.setdefault(name, val)
+    return kw
+
+
+def record_trace(ms: ModuleQuantState, kwargs: Dict[str, Any]) -> ModuleQuantState:
+    """Store the example call *kwargs* on *ms*: tensors in its ``trace`` group (CPU, their own
+    dtype), JSON scalars under ``config["trace_scalars"]``. Anything else cannot be replayed from
+    a checkpoint and is dropped with a warning."""
+    tensors: Dict[str, Any] = {}
+    scalars: Dict[str, Any] = {}
+    dropped = []
+    for k, v in kwargs.items():
+        if isinstance(v, torch.Tensor):
+            tensors[k] = v.detach().to("cpu").contiguous()
+        elif isinstance(v, _SCALAR_TYPES):
+            scalars[k] = v
+        else:
+            dropped.append(k)
+    if dropped:
+        logger.warning("%s: kwargs %s are not tensors or scalars; the traced graph takes them by default", ms.module, dropped)
+    ms.put_group(TRACE_GROUP, tensors)
+    ms.config["trace_scalars"] = scalars
+    return ms
+
+
+def trace_kwargs(ms: ModuleQuantState, device: Any) -> Dict[str, Any]:
+    """The example call recorded on *ms*, its tensors on *device*."""
+    kw: Dict[str, Any] = dict(ms.config.get("trace_scalars") or {})
+    for k, v in ms.tensor_group(TRACE_GROUP).items():
+        kw[k] = v.to(device)
+    return kw
 
 
 # Cast targets TensorRT's ONNX parser accepts. A traced mask or RoPE helper occasionally

@@ -95,56 +95,20 @@ run_family () {
     [ -z "$a" ] && { note SKIP "a required path is unset (see the header of this script)"; skip=$((skip+1)); return; }
   done
 
-  # GR00T N1.7 and N1.6 quantize two modules of eight; the rest of the pipeline has
-  # to come from a float export, so build_engines refuses without one. The other four
-  # families leave their untouched modules in PyTorch and need no such directory.
-  local float_args=()
-  case "$fam" in
-    groot_n1_7|groot_n1_6)
-      # Only N1.7 accepts --float-engine-dir; N1.6 takes the ONNX directory alone and
-      # builds the untouched components from it. Passing both to N1.6 is rejected.
-      local reuse=0
-      [ "$fam" = groot_n1_7 ] && reuse=1
-      if [ -d "$dir/exports/float/onnx" ]; then
-        float_args=(--float-onnx-dir exports/float/onnx)
-        [ "$reuse" = 1 ] && [ -d "$dir/exports/float/engines" ] && float_args+=(--float-engine-dir exports/float/engines)
-        note ok "float pipeline found, reusing exports/float"
-      else
-        note ..   "building the float pipeline first (needed for the untouched modules)"
-        if [ "$fam" = groot_n1_7 ]; then
-          ( cd "$dir" && PYTHONPATH="$pp" "$venv" scripts/deployment/build_trt_pipeline.py \
-              "${ckpt[@]}" "${data[@]}" "${extra[@]}" --output-dir .smoke_float --steps export,build ) >>"$log" 2>&1 \
-            || { note FAIL "float pipeline: see $log"; fail=$((fail+1)); return; }
-        else
-          # N1.6 ships no build_trt_pipeline.py: its float arm is the DiT alone, from
-          # export_onnx_n1d6.py, which takes argparse underscore flags and writes the
-          # ONNX directory directly (build_engines builds the engine from it).
-          # GR00T_ONNX_EXPORTER_MODE=legacy is required, not optional -- the default
-          # dynamo exporter specialises vl_seq_len and hands back a reference that
-          # runs and is wrong; see foldquant_integration/README.md.
-          ( cd "$dir" && PYTHONPATH="$pp" GR00T_ONNX_EXPORTER_MODE=legacy \
-              "$venv" scripts/deployment/export_onnx_n1d6.py \
-              --model_path "${N16_MODEL:-}" --dataset_path "${GROOT_DATA:-}" \
-              --embodiment_tag "${N16_TAG:-libero_panda}" --output_dir .smoke_float/onnx ) >>"$log" 2>&1 \
-            || { note FAIL "float DiT export: see $log"; fail=$((fail+1)); return; }
-        fi
-        float_args=(--float-onnx-dir .smoke_float/onnx)
-        [ "$reuse" = 1 ] && float_args+=(--float-engine-dir .smoke_float/engines)
-      fi
-      ;;
-  esac
-
   local exp="$dir/.smoke_export"
   rm -rf "$exp"
-  ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.export_foldquant \
+  ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.quantize \
       "${ckpt[@]}" "${data[@]}" "${extra[@]}" --num-calib "$CALIB" --seed 0 \
-      --output-dir .smoke_export ) >>"$log" 2>&1 \
+      --output-dir .smoke_export/quantized ) >>"$log" 2>&1 \
+    || { note FAIL "quantize: see $log"; fail=$((fail+1)); return; }
+  note ok "quantize"
+  ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.export \
+      --quantized-model .smoke_export/quantized --output-dir .smoke_export/onnx ) >>"$log" 2>&1 \
     || { note FAIL "export: see $log"; fail=$((fail+1)); return; }
   note ok "export"
 
   ( cd "$dir" && PYTHONPATH="$pp" "$venv" -m foldquant_integration.build_engines \
-      --onnx-dir .smoke_export/onnx --engine-dir .smoke_export/engines \
-      "${float_args[@]}" ) >>"$log" 2>&1 \
+      --onnx-dir .smoke_export/onnx --engine-dir .smoke_export/engines ) >>"$log" 2>&1 \
     || { note FAIL "build_engines: see $log"; fail=$((fail+1)); return; }
   note ok "build_engines"
 

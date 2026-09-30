@@ -11,11 +11,6 @@ captured shapes the export recorded in ``export_metadata.json``; the state +
 action stream is static, the vision-language stream and the LLM sequence get a
 range around the captured length because the task text differs per task.
 
-A DiT the FoldQuant export left float (``--dit-scheme none``) can be built from
-the ``dit_model.onnx`` upstream's ``export_onnx_n1d6.py`` writes
-(``--float-onnx-dir``; weakly typed, BF16). Given alone, that directory yields
-the float-engine arm, the floor of the drift metric.
-
 Example::
 
     python -m foldquant_integration.build_engines \\
@@ -42,7 +37,6 @@ from ._upstream import (
     ENGINES_RECORD_NAME,
     EXPORT_METADATA_NAME,
     MANIFEST_NAME,
-    UPSTREAM_DIT_ONNX,
 )
 
 
@@ -57,14 +51,8 @@ class BuildConfig:
     engine_dir: str
     """Destination engine directory."""
 
-    onnx_dir: Optional[str] = None
+    onnx_dir: str
     """The FoldQuant export's ``onnx/`` directory (holds foldquant_export.json and export_metadata.json)."""
-
-    float_onnx_dir: Optional[str] = None
-    """Directory holding upstream's float ``dit_model.onnx``; used for the DiT when the FoldQuant export has none."""
-
-    metadata: Optional[str] = None
-    """``export_metadata.json`` to take the captured shapes from (default: the one in ``--onnx-dir``)."""
 
     max_batch: int = 1
     """Upper bound of the batch profile. 1 pins it, which is what a robot client and
@@ -114,38 +102,24 @@ def dim_ranges(metadata: Dict[str, Any], args: BuildConfig) -> Dict[str, Any]:
 
 def build(args: BuildConfig) -> Path:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    onnx_dir = Path(args.onnx_dir) if args.onnx_dir else None
-    float_dir = Path(args.float_onnx_dir) if args.float_onnx_dir else None
-    if onnx_dir is None and float_dir is None:
-        raise SystemExit(
-            "give --onnx-dir (a FoldQuant export), --float-onnx-dir (upstream's DiT export), or both"
-        )
+    onnx_dir = Path(args.onnx_dir)
     engine_dir = Path(args.engine_dir)
     engine_dir.mkdir(parents=True, exist_ok=True)
 
-    metadata_path = (
-        Path(args.metadata)
-        if args.metadata
-        else (onnx_dir / EXPORT_METADATA_NAME if onnx_dir else None)
-    )
-    if metadata_path is None or not metadata_path.is_file():
-        raise SystemExit(
-            f"captured shapes not found ({metadata_path}); pass --metadata <export_metadata.json>"
-        )
+    metadata_path = onnx_dir / EXPORT_METADATA_NAME
+    if not metadata_path.is_file():
+        raise SystemExit(f"captured shapes not found ({metadata_path}); is {onnx_dir} an export directory?")
     metadata = json.loads(metadata_path.read_text())
     ranges = dim_ranges(metadata, args)
     logger.info("dimension ranges: %s", ranges)
 
-    manifest = (
-        load_manifest(onnx_dir) if onnx_dir else {"schemes": {}, "files": {}, "plugin_libs": []}
-    )
+    manifest = load_manifest(onnx_dir)
     plugin_libs: List[str] = list(manifest["plugin_libs"])
     if plugin_libs:
         prepare_plugins(plugin_libs)
 
     record: Dict[str, Any] = {
-        "onnx_dir": public_path(str(onnx_dir) if onnx_dir else None),
-        "float_onnx_dir": public_path(str(float_dir) if float_dir else None),
+        "onnx_dir": public_path(str(onnx_dir)),
         "metadata": metadata,
         "dim_ranges": {k: v for k, v in ranges.items()},
         "plugin_libs": plugin_libs,
@@ -154,24 +128,12 @@ def build(args: BuildConfig) -> Path:
     }
     for name, _onnx_name, engine_name in COMPONENTS:
         if name in manifest["files"]:
-            assert onnx_dir is not None
             src = onnx_dir / manifest["files"][name]
-            if manifest.get("schemes", {}).get(name) == "float":
-                # STRONGLY_TYPED, like every other arm: a weakly-typed network picks a
-                # precision per layer, and the layers TensorRT runs in fp32 are *more* exact
-                # than the bf16 reference this arm is scored against, which made pi05's float
-                # engine drift further from PyTorch than its INT8 engine did. Honouring the
-                # ONNX's own dtypes keeps the float arm a control that differs from the
-                # quantized arms in the precision of the projections and in nothing else.
-                strongly_typed, int8 = True, False
-                source = "float"
-            else:
-                strongly_typed, int8 = True, True
-                source = "foldquant"
-        elif name == "dit" and float_dir is not None:
-            src = float_dir / UPSTREAM_DIT_ONNX
-            strongly_typed, int8 = False, False
-            source = "float"
+            # A graph of the all-float baseline carries no plugin nodes; it is still built
+            # STRONGLY_TYPED so it honours its own bf16 dtypes and differs from the quantized
+            # arms in the precision of the projections and in nothing else.
+            source = "foldquant" if name in manifest.get("schemes", {}) else "float"
+            strongly_typed, int8 = True, source == "foldquant"
         else:
             logger.info("%s: not exported, stays in PyTorch", name)
             continue
@@ -203,8 +165,7 @@ def build(args: BuildConfig) -> Path:
         raise SystemExit("nothing to build")
 
     (engine_dir / ENGINES_RECORD_NAME).write_text(json.dumps(record, indent=2))
-    if onnx_dir is not None:
-        shutil.copy2(onnx_dir / MANIFEST_NAME, engine_dir / MANIFEST_NAME)
+    shutil.copy2(onnx_dir / MANIFEST_NAME, engine_dir / MANIFEST_NAME)
     logger.info("engine directory complete: %s", engine_dir)
     return engine_dir
 

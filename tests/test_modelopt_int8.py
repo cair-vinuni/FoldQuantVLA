@@ -3,8 +3,9 @@
 
 """The ModelOpt INT8 SmoothQuant baseline: layer exclusions, graph repairs, scheme routing.
 
-None of these need ModelOpt or a GPU; the quantize / export / build path is
-exercised by the GR00T N1.7 and Pi0.5 exports on a device.
+None of these need ModelOpt or a GPU, except the checkpoint round trip at the
+end, which runs when ``nvidia-modelopt`` is importable (CPU, a tiny tower); the
+export / build path is exercised by the GR00T N1.7 and Pi0.5 exports on a device.
 """
 
 from __future__ import annotations
@@ -267,3 +268,78 @@ def test_consolidate_external_data_merges_only_this_graph(tmp_path) -> None:
     assert [numpy_helper.to_array(t).tolist() for t in loaded.graph.initializer] == [[i] * 3 for i in range(3)]
     # already on one sidecar: nothing to do
     assert modelopt_int8.consolidate_external_data(path, "llm") == 0
+
+
+class _Tower(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.layers = nn.ModuleList([nn.Sequential(nn.Linear(16, 32), nn.GELU(), nn.Linear(32, 16)) for _ in range(2)])
+        self.norm = nn.LayerNorm(16)
+
+    def forward(self, inputs_embeds):
+        h = inputs_embeds
+        for layer in self.layers:
+            h = h + layer(h)
+        return self.norm(h)
+
+
+@pytest.mark.parametrize("algo", [modelopt_int8.MODELOPT_W8A8_SMOOTHQUANT, modelopt_int8.MODELOPT_W4A16_AWQ])
+def test_a_modelopt_tower_round_trips_through_the_checkpoint(tmp_path, monkeypatch, algo) -> None:
+    """A ModelOpt tower is saved as the smoothed weights, the quantizers' scales and one recorded
+    call; restored on a fresh module from the checkpoint, it computes exactly what it did when
+    calibrated."""
+    import copy
+    import json
+    import sys
+
+    pytest.importorskip("modelopt.torch.quantization")
+    from safetensors.torch import load_file
+
+    from foldquant import quantized
+    from foldquant.export import ExportResult
+    from foldquant.trace_export import record_trace
+    from foldquant.quant_state import ModuleQuantState
+
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent))
+    from test_quantized import _base_checkpoint
+
+    monkeypatch.setenv("FOLDQUANT_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(modelopt_int8, "ensure_cuda_ext", lambda: None)  # CPU tiny model
+    torch.manual_seed(0)
+    module = _Tower().eval()
+    base = copy.deepcopy(module)
+    calls = [((), {"inputs_embeds": torch.randn(1, 8, 16) * (i + 1)}) for i in range(4)]
+    record = modelopt_int8.quantize_module(module, modelopt_int8.replay_loop(calls), algorithm=algo)
+    assert not torch.equal(module.layers[0][0].weight, base.layers[0][0].weight), "the calibration rewrites the weights"
+    with torch.inference_mode():
+        ref = module(calls[0][1]["inputs_embeds"])
+
+    weight_only = modelopt_int8.is_weight_only(algo)
+    ms = ModuleQuantState("llm", algo, config={"bits": 4 if weight_only else 8, "act_bits": 16 if weight_only else 8,
+                                                "modelopt": record, "opset": 20,
+                                                "modelopt_state": modelopt_int8.modelopt_state_of(module)})
+    ms.put_group("modelopt", modelopt_int8.quantizer_buffers(module))
+    record_trace(ms, calls[0][1])
+    ckpt = _base_checkpoint(tmp_path / "ckpt", base)
+    out = quantized.save_arm_state(
+        tmp_path / "q", family="test", model_path=str(ckpt), results=[ExportResult("llm", algo, None, [], state=ms)],
+        modules={"llm": module}, checkpoint_root=module, export_manifest={"files": {"llm": "llm_bf16.onnx"}},
+    )
+    manifest = json.loads((out / "foldquant_quant.json").read_text())
+    linears = sorted(f"{n}.weight" for n, m in module.named_modules() if isinstance(m, nn.Linear))
+    assert manifest["weights"]["overridden"] == linears, "only the quantized linears' weights are rewritten"
+    assert (out / "foldquant_modelopt_llm.pt").is_file()
+    assert "modelopt_state" not in manifest["modules"]["llm"]["config"]
+    assert json.loads((out / "hf_quant_config.json").read_text())["quantization"]["quant_algo"] == (
+        "W4A16" if weight_only else "W8A8")
+
+    weights = {k: v for k, v in load_file(str(out / "model.safetensors")).items() if not k.startswith("foldquant.")}
+    fresh = _Tower().eval()
+    missing, _ = fresh.load_state_dict(weights, strict=False)
+    assert not missing and torch.equal(fresh.layers[0][0].weight, module.layers[0][0].weight)
+    state = quantized.load_quantized_model(out)
+    handle = quantized.install_fake_quant({"llm": fresh}, state)
+    with torch.inference_mode():
+        got = fresh(state.modules["llm"].tensor_group("trace")["inputs_embeds"])
+    assert torch.equal(got, ref)
+    handle.remove()
