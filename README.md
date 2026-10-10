@@ -26,6 +26,14 @@ W8A8 and W4A4 quantization of vision-language-action (VLA) models, executed
 natively on the device's INT8 / INT4 tensor cores (not simulated), via
 **consistent offline folding**.
 
+## News
+
+- **2026-10:** FoldQuant models now run in [vla.cpp](https://github.com/VinRobotics/vla.cpp)
+  as well, without TensorRT. vla.cpp converts a FoldQuantVLA quantized checkpoint
+  to GGUF with every quantized layer byte-identical to our TensorRT graphs, and
+  runs it with integer kernels on CUDA (including Jetson AGX Orin), on Intel GPUs
+  through SYCL, and on Intel CPUs and GPUs through OpenVINO. See vla.cpp's
+  [quantization guide](https://github.com/VinRobotics/vla.cpp/blob/main/docs/QUANTIZATION.md).
 
 ## Highlights
 
