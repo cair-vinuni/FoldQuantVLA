@@ -15,6 +15,7 @@ this module does not load TensorRT or plugin libraries.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Callable, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -131,32 +132,47 @@ def compute_gptq_hessians_llm(
             x = args[0]
             if x.dim() != 3:
                 return
-            xx = x.detach().float().reshape(-1, x.shape[-1])
-            if sq_dev is not None and site in SQ_SITES:
-                xx = xx / sq_dev[key]
-            if hadamard is not None:
-                xx = _rot_last(xx, hadamard)
+            xr = x.detach().reshape(-1, x.shape[-1])
+            K = xr.shape[1]
+            wn = None
             if token_weights is not None:
                 # VLMQ-style: weight tokens (visual vs text) in the second moment,
                 # normalized to mean 1 so the damping scale is unchanged.
-                w = token_weights[state["idx"]].to(xx.device, torch.float32).reshape(-1)
-                if w.numel() != xx.shape[0]:
+                w = token_weights[state["idx"]].to(xr.device, torch.float32).reshape(-1)
+                if w.numel() != xr.shape[0]:
                     raise RuntimeError(
                         f"token weights for snapshot {state['idx']} have {w.numel()} entries; "
-                        f"site {key} saw {xx.shape[0]} tokens."
+                        f"site {key} saw {xr.shape[0]} tokens."
                     )
-                xx = xx * (w / w.mean()).sqrt().unsqueeze(1)
+                wn = (w / w.mean()).sqrt().unsqueeze(1)
             if key not in acc:
                 # A K x K fp32 accumulator per site: Qwen-class inner dims
                 # (<= 6144, 151 MB) fit on-device across all layers, but
                 # Gemma's 16384-wide down site is 1 GB PER LAYER, 18 GB total,
                 # past any 16 GB card. Wide sites accumulate on host instead;
                 # the per-call GEMM stays on-device either way.
-                on_host = xx.shape[1] >= 8192
-                acc[key] = torch.zeros(
-                    xx.shape[1], xx.shape[1], device="cpu" if on_host else device, dtype=torch.float32
-                )
-            gram = _exact_gram(xx)
+                # FOLDQUANT_GRAM_ON_DEVICE=1 keeps them on device anyway: on a
+                # unified-memory Jetson the host copy saves nothing and costs a
+                # 1 GB transient per call.
+                on_host = K >= 8192 and os.environ.get("FOLDQUANT_GRAM_ON_DEVICE") != "1"
+                acc[key] = torch.zeros(K, K, device="cpu" if on_host else device, dtype=torch.float32)
+            # Row blocks of ~512 MB fp32: a batched replay (128 obs x 968 tokens x
+            # 16384 on pi0.5's down site) is 8 GB per fp32 copy, and the cast, SQ
+            # divide and rotation each make one; that exhausts a 64 GB Orin.
+            # Same sum of per-block Grams, fp32 accumulation order aside.
+            rows = max(1, (1 << 27) // K)
+            gram = None
+            for r0 in range(0, xr.shape[0], rows):
+                xx = xr[r0:r0 + rows].float()
+                if sq_dev is not None and site in SQ_SITES:
+                    xx = xx / sq_dev[key]
+                if hadamard is not None:
+                    xx = _rot_last(xx, hadamard)
+                if wn is not None:
+                    xx = xx * wn[r0:r0 + rows]
+                g = _exact_gram(xx)
+                gram = g if gram is None else gram.add_(g)
+                del xx, g
             acc[key] += gram.cpu() if acc[key].device.type == "cpu" else gram
 
         return h
