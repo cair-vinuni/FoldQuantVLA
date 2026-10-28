@@ -18,8 +18,10 @@ from pathlib import Path
 
 from foldquant.kernels import build as kernel_build
 from foldquant.kernels.build import (
+    _cuda_cmake_args,
     _install_built_lib,
     _invalidate_stale_cmake_cache,
+    _resolve_cuda_toolkit,
     ensure_plugins_for_current_device,
 )
 
@@ -68,6 +70,45 @@ def test_mismatched_cached_source_wipes_the_build_dir(tmp_path: Path) -> None:
     _invalidate_stale_cmake_cache(build_tmp, new_src)
 
     assert not build_tmp.exists()
+
+
+def test_cuda_toolkit_resolves_target_specific_include(monkeypatch, tmp_path: Path) -> None:
+    root = tmp_path / "cuda-12.8"
+    include = root / "targets" / "x86_64-linux" / "include"
+    include.mkdir(parents=True)
+    (include / "cuda_runtime.h").write_text("// test header")
+    monkeypatch.setenv("CUDA_HOME", str(root))
+    monkeypatch.delenv("CUDAToolkit_ROOT", raising=False)
+    monkeypatch.delenv("CUDA_PATH", raising=False)
+    monkeypatch.delenv("CUDAToolkit_INCLUDE_DIR", raising=False)
+    monkeypatch.setattr(kernel_build.platform, "machine", lambda: "x86_64")
+
+    resolved_root, resolved_include = _resolve_cuda_toolkit()
+
+    assert resolved_root == root
+    assert resolved_include == include
+    assert _cuda_cmake_args() == [
+        f"-DCUDAToolkit_ROOT={root}",
+        f"-DCUDAToolkit_INCLUDE_DIR={include}",
+        f"-DCMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES={include}",
+    ]
+
+
+def test_explicit_cuda_include_overrides_layout_detection(monkeypatch, tmp_path: Path) -> None:
+    root = tmp_path / "cuda"
+    explicit_include = tmp_path / "cuda-headers"
+    (root / "include").mkdir(parents=True)
+    explicit_include.mkdir()
+    (explicit_include / "cuda_runtime_api.h").write_text("// test header")
+    monkeypatch.setenv("CUDAToolkit_ROOT", str(root))
+    monkeypatch.setenv("CUDAToolkit_INCLUDE_DIR", str(explicit_include))
+    monkeypatch.delenv("CUDA_HOME", raising=False)
+    monkeypatch.delenv("CUDA_PATH", raising=False)
+
+    resolved_root, resolved_include = _resolve_cuda_toolkit()
+
+    assert resolved_root == root
+    assert resolved_include == explicit_include
 
 
 def test_install_built_lib_replaces_the_inode_and_keeps_open_mappings_valid(tmp_path: Path) -> None:
