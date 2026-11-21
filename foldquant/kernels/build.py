@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -45,6 +46,73 @@ def _resolve_cutlass_include() -> Optional[str]:
         if cand.is_dir():
             return str(cand)
     return None
+
+
+def _resolve_cuda_toolkit() -> tuple[Optional[Path], Optional[Path]]:
+    """Resolve an optional CUDA toolkit root and its compiler include directory.
+
+    CMake normally discovers both values on standard CUDA installations. Some
+    distro and runfile layouts, however, keep the headers below
+    ``targets/<arch>-linux/include`` instead of ``include``. Older CMake
+    versions can find ``nvcc`` in that layout but still miss the headers during
+    CUDA compiler detection.
+
+    Explicit environment variables take precedence. Otherwise, derive the
+    toolkit root from ``nvcc`` and inspect both standard and target-specific
+    include layouts.
+    """
+    def is_cuda_include(candidate: Path) -> bool:
+        return candidate.is_dir() and any(
+            (candidate / header).is_file() for header in ("cuda_runtime.h", "cuda_runtime_api.h")
+        )
+
+    include: Optional[Path] = None
+    include_env = os.environ.get("CUDAToolkit_INCLUDE_DIR")
+    if include_env:
+        candidate = Path(include_env).expanduser()
+        if is_cuda_include(candidate):
+            include = candidate
+
+    root: Optional[Path] = None
+    for name in ("CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH"):
+        value = os.environ.get(name)
+        if not value:
+            continue
+        candidate = Path(value).expanduser()
+        if candidate.is_dir():
+            root = candidate
+            break
+
+    if root is None:
+        nvcc = shutil.which("nvcc")
+        if nvcc:
+            candidate = Path(nvcc).expanduser().resolve().parent.parent
+            if candidate.is_dir():
+                root = candidate
+
+    if include is None and root is not None:
+        candidates = [
+            root / "include",
+            root / "targets" / f"{platform.machine()}-linux" / "include",
+        ]
+        candidates.extend(sorted((root / "targets").glob("*/include")))
+        include = next((candidate for candidate in candidates if is_cuda_include(candidate)), None)
+
+    return root, include
+
+
+def _cuda_cmake_args() -> list[str]:
+    """Return CMake cache arguments for an explicitly resolved CUDA toolkit."""
+    root, include = _resolve_cuda_toolkit()
+    args: list[str] = []
+    if root is not None:
+        args.append(f"-DCUDAToolkit_ROOT={root}")
+    if include is not None:
+        # FindCUDAToolkit in older CMake releases reads the singular cache
+        # variable while CUDA language setup exposes the plural form.
+        args.append(f"-DCUDAToolkit_INCLUDE_DIR={include}")
+        args.append(f"-DCMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES={include}")
+    return args
 
 
 def _resolve_trt_include() -> Optional[Path]:
@@ -290,6 +358,7 @@ def _rebuild_plugins_unlocked(out_dir: Path, names: "list[str]") -> None:
         f"-DTENSORRT_ROOT={trt_root}",
         "-DCMAKE_BUILD_TYPE=Release",
     ]
+    configure_cmd.extend(_cuda_cmake_args())
     if cutlass is not None:
         configure_cmd.append(f"-DCUTLASS_INCLUDE_DIR={cutlass}")
     _run(configure_cmd)
